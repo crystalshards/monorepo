@@ -1,0 +1,14 @@
+name: habitat
+version: 0.4.9
+
+authors:
+  - Paul Smith <paulcsmith0218@gmail.com>
+
+crystal: '>= 1.4.0'
+
+license: MIT
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    version: ~> 1.5.0
