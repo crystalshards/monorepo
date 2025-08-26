@@ -175,13 +175,13 @@ jobs:
         crystal tool format --check apps/
         crystal tool format --check libraries/
 
-    - name: Crystal tool hierarchy analysis
+    - name: Crystal syntax check
       run: |
-        cd apps/shards-registry && crystal tool hierarchy src/crystalshards.cr
-        cd ../shards-docs && crystal tool hierarchy src/crystaldocs.cr
-        cd ../gigs && crystal tool hierarchy src/crystalgigs.cr
-        cd ../worker && crystal tool hierarchy src/worker.cr
-        cd ../admin && crystal tool hierarchy src/admin.cr
+        crystal build --no-codegen apps/shards-registry/src/crystalshards.cr
+        crystal build --no-codegen apps/shards-docs/src/crystaldocs.cr
+        crystal build --no-codegen apps/gigs/src/crystalgigs.cr
+        crystal build --no-codegen apps/worker/src/worker.cr
+        crystal build --no-codegen apps/admin/src/admin.cr
 
   # End-to-End Tests with Playwright
   e2e-tests:
@@ -324,7 +324,9 @@ jobs:
 
     - name: Install Ameba (Crystal linter)
       run: |
-        # Install ameba via shards
+        # Install ameba via shards in a temporary directory
+        mkdir -p /tmp/ameba-install
+        cd /tmp/ameba-install
         echo "name: ameba-install
 version: 0.1.0
 
@@ -333,16 +335,17 @@ dependencies:
     github: crystal-ameba/ameba" > shard.yml
         shards install
         shards build ameba
+        sudo cp bin/ameba /usr/local/bin/
 
     - name: Run Ameba linter
       run: |
         # Run ameba on each application
-        cd apps/shards-registry && ../../bin/ameba src/
-        cd ../shards-docs && ../../bin/ameba src/
-        cd ../gigs && ../../bin/ameba src/
-        cd ../worker && ../../bin/ameba src/
-        cd ../admin && ../../bin/ameba src/
-        cd ../../libraries/models && ../../bin/ameba src/
+        cd apps/shards-registry && ameba src/
+        cd ../shards-docs && ameba src/
+        cd ../gigs && ameba src/
+        cd ../worker && ameba src/
+        cd ../admin && ameba src/
+        cd ../../libraries/models && ameba src/
 
     - name: Validate Kubernetes manifests
       run: |
