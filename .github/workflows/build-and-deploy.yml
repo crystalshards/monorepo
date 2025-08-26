@@ -67,7 +67,7 @@ jobs:
             docker push $LATEST_TAG
           fi
         else
-          echo "⚠️ Skipping Docker push - GCP credentials not configured"
+          echo "WARNING: Skipping Docker push - GCP credentials not configured"
           echo "To enable deployment, configure GCP_SA_KEY secret"
         fi
 
