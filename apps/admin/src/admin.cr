@@ -4,12 +4,29 @@ require "pg"
 require "redis"
 require "jwt"
 require "dotenv"
+require "json"
 
 # Load environment variables
 Dotenv.load
 
 module CrystalShardsAdmin
   VERSION = "0.1.0"
+  
+  # WebSocket connection management
+  WEBSOCKET_CONNECTIONS = Set(HTTP::WebSocket).new
+  
+  # Notification types
+  enum NotificationType
+    NewShard
+    ShardApproved
+    ShardRejected
+    DocBuildStarted
+    DocBuildCompleted
+    DocBuildFailed
+    NewJobPosting
+    JobToggled
+    SystemAlert
+  end
   
   # Configuration
   DATABASE_URL_REGISTRY = ENV["DATABASE_URL_REGISTRY"]? || "postgres://postgres:password@localhost/crystalshards_development"
@@ -45,10 +62,7 @@ module CrystalShardsAdmin
     end
     
     private def valid_token?(token : String) : Bool
-      JWT.decode(token, JWT_SECRET, JWT::Algorithm::HS256)
-      true
-    rescue JWT::DecodeError
-      false
+      CrystalShardsAdmin.valid_token?(token)
     end
   end
   
@@ -58,6 +72,37 @@ module CrystalShardsAdmin
   end
   
   add_handler AuthHandler.new
+  
+  # WebSocket notification broadcasting
+  def self.broadcast_notification(type : NotificationType, data : Hash(String, JSON::Any))
+    message = {
+      type: type.to_s.underscore,
+      timestamp: Time.utc.to_rfc3339,
+      data: data
+    }.to_json
+    
+    WEBSOCKET_CONNECTIONS.each do |ws|
+      begin
+        ws.send(message)
+      rescue
+        # Remove dead connections
+        WEBSOCKET_CONNECTIONS.delete(ws)
+      end
+    end
+  end
+  
+  def self.get_live_stats
+    shard_stats = get_shard_stats
+    docs_stats = get_docs_stats
+    gigs_stats = get_gigs_stats
+    
+    {
+      shards: shard_stats,
+      docs: docs_stats,
+      gigs: gigs_stats,
+      timestamp: Time.utc.to_rfc3339
+    }
+  end
   
   # Helper methods (defined first)
   def self.get_shard_stats
@@ -156,13 +201,33 @@ module CrystalShardsAdmin
   end
   
   def self.approve_shard(shard_id)
+    # Get shard info before update
+    shard = REGISTRY_DB.query_one("SELECT name, description FROM shards WHERE id = $1", shard_id, as: {String, String?})
+    
     REGISTRY_DB.exec("UPDATE shards SET published = true, updated_at = NOW() WHERE id = $1", shard_id)
+    
+    # Broadcast notification
+    broadcast_notification(NotificationType::ShardApproved, {
+      "shard_id" => JSON::Any.new(shard_id.to_i64),
+      "name" => JSON::Any.new(shard[0]),
+      "description" => JSON::Any.new(shard[1] || "")
+    })
   rescue
     # Log error
   end
   
   def self.reject_shard(shard_id, reason)
+    # Get shard info before update
+    shard = REGISTRY_DB.query_one("SELECT name, description FROM shards WHERE id = $1", shard_id, as: {String, String?})
+    
     REGISTRY_DB.exec("UPDATE shards SET published = false, rejection_reason = $2, updated_at = NOW() WHERE id = $1", shard_id, reason)
+    
+    # Broadcast notification
+    broadcast_notification(NotificationType::ShardRejected, {
+      "shard_id" => JSON::Any.new(shard_id.to_i64),
+      "name" => JSON::Any.new(shard[0]),
+      "reason" => JSON::Any.new(reason || "Quality issues")
+    })
   rescue
     # Log error
   end
@@ -196,7 +261,20 @@ module CrystalShardsAdmin
   end
   
   def self.toggle_job_status(job_id)
+    # Get job info before and after update
+    job_before = GIGS_DB.query_one("SELECT company, title, active FROM job_postings WHERE id = $1", job_id, as: {String, String, Bool})
+    
     GIGS_DB.exec("UPDATE job_postings SET active = NOT active WHERE id = $1", job_id)
+    
+    new_status = !job_before[2]
+    
+    # Broadcast notification
+    broadcast_notification(NotificationType::JobToggled, {
+      "job_id" => JSON::Any.new(job_id.to_i64),
+      "company" => JSON::Any.new(job_before[0]),
+      "title" => JSON::Any.new(job_before[1]),
+      "new_status" => JSON::Any.new(new_status ? "active" : "inactive")
+    })
   rescue
     # Log error
   end
@@ -220,14 +298,77 @@ module CrystalShardsAdmin
     [] of Hash(Symbol, String | String? | Time)
   end
   
+  # WebSocket endpoint for real-time notifications
+  ws "/live" do |socket, context|
+    # Add connection authentication check
+    token = context.session.string?("admin_token")
+    unless token && valid_token?(token)
+      socket.close(code: 1008, message: "Authentication required")
+      next
+    end
+    
+    # Add connection to set
+    WEBSOCKET_CONNECTIONS << socket
+    
+    # Send initial stats
+    initial_data = get_live_stats
+    socket.send({
+      type: "initial_stats",
+      timestamp: Time.utc.to_rfc3339,
+      data: initial_data
+    }.to_json)
+    
+    # Handle disconnection
+    socket.on_close do
+      WEBSOCKET_CONNECTIONS.delete(socket)
+    end
+    
+    # Keep connection alive with periodic stats updates
+    spawn do
+      loop do
+        sleep 10.seconds
+        if WEBSOCKET_CONNECTIONS.includes?(socket)
+          begin
+            stats_data = get_live_stats
+            socket.send({
+              type: "stats_update",
+              timestamp: Time.utc.to_rfc3339,
+              data: stats_data
+            }.to_json)
+          rescue
+            WEBSOCKET_CONNECTIONS.delete(socket)
+            break
+          end
+        else
+          break
+        end
+      end
+    end
+  end
+  
+  # Live stats API endpoint
+  get "/api/stats" do |env|
+    env.response.content_type = "application/json"
+    get_live_stats.to_json
+  end
+  
   # Health check endpoint (no auth required)
   get "/health" do |env|
     env.response.content_type = "application/json"
     {
       status: "ok",
       version: VERSION,
-      timestamp: Time.utc.to_s
+      timestamp: Time.utc.to_s,
+      active_connections: WEBSOCKET_CONNECTIONS.size
     }.to_json
+  end
+  
+  # Helper method for token validation (must be defined before use)
+  def self.valid_token?(token : String) : Bool
+    JWT.decode(token, JWT_SECRET, JWT::Algorithm::HS256)
+    true
+  rescue JWT::DecodeError
+    false
   end
   
   # Login page
@@ -453,8 +594,38 @@ module CrystalShardsAdmin
             .stat-card h3 { color: #667eea; margin-bottom: 1rem; }
             .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
             .stat-item { text-align: center; }
-            .stat-number { font-size: 2rem; font-weight: bold; color: #333; }
+            .stat-number { font-size: 2rem; font-weight: bold; color: #333; transition: color 0.3s; }
+            .stat-number.updated { color: #28a745; }
             .stat-label { color: #666; font-size: 0.9rem; }
+            .notification-toast {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #28a745;
+                color: white;
+                padding: 1rem;
+                border-radius: 5px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                transform: translateX(300px);
+                transition: transform 0.3s;
+                z-index: 1000;
+                min-width: 300px;
+            }
+            .notification-toast.show { transform: translateX(0); }
+            .notification-toast.error { background: #dc3545; }
+            .notification-toast.warning { background: #ffc107; color: #212529; }
+            .connection-status {
+                position: fixed;
+                bottom: 20px;
+                right: 20px;
+                padding: 0.5rem 1rem;
+                border-radius: 20px;
+                font-size: 0.8rem;
+                font-weight: 500;
+            }
+            .connection-status.connected { background: #d1ecf1; color: #0c5460; }
+            .connection-status.disconnected { background: #f8d7da; color: #721c24; }
+            .connection-status.reconnecting { background: #fff3cd; color: #856404; }
         </style>
     </head>
     <body>
@@ -477,15 +648,15 @@ module CrystalShardsAdmin
                     <h3>📦 Shards Registry</h3>
                     <div class="stat-grid">
                         <div class="stat-item">
-                            <div class="stat-number">#{shard_stats[:total]}</div>
+                            <div id="shards-total" class="stat-number">#{shard_stats[:total]}</div>
                             <div class="stat-label">Total Shards</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-number">#{shard_stats[:published]}</div>
+                            <div id="shards-published" class="stat-number">#{shard_stats[:published]}</div>
                             <div class="stat-label">Published</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-number">#{shard_stats[:pending]}</div>
+                            <div id="shards-pending" class="stat-number">#{shard_stats[:pending]}</div>
                             <div class="stat-label">Pending Review</div>
                         </div>
                     </div>
@@ -495,15 +666,15 @@ module CrystalShardsAdmin
                     <h3>📚 Documentation</h3>
                     <div class="stat-grid">
                         <div class="stat-item">
-                            <div class="stat-number">#{docs_stats[:total]}</div>
+                            <div id="docs-total" class="stat-number">#{docs_stats[:total]}</div>
                             <div class="stat-label">Total Docs</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-number">#{docs_stats[:completed]}</div>
+                            <div id="docs-completed" class="stat-number">#{docs_stats[:completed]}</div>
                             <div class="stat-label">Completed</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-number">#{docs_stats[:building]}</div>
+                            <div id="docs-building" class="stat-number">#{docs_stats[:building]}</div>
                             <div class="stat-label">Building</div>
                         </div>
                     </div>
@@ -513,21 +684,173 @@ module CrystalShardsAdmin
                     <h3>💼 Job Board</h3>
                     <div class="stat-grid">
                         <div class="stat-item">
-                            <div class="stat-number">#{gigs_stats[:total]}</div>
+                            <div id="gigs-total" class="stat-number">#{gigs_stats[:total]}</div>
                             <div class="stat-label">Total Jobs (30d)</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-number">#{gigs_stats[:active]}</div>
+                            <div id="gigs-active" class="stat-number">#{gigs_stats[:active]}</div>
                             <div class="stat-label">Active</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-number">$#{(gigs_stats[:total_value] / 1000).to_i}k</div>
+                            <div id="gigs-value" class="stat-number">$#{(gigs_stats[:total_value] / 1000).to_i}k</div>
                             <div class="stat-label">Total Value</div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+        
+        <!-- Notification container -->
+        <div id="notification-container"></div>
+        
+        <!-- Connection status indicator -->
+        <div id="connection-status" class="connection-status disconnected">Connecting...</div>
+        
+        <script>
+            let ws = null;
+            let reconnectTimeout = null;
+            let isConnected = false;
+            
+            function connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = protocol + '//' + window.location.host + '/live';
+                
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = function() {
+                    isConnected = true;
+                    updateConnectionStatus('connected', '🟢 Live Updates Active');
+                    console.log('WebSocket connected');
+                };
+                
+                ws.onmessage = function(event) {
+                    try {
+                        const message = JSON.parse(event.data);
+                        handleMessage(message);
+                    } catch (e) {
+                        console.error('Error parsing WebSocket message:', e);
+                    }
+                };
+                
+                ws.onclose = function() {
+                    isConnected = false;
+                    updateConnectionStatus('disconnected', '🔴 Disconnected');
+                    console.log('WebSocket disconnected, attempting to reconnect...');
+                    
+                    // Attempt to reconnect after 3 seconds
+                    reconnectTimeout = setTimeout(function() {
+                        updateConnectionStatus('reconnecting', '🟡 Reconnecting...');
+                        connect();
+                    }, 3000);
+                };
+                
+                ws.onerror = function(error) {
+                    console.error('WebSocket error:', error);
+                };
+            }
+            
+            function handleMessage(message) {
+                console.log('Received message:', message);
+                
+                switch(message.type) {
+                    case 'initial_stats':
+                    case 'stats_update':
+                        updateStats(message.data);
+                        break;
+                    case 'shard_approved':
+                        showNotification('Shard Approved', 
+                            `✅ "${message.data.name}" has been approved and published!`, 'success');
+                        break;
+                    case 'shard_rejected':
+                        showNotification('Shard Rejected', 
+                            `❌ "${message.data.name}" was rejected: ${message.data.reason}`, 'error');
+                        break;
+                    case 'job_toggled':
+                        showNotification('Job Status Changed', 
+                            `💼 "${message.data.title}" at ${message.data.company} is now ${message.data.new_status}`, 'warning');
+                        break;
+                    case 'new_shard':
+                        showNotification('New Shard Submission', 
+                            `📦 New shard "${message.data.name}" submitted for review`, 'success');
+                        break;
+                    case 'doc_build_completed':
+                        showNotification('Documentation Built', 
+                            `📚 Documentation for "${message.data.shard_name}" v${message.data.version} completed`, 'success');
+                        break;
+                    case 'doc_build_failed':
+                        showNotification('Documentation Build Failed', 
+                            `❌ Documentation build failed for "${message.data.shard_name}" v${message.data.version}`, 'error');
+                        break;
+                }
+            }
+            
+            function updateStats(stats) {
+                // Update shard stats
+                if (stats.shards) {
+                    updateStatNumber('shards-total', stats.shards.total);
+                    updateStatNumber('shards-published', stats.shards.published);
+                    updateStatNumber('shards-pending', stats.shards.pending);
+                }
+                
+                // Update docs stats
+                if (stats.docs) {
+                    updateStatNumber('docs-total', stats.docs.total);
+                    updateStatNumber('docs-completed', stats.docs.completed);
+                    updateStatNumber('docs-building', stats.docs.building);
+                }
+                
+                // Update gigs stats
+                if (stats.gigs) {
+                    updateStatNumber('gigs-total', stats.gigs.total);
+                    updateStatNumber('gigs-active', stats.gigs.active);
+                    updateStatNumber('gigs-value', '$' + Math.floor(stats.gigs.total_value / 1000) + 'k');
+                }
+            }
+            
+            function updateStatNumber(id, value) {
+                const element = document.getElementById(id);
+                if (element && element.textContent != value) {
+                    element.textContent = value;
+                    element.classList.add('updated');
+                    setTimeout(() => element.classList.remove('updated'), 2000);
+                }
+            }
+            
+            function updateConnectionStatus(status, text) {
+                const statusEl = document.getElementById('connection-status');
+                statusEl.className = 'connection-status ' + status;
+                statusEl.textContent = text;
+            }
+            
+            function showNotification(title, message, type = 'success') {
+                const notification = document.createElement('div');
+                notification.className = 'notification-toast ' + type;
+                notification.innerHTML = `
+                    <div style="font-weight: bold; margin-bottom: 0.5rem;">${title}</div>
+                    <div>${message}</div>
+                `;
+                
+                document.getElementById('notification-container').appendChild(notification);
+                
+                // Show notification
+                setTimeout(() => notification.classList.add('show'), 100);
+                
+                // Auto-hide after 5 seconds
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                    setTimeout(() => notification.remove(), 300);
+                }, 5000);
+            }
+            
+            // Connect when page loads
+            connect();
+            
+            // Cleanup on page unload
+            window.addEventListener('beforeunload', function() {
+                if (reconnectTimeout) clearTimeout(reconnectTimeout);
+                if (ws) ws.close();
+            });
+        </script>
     </body>
     </html>
     HTML
