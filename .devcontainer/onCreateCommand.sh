@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -x
 
 echo "🔮 Setting up CrystalShards development environment..."
 

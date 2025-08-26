@@ -2,6 +2,7 @@
 # Configure Claude with necessary settings for autonomous operation
 
 set -euo pipefail
+set -x
 
 # Claude config directory and file
 CLAUDE_CONFIG_FILE="${CLAUDE_CONFIG_DIR}/claude-config.json"
