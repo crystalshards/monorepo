@@ -7,7 +7,6 @@ require "json"
 
 def handle_request(context : HTTP::Server::Context)
   path = context.request.path
-  
   case path
   when "/"
     context.response.content_type = "text/html"
@@ -53,7 +52,6 @@ def handle_request(context : HTTP::Server::Context)
     </body>
     </html>
     HTML
-    
   when "/health"
     context.response.content_type = "application/json"
     context.response.print({
@@ -64,7 +62,6 @@ def handle_request(context : HTTP::Server::Context)
       environment: ENV.fetch("ENV", "development"),
       framework: "HTTP::Server"
     }.to_json)
-    
   when "/api/stats"
     context.response.content_type = "application/json"
     context.response.print({
@@ -74,7 +71,6 @@ def handle_request(context : HTTP::Server::Context)
       status: "minimal_deployment",
       message: "Statistics will be available once database is connected"
     }.to_json)
-    
   when "/api/shards"
     context.response.content_type = "application/json"
     context.response.print({
@@ -83,7 +79,6 @@ def handle_request(context : HTTP::Server::Context)
       message: "Shard data will be available once database is connected",
       api_version: "1.0.0-minimal"
     }.to_json)
-    
   else
     context.response.status_code = 404
     context.response.content_type = "application/json"
