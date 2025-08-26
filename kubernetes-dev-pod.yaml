@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: claude
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: crystalshards-agent
+  namespace: claude
+spec:
+  restartPolicy: Always
+  containers:
+    - name: dev
+      image: ghcr.io/coder/envbuilder:latest
+      imagePullPolicy: Always
+      securityContext:
+        runAsNonRoot: true
+      env:
+        - name: ENVBUILDER_GIT_URL
+          value: https://github.com/crystalshards/crystalshards-claude.git
+        - name: ENVBUILDER_GIT_BRANCH
+          value: main
+        - name: ENVBUILDER_DEVCONTAINER_DIR
+          value: /workspaces/monorepo/.devcontainer
+        - name: ENVBUILDER_INIT_SCRIPT
+          value: "/workspaces/monorepo/develop.sh"
+        - name: ENVBUILDER_CACHE_REPO
+          value: "" # Optional: Add cache repository for faster builds
+        - name: ENVBUILDER_WORKSPACE_FOLDER
+          value: /workspaces/monrepo
+        - name: CLAUDE_CODE_OAUTH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: claude-secrets
+              key: api-key
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-secrets
+              key: token
+        - name: GIT_AUTHOR_NAME
+          value: "CrystalShards Agent"
+        - name: GIT_AUTHOR_EMAIL
+          value: "agent@crystalshards.org"
+        - name: GIT_COMMITTER_NAME
+          value: "CrystalShards Agent"
+        - name: GIT_COMMITTER_EMAIL
+          value: "agent@crystalshards.org"
+      volumeMounts:
+        - name: workspace
+          mountPath: /workspaces/monrepo
+        - name: docker-socket
+          mountPath: /var/run/docker.sock
+      resources:
+        requests:
+          memory: "4Gi"
+          cpu: "2"
+        limits:
+          memory: "8Gi"
+          cpu: "4"
+  volumes:
+    - name: workspace
+      persistentVolumeClaim:
+        claimName: crystalshards-workspace
+    - name: docker-socket
+      hostPath:
+        path: /var/run/docker.sock
+        type: Socket
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: crystalshards-workspace
+  namespace: claude
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard-rwo
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: claude-secrets
+  namespace: claude
+type: Opaque
+stringData:
+  api-key: "YOUR_CLAUDE_API_KEY_HERE"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-secrets
+  namespace: claude
+type: Opaque
+stringData:
+  token: "YOUR_GITHUB_TOKEN_HERE"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: claude
+data:
+  git-url: "https://github.com/crystalshards/monorepo.git"
+  git-branch: "main"
+  agent-name: "CrystalShards Agent"
+  agent-email: "agent@crystalshards.org"

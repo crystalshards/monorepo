@@ -1,0 +1,53 @@
+[tools]
+crystal = "latest"
+node = "latest"
+python = "latest"
+terraform = "latest"
+kubectl = "latest"
+helm = "latest"
+"npm:@anthropic-ai/claude-code" = "latest"
+
+[env]
+LUCKY_ENV = "development"
+CRYSTAL_WORKERS = "4"
+
+[tasks.setup]
+description = "Setup development environment"
+run = """
+#!/bin/bash
+echo "🔧 Setting up development environment..."
+
+# Install Lucky CLI if not present
+if ! command -v lucky &> /dev/null; then
+    echo "📦 Installing Lucky CLI..."
+    git clone https://github.com/luckyframework/lucky_cli.git /tmp/lucky_cli
+    cd /tmp/lucky_cli
+    shards build --production
+    sudo cp bin/lucky /usr/local/bin/
+    cd -
+    rm -rf /tmp/lucky_cli
+fi
+
+# Install Crystal dependencies
+echo "📦 Installing Crystal dependencies..."
+shards install || true
+
+# Install Node dependencies
+echo "📦 Installing Node dependencies..."
+npm install || true
+
+echo "✅ Setup complete!"
+"""
+
+[tasks.check]
+description = "Check all tools are installed"
+run = """
+#!/bin/bash
+echo "🔍 Checking tools..."
+echo "Crystal: $(crystal --version)"
+echo "Node: $(node --version)"
+echo "Python: $(python --version)"
+echo "Terraform: $(terraform --version)"
+echo "kubectl: $(kubectl version --client)"
+echo "Lucky: $(lucky --version || echo 'Not installed yet')"
+"""

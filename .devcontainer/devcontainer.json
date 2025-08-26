@@ -1,0 +1,50 @@
+{
+  "name": "CrystalShards Development",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true
+    },
+    "ghcr.io/devcontainers-extra/features/mise:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "crystal-lang-tools.crystal-lang",
+        "redhat.vscode-yaml",
+        "hashicorp.terraform",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "davidanson.vscode-markdownlint"
+      ]
+    }
+  },
+  "containerEnv": {
+    "WORKSPACE": "/workspaces/monorepo",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8",
+    "CLAUDE_CONFIG_DIR": "/workspaces/.cache/.claude",
+    "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
+    "GIT_AUTHOR_NAME": "CrystalShards Agent",
+    "GIT_AUTHOR_EMAIL": "agent@crystalshards.org",
+    "GIT_COMMITTER_NAME": "CrystalShards Agent",
+    "GIT_COMMITTER_EMAIL": "agent@crystalshards.org",
+    "MISE_TRUSTED_CONFIG_PATHS": "/workspaces/monorepo",
+    "PATH": "/root/.local/share/mise/shims:/root/.local/bin:${containerEnv:PATH}"
+  },
+  "postCreateCommand": ".devcontainer/onCreateCommand.sh",
+  "forwardPorts": [
+    3000,
+    3001,
+    5432,
+    6379
+  ],
+  "remoteUser": "claude",
+  "containerUser": "claude",
+  "workspaceFolder": "/workspaces/monorepo",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/monorepo,type=bind,consistency=cached"
+}

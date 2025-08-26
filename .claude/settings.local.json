@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(mv:*)",
+      "Bash(mkdir:*)",
+      "Bash(touch:*)",
+      "Bash(chmod:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(rm:*)",
+      "Bash(find:*)",
+      "Bash(tree:*)"
+    ]
+  },
+  "enabledMcpjsonServers": [
+    "context7",
+    "desktop-commander",
+    "github",
+    "playwright",
+    "postgres"
+  ]
+}
