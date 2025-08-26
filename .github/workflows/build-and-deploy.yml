@@ -29,7 +29,7 @@ jobs:
     
     strategy:
       matrix:
-        app: [shards-registry, shards-docs, crystalgigs, worker, admin]
+        app: [shards-registry, shards-docs, gigs, worker, admin]
         include:
           - app: shards-registry
             dockerfile: apps/shards-registry/Dockerfile
@@ -37,8 +37,8 @@ jobs:
           - app: shards-docs  
             dockerfile: apps/shards-docs/Dockerfile
             context: .
-          - app: crystalgigs
-            dockerfile: apps/crystalgigs/Dockerfile
+          - app: gigs
+            dockerfile: apps/gigs/Dockerfile
             context: .
           - app: worker
             dockerfile: apps/worker/Dockerfile
@@ -50,7 +50,7 @@ jobs:
     outputs:
       shards-registry-image: ${{ steps.image-tags.outputs.shards-registry }}
       shards-docs-image: ${{ steps.image-tags.outputs.shards-docs }}
-      crystalgigs-image: ${{ steps.image-tags.outputs.crystalgigs }}
+      gigs-image: ${{ steps.image-tags.outputs.gigs }}
       admin-image: ${{ steps.image-tags.outputs.admin }}
       worker-image: ${{ steps.image-tags.outputs.worker }}
 
@@ -171,11 +171,11 @@ jobs:
         mkdir -p generated-manifests
         
         # Generate deployment manifests for each app
-        for app in shards-registry shards-docs crystalgigs worker; do
+        for app in shards-registry shards-docs gigs worker; do
           namespace_map='{
             "shards-registry": "crystalshards",
             "shards-docs": "crystaldocs", 
-            "crystalgigs": "crystalgigs",
+            "gigs": "crystalgigs",
             "worker": "crystalshards"
           }'
           
@@ -267,11 +267,11 @@ jobs:
         kubectl apply -f generated-manifests/
         
         # Wait for deployments to be ready
-        for app in shards-registry shards-docs crystalgigs worker; do
+        for app in shards-registry shards-docs gigs worker; do
           namespace_map='{
             "shards-registry": "crystalshards",
             "shards-docs": "crystaldocs",
-            "crystalgigs": "crystalgigs", 
+            "gigs": "crystalgigs", 
             "worker": "crystalshards"
           }'
           
@@ -303,11 +303,11 @@ jobs:
         echo "Running smoke tests..."
         
         # Test each service health endpoint
-        for app in shards-registry shards-docs crystalgigs worker; do
+        for app in shards-registry shards-docs gigs worker; do
           namespace_map='{
             "shards-registry": "crystalshards",
             "shards-docs": "crystaldocs",
-            "crystalgigs": "crystalgigs",
+            "gigs": "crystalgigs",
             "worker": "crystalshards"  
           }'
           
