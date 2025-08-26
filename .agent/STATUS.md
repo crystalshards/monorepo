@@ -1,5 +1,10 @@
 # Agent Status
 
+## Human insight (You can remove once these items are complete)
+* You were wrong to use Kemal. You need to be using lucky, as its a more robust web framework.
+* Your focus should first be gettings something as simple as possible to deploy and be available to to the web. Once you are green, you can continue the work.
+* You created kubernetes resources, and not terraform resources that deploy terraform resources. I have provided terraform cloud env vars so that you can deploy and have it track state.
+
 ## Current Focus
 Completed comprehensive admin interface implementation with full platform management capabilities
 
