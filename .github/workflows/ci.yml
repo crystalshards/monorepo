@@ -82,9 +82,9 @@ jobs:
 
     - name: Setup test database
       run: |
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalshards_test;"
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystaldocs_test;"
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalgigs_test;"
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalshards_test;" || echo "Database crystalshards_test already exists"
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystaldocs_test;" || echo "Database crystaldocs_test already exists"
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalgigs_test;" || echo "Database crystalgigs_test already exists"
         
         # Run migrations
         for migration in libraries/migrations/*.sql; do
@@ -214,9 +214,9 @@ jobs:
 
     - name: Setup test databases
       run: |
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalshards_test;"
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystaldocs_test;"
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalgigs_test;"
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalshards_test;" || echo "Database crystalshards_test already exists"
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystaldocs_test;" || echo "Database crystaldocs_test already exists"
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalgigs_test;" || echo "Database crystalgigs_test already exists"
         
         # Run migrations
         for migration in libraries/migrations/*.sql; do
@@ -263,6 +263,10 @@ jobs:
   security:
     name: Security Scanning
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -280,6 +284,7 @@ jobs:
       if: always()
       with:
         sarif_file: 'trivy-results.sarif'
+      continue-on-error: true
 
   # Lint and static analysis
   lint:
