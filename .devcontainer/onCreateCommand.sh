@@ -44,6 +44,8 @@ echo "🤖 Configuring Claude..."
 CLAUDE_CONFIG_FILE="${CLAUDE_CONFIG_DIR}/claude-config.json"
 
 # Ensure config directory exists
+sudo chown -R $USER:$USER "/workspaces"
+mkdir -p "$CLAUDE_CONFIG_DIR"
 sudo mkdir -p "$CLAUDE_CONFIG_DIR"
 sudo chown -R $USER:$USER "$CLAUDE_CONFIG_DIR"
 

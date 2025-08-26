@@ -33,7 +33,8 @@ RUN apt-get -qq update && apt-get -qq install -y \
 WORKDIR /workspaces/monorepo
 
 # Ensure workspace directory exists
-RUN mkdir -p /workspace/monorepo
+RUN mkdir -p /workspaces/monorepo
+RUN chown claude:claude /workspaces
 
 # Set environment variables
 ENV LANG=C.UTF-8
