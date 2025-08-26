@@ -15,17 +15,14 @@ targets:
 dependencies:
   sidekiq:
     github: mperham/sidekiq.cr
-    version: ~> 0.14.0
   pg:
     github: will/crystal-pg
     version: ~> 0.29.0
   redis:
     github: stefanwille/crystal-redis
     version: ~> 2.9.1
-  http_client:
-    github: crystal-lang/http_client
-    version: ~> 0.1.0
-  cr-dotenv:
+  # http_client is part of Crystal standard library
+  dotenv:
     github: gdotdesign/cr-dotenv
     version: ~> 1.0.0
 

@@ -27,8 +27,7 @@ dependencies:
     version: ~> 1.6.0
   stripe:
     github: confact/stripe.cr
-    version: ~> 2.8.0
-  cr-dotenv:
+  dotenv:
     github: gdotdesign/cr-dotenv
     version: ~> 1.0.0
 
