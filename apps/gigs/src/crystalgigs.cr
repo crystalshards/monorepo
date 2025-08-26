@@ -5,6 +5,10 @@ require "jwt"
 require "stripe"
 require "cr-dotenv"
 
+# Load application services
+require "./services/stripe_service"
+require "./repositories/job_repository"
+
 # Load environment variables
 Dotenv.load
 
@@ -38,77 +42,143 @@ module CrystalGigs
   
   # Job board homepage
   get "/" do |env|
-    <<-HTML
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>CrystalGigs - Crystal Developer Jobs</title>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f8f9fa; }
-        .header { background: white; padding: 20px; border-bottom: 1px solid #ddd; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .hero { text-align: center; margin-bottom: 40px; }
-        .jobs { display: grid; gap: 20px; }
-        .job-card { background: white; padding: 20px; border-radius: 8px; border: 1px solid #ddd; }
-        .job-title { font-size: 18px; font-weight: 600; margin-bottom: 10px; }
-        .job-company { color: #666; margin-bottom: 10px; }
-        .job-location { color: #888; font-size: 14px; }
-        .job-salary { color: #28a745; font-weight: 600; }
-        .btn { background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; }
-        .btn-post { background: #28a745; }
-        .nav { display: flex; justify-content: space-between; align-items: center; }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <div class="container">
-          <div class="nav">
-            <h1>CrystalGigs</h1>
-            <div>
-              <a href="/post" class="btn btn-post">Post a Job ($99)</a>
-              <a href="/login" class="btn">Login</a>
+    begin
+      # Get recent jobs from database
+      jobs = JobRepository.get_all_jobs(approved_only: true, limit: 10, offset: 0)
+      
+      jobs_html = if jobs.empty?
+        <<-HTML
+        <div style="text-align: center; padding: 60px 20px; color: #666;">
+          <h3>No jobs posted yet</h3>
+          <p>Be the first to post a Crystal developer job!</p>
+          <a href="/post" class="btn btn-post">Post a Job ($99)</a>
+        </div>
+        HTML
+      else
+        jobs.map do |job|
+          description = job["description"].as_s
+          description_preview = description.size > 150 ? "#{description[0..150]}..." : description
+          
+          <<-HTML
+          <div class="job-card">
+            <div class="job-title">#{job["title"].as_s}</div>
+            <div class="job-company">#{job["company"].as_s}</div>
+            <div class="job-location">#{job["location"].as_s}</div>
+            #{job["salary_range"].as_s? ? %(<div class="job-salary">#{job["salary_range"].as_s}</div>) : ""}
+            <p>#{description_preview}</p>
+            <div style="margin-top: 15px; display: flex; justify-content: space-between; align-items: center;">
+              <span class="job-type" style="background: #e9ecef; padding: 4px 8px; border-radius: 4px; font-size: 12px;">
+                #{job["job_type"].as_s.capitalize}
+              </span>
+              <span style="font-size: 14px; color: #999;">
+                #{Time.parse_iso8601(job["created_at"].as_s).to_s("%B %d, %Y")}
+              </span>
+            </div>
+          </div>
+          HTML
+        end.join("\n")
+      end
+      
+      <<-HTML
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>CrystalGigs - Crystal Developer Jobs</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f8f9fa; }
+          .header { background: white; padding: 20px; border-bottom: 1px solid #ddd; }
+          .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+          .hero { text-align: center; margin-bottom: 40px; }
+          .jobs { display: grid; gap: 20px; }
+          .job-card { background: white; padding: 20px; border-radius: 8px; border: 1px solid #ddd; }
+          .job-title { font-size: 18px; font-weight: 600; margin-bottom: 10px; }
+          .job-company { color: #666; margin-bottom: 10px; font-weight: 500; }
+          .job-location { color: #888; font-size: 14px; margin-bottom: 8px; }
+          .job-salary { color: #28a745; font-weight: 600; margin-bottom: 10px; }
+          .btn { background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 4px; display: inline-block; }
+          .btn-post { background: #28a745; }
+          .nav { display: flex; justify-content: space-between; align-items: center; }
+          .stats { text-align: center; margin-bottom: 30px; color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="container">
+            <div class="nav">
+              <h1>CrystalGigs</h1>
+              <div>
+                <a href="/post" class="btn btn-post">Post a Job ($99)</a>
+                <a href="/api/v1/jobs" class="btn">API</a>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-      
-      <div class="container">
-        <div class="hero">
-          <h2>Find Your Next Crystal Developer Role</h2>
-          <p>The premier job board for Crystal language opportunities</p>
-        </div>
         
-        <div class="jobs">
-          <div class="job-card">
-            <div class="job-title">Senior Crystal Developer</div>
-            <div class="job-company">Example Company</div>
-            <div class="job-location">Remote / San Francisco</div>
-            <div class="job-salary">$120k - $160k</div>
-            <p>We're looking for an experienced Crystal developer to join our backend team...</p>
+        <div class="container">
+          <div class="hero">
+            <h2>Find Your Next Crystal Developer Role</h2>
+            <p>The premier job board for Crystal language opportunities</p>
           </div>
           
-          <div class="job-card">
-            <div class="job-title">Full Stack Crystal Engineer</div>
-            <div class="job-company">StartupCo</div>
-            <div class="job-location">New York, NY</div>
-            <div class="job-salary">$90k - $130k + equity</div>
-            <p>Join our fast-growing startup building high-performance web applications...</p>
+          #{jobs.size > 0 ? %(<div class="stats">#{jobs.size} active job#{jobs.size == 1 ? "" : "s"} available</div>) : ""}
+          
+          <div class="jobs">
+            #{jobs_html}
           </div>
           
-          <p style="text-align: center; color: #666; margin-top: 40px;">
-            More jobs coming soon! <a href="/post">Post your job</a> to reach Crystal developers.
-          </p>
+          #{jobs.size > 0 ? %(<p style="text-align: center; color: #666; margin-top: 40px;">Ready to hire Crystal developers? <a href="/post">Post your job</a> for $99.</p>) : ""}
         </div>
-      </div>
-    </body>
-    </html>
-    HTML
+      </body>
+      </html>
+      HTML
+      
+    rescue ex : Exception
+      puts "Homepage error: #{ex.message}"
+      # Fallback to basic HTML if database fails
+      <<-HTML
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>CrystalGigs - Crystal Developer Jobs</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f8f9fa; text-align: center; padding: 100px 20px; }
+          .btn { background: #28a745; color: white; padding: 15px 30px; text-decoration: none; border-radius: 4px; display: inline-block; }
+        </style>
+      </head>
+      <body>
+        <h1>CrystalGigs</h1>
+        <h2>Crystal Developer Jobs</h2>
+        <p>Database temporarily unavailable. Please try again later.</p>
+        <a href="/post" class="btn">Post a Job</a>
+      </body>
+      </html>
+      HTML
+    end
   end
   
   # Job posting form
   get "/post" do |env|
+    error_message = case env.params.query["error"]?
+    when "payment_cancelled"
+      "Payment was cancelled. Please try again."
+    when "payment_failed"
+      "Payment failed. Please check your payment details and try again."
+    when "job_data_expired"
+      "Your session expired. Please fill out the form again."
+    when "database_error"
+      "There was an error saving your job. Please contact support."
+    when "processing_error"
+      "There was an error processing your request. Please try again."
+    else
+      nil
+    end
+    
+    error_html = error_message ? %(<div style="background: #f8d7da; color: #721c24; padding: 15px; border-radius: 4px; margin-bottom: 20px;">#{error_message}</div>) : ""
+    
     <<-HTML
     <!DOCTYPE html>
     <html>
@@ -138,6 +208,8 @@ module CrystalGigs
       
       <div class="container">
         <h2>Post a Crystal Developer Job</h2>
+        
+        #{error_html}
         
         <div class="pricing">
           <div class="price">$99 for 30 days</div>
@@ -201,65 +273,197 @@ module CrystalGigs
   
   # Handle job submission
   post "/jobs" do |env|
-    # For now, just show success page
-    # TODO: Integrate with Stripe for payment processing
-    
-    <<-HTML
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Payment - CrystalGigs</title>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1">
-      <script src="https://js.stripe.com/v3/"></script>
-      <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f8f9fa; }
-        .container { max-width: 600px; margin: 100px auto; padding: 20px; background: white; border-radius: 8px; }
-        .btn { background: #28a745; color: white; padding: 15px 30px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; width: 100%; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h2>Complete Your Payment</h2>
-        <p>Job posting fee: <strong>$99</strong></p>
-        <p>Your job will be live for 30 days once payment is processed.</p>
-        
-        <div id="card-element">
-          <!-- Stripe Elements will create form elements here -->
+    begin
+      # Extract job data from form
+      job_data = {
+        "title" => env.params.body["title"]?.to_s,
+        "company" => env.params.body["company"]?.to_s,
+        "location" => env.params.body["location"]?.to_s,
+        "type" => env.params.body["type"]?.to_s,
+        "salary" => env.params.body["salary"]?.to_s,
+        "description" => env.params.body["description"]?.to_s,
+        "email" => env.params.body["email"]?.to_s,
+        "website" => env.params.body["website"]?.to_s
+      }
+      
+      # Validate required fields
+      required_fields = ["title", "company", "location", "type", "description", "email"]
+      missing_fields = required_fields.select { |field| job_data[field].empty? }
+      
+      if !missing_fields.empty?
+        env.response.status_code = 400
+        next "Error: Missing required fields: #{missing_fields.join(", ")}"
+      end
+      
+      # Store job data in Redis temporarily (for 1 hour)
+      job_key = "job_draft_#{Time.utc.to_unix_ms}"
+      REDIS.setex(job_key, 3600, job_data.to_json)
+      
+      # Create Stripe checkout session
+      base_url = "#{env.request.scheme}://#{env.request.host_with_port}"
+      success_url = "#{base_url}/payment/success?session_id={CHECKOUT_SESSION_ID}&job_key=#{job_key}"
+      cancel_url = "#{base_url}/post?error=payment_cancelled"
+      
+      checkout_result = StripeService.create_checkout_session(job_data, success_url, cancel_url)
+      
+      if checkout_result.nil?
+        env.response.status_code = 500
+        next "Error: Could not create payment session. Please try again."
+      end
+      
+      # Redirect to Stripe Checkout
+      env.redirect checkout_result[:checkout_url]
+      
+    rescue ex : Exception
+      puts "Error processing job submission: #{ex.message}"
+      env.response.status_code = 500
+      "Error: Could not process your job posting. Please try again."
+    end
+  end
+  
+  # Payment success page
+  get "/payment/success" do |env|
+    begin
+      session_id = env.params.query["session_id"]?
+      job_key = env.params.query["job_key"]?
+      
+      if !session_id || !job_key
+        env.redirect "/post?error=invalid_payment"
+        next
+      end
+      
+      # Verify payment with Stripe
+      session = StripeService.retrieve_session(session_id)
+      if !session || session.payment_status != "paid"
+        env.redirect "/post?error=payment_failed"
+        next
+      end
+      
+      # Get job data from Redis
+      job_data_json = REDIS.get(job_key)
+      if !job_data_json
+        env.redirect "/post?error=job_data_expired"
+        next
+      end
+      
+      job_data = JSON.parse(job_data_json).as_h.transform_values(&.as_s)
+      
+      # Create job posting in database
+      job_result = JobRepository.create_job(job_data, session_id)
+      if !job_result
+        env.redirect "/post?error=database_error"
+        next
+      end
+      
+      # Clean up Redis
+      REDIS.del(job_key)
+      
+      <<-HTML
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Payment Success - CrystalGigs</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; background: #f8f9fa; }
+          .container { max-width: 600px; margin: 100px auto; padding: 40px; background: white; border-radius: 8px; text-align: center; }
+          .success { color: #28a745; font-size: 48px; margin-bottom: 20px; }
+          .btn { background: #007bff; color: white; padding: 15px 30px; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="success">✓</div>
+          <h2>Payment Successful!</h2>
+          <p><strong>Thank you for your payment!</strong></p>
+          <p>Your job posting "<strong>#{job_data["title"]}</strong>" at <strong>#{job_data["company"]}</strong> has been submitted successfully.</p>
+          <p>Your job will be:</p>
+          <ul style="text-align: left; display: inline-block;">
+            <li>Live on CrystalGigs.com for 30 days</li>
+            <li>Featured in our job listings</li>
+            <li>Promoted to our newsletter subscribers</li>
+          </ul>
+          <p><strong>Job ID:</strong> ##{job_result[:id]}</p>
+          <p>You can view your job posting once it goes live (usually within 1 hour).</p>
+          <a href="/" class="btn">View All Jobs</a>
         </div>
+      </body>
+      </html>
+      HTML
+      
+    rescue ex : Exception
+      puts "Error in payment success: #{ex.message}"
+      env.redirect "/post?error=processing_error"
+    end
+  end
+  
+  # Stripe webhook handler
+  post "/webhook/stripe" do |env|
+    begin
+      payload = env.request.body.not_nil!.gets_to_end
+      sig_header = env.request.headers["Stripe-Signature"]?
+      
+      # For now, we'll trust the webhook since we're using checkout sessions
+      # In production, you should verify the webhook signature
+      
+      event = JSON.parse(payload)
+      
+      case event["type"]
+      when "checkout.session.completed"
+        session_data = event["data"]["object"]
+        session_id = session_data["id"].as_s
         
-        <button id="submit-payment" class="btn">Pay $99</button>
+        puts "Webhook: Checkout session completed - #{session_id}"
         
-        <p style="font-size: 14px; color: #666; margin-top: 20px;">
-          Stripe integration will be implemented here for secure payment processing.
-        </p>
-      </div>
-    </body>
-    </html>
-    HTML
+        # Additional webhook processing can be added here
+        # The main job creation is handled in the success page
+        
+      when "payment_intent.succeeded"
+        payment_intent = event["data"]["object"]
+        puts "Webhook: Payment succeeded - #{payment_intent["id"]}"
+      end
+      
+      env.response.status_code = 200
+      {status: "received"}.to_json
+      
+    rescue ex : Exception
+      puts "Webhook error: #{ex.message}"
+      env.response.status_code = 400
+      {error: "Invalid webhook"}.to_json
+    end
   end
   
   # API endpoints for jobs
   get "/api/v1/jobs" do |env|
     env.response.content_type = "application/json"
     
-    # Placeholder - will implement with database
-    {
-      jobs: [
-        {
-          id: 1,
-          title: "Senior Crystal Developer",
-          company: "Example Company",
-          location: "Remote / San Francisco",
-          salary: "$120k - $160k",
-          type: "full-time",
-          posted_at: "2025-08-26T00:00:00Z"
-        }
-      ],
-      total: 1,
-      page: 1,
-      per_page: 20
-    }.to_json
+    begin
+      # Get query parameters
+      limit = (env.params.query["limit"]?.try(&.to_i) || 20).clamp(1, 100)
+      offset = (env.params.query["offset"]?.try(&.to_i) || 0).clamp(0, Int32::MAX)
+      query = env.params.query["q"]?.to_s
+      
+      # Search or get all jobs
+      jobs = if !query.empty?
+        JobRepository.search_jobs(query, limit, offset)
+      else
+        JobRepository.get_all_jobs(approved_only: true, limit: limit, offset: offset)
+      end
+      
+      {
+        jobs: jobs,
+        total: jobs.size,
+        page: (offset / limit) + 1,
+        per_page: limit,
+        query: query
+      }.to_json
+      
+    rescue ex : Exception
+      puts "API error: #{ex.message}"
+      env.response.status_code = 500
+      {error: "Internal server error"}.to_json
+    end
   end
   
   # CORS middleware
