@@ -6,7 +6,7 @@
 * You created kubernetes resources, and not terraform resources that deploy terraform resources. I have provided terraform cloud env vars so that you can deploy and have it track state.
 
 ## Current Focus
-Created minimal deployable Crystal Shards Registry per human feedback. Next: Deploy to production using Terraform Cloud.
+Fixed CI/CD pipeline issues and authentication problems. Simple Crystal app is ready for deployment but waiting for GCP credentials to be configured by human. Meanwhile, working on Crystal compilation issues and Lucky framework migration preparation.
 
 ## Completed Tasks
 - ✅ Created monorepo directory structure
@@ -171,6 +171,12 @@ Created minimal deployable Crystal Shards Registry per human feedback. Next: Dep
   - ✅ Integrated rate limit headers (X-RateLimit-*) for API consumer feedback
   - ✅ Created background analytics cleanup jobs with configurable retention
   - ✅ Added comprehensive test coverage for rate limiting functionality
+- ✅ **Fixed additional CI/CD authentication and terraform issues (commits 8c70372, 9350879)**
+  - ✅ Updated Google Cloud authentication to use newer google-github-actions/auth@v2
+  - ✅ Fixed deprecated service_account_key parameter with credentials_json
+  - ✅ Removed duplicate terraform configuration files causing resource conflicts
+  - ✅ Updated simple-lucky-registry dependencies with fresh shard.lock
+  - ✅ Resolved terraform validation errors in CI pipeline
 - ✅ **Implemented real-time WebSocket notifications for admin dashboard (commits 3c1d4cb, 0dfb2c2, 34dd192)**
   - ✅ Created WebSocket endpoint /live with JWT authentication for real-time admin updates
   - ✅ Built comprehensive notification broadcasting system with multiple event types
@@ -243,10 +249,11 @@ Created minimal deployable Crystal Shards Registry per human feedback. Next: Dep
 
 ## Blockers & Issues
 - ✅ **RESOLVED**: Created simple deployment as requested - minimal Crystal app with no external dependencies
-- **REMAINING**: Need to deploy to production using Terraform Cloud (human provided env vars)
+- ✅ **RESOLVED**: Fixed CI/CD authentication and terraform validation issues
+- **REMAINING**: Need to deploy to production using Terraform Cloud - **BLOCKED: Missing GCP secrets (GCP_PROJECT_ID and GCP_SA_KEY) in GitHub repository**
 - **FUTURE**: Migrate to Lucky framework after confirming basic deployment works
-- CI pipeline has Crystal compilation issues (partially addressed with temporary workarounds)
-- Crystal compiler permission issues (worked around with Docker)
+- Crystal compiler permission issues with mise/pkg-config (partially worked around)
+- Lucky framework dependencies have compilation issues in CI environment
 
 ## Notes
 - Repository: https://github.com/crystalshards/monorepo.git
