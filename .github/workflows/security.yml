@@ -108,7 +108,7 @@ jobs:
     
     strategy:
       matrix:
-        app: [shards-registry, shards-docs, gigs, worker]
+        app: [shards-registry, shards-docs, gigs, worker, admin]
 
     steps:
     - name: Checkout code

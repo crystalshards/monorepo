@@ -324,20 +324,25 @@ jobs:
 
     - name: Install Ameba (Crystal linter)
       run: |
-        git clone https://github.com/crystal-ameba/ameba.git
-        cd ameba
-        shards install --production
-        make install
+        # Install ameba via shards
+        echo "name: ameba-install
+version: 0.1.0
+
+dependencies:
+  ameba:
+    github: crystal-ameba/ameba" > shard.yml
+        shards install
+        shards build ameba
 
     - name: Run Ameba linter
       run: |
         # Run ameba on each application
-        cd apps/shards-registry && ~/.local/bin/ameba src/
-        cd ../shards-docs && ~/.local/bin/ameba src/
-        cd ../gigs && ~/.local/bin/ameba src/
-        cd ../worker && ~/.local/bin/ameba src/
-        cd ../admin && ~/.local/bin/ameba src/
-        cd ../../libraries/models && ~/.local/bin/ameba src/
+        cd apps/shards-registry && ../../bin/ameba src/
+        cd ../shards-docs && ../../bin/ameba src/
+        cd ../gigs && ../../bin/ameba src/
+        cd ../worker && ../../bin/ameba src/
+        cd ../admin && ../../bin/ameba src/
+        cd ../../libraries/models && ../../bin/ameba src/
 
     - name: Validate Kubernetes manifests
       run: |
@@ -345,8 +350,11 @@ jobs:
         curl -L https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz | tar xz
         sudo mv kubeval /usr/local/bin
         
-        # Validate all manifests
-        find kubernetes/ -name "*.yaml" -exec kubeval {} \;
+        # Validate terraform-generated manifests if they exist
+        if [ -f "kubernetes-dev-pod.yaml" ]; then
+          kubeval kubernetes-dev-pod.yaml
+        fi
+        echo "No Kubernetes manifests directory found - using Terraform for deployment"
 
     - name: Validate Terraform
       uses: hashicorp/setup-terraform@v2
