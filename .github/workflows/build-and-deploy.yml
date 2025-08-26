@@ -62,12 +62,16 @@ jobs:
       uses: google-github-actions/auth@v2
       with:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+      if: ${{ secrets.GCP_SA_KEY || secrets.WIF_PROVIDER }}
 
     - name: Set up Google Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
+      if: ${{ secrets.GCP_SA_KEY || secrets.WIF_PROVIDER }}
 
     - name: Configure Docker to use gcloud as credential helper
       run: gcloud auth configure-docker
+      if: ${{ secrets.GCP_SA_KEY || secrets.WIF_PROVIDER }}
 
     - name: Build Docker image
       run: |
@@ -93,13 +97,18 @@ jobs:
 
     - name: Push Docker image
       run: |
-        docker push ${{ env.IMAGE_TAG }}
-        
-        # Also tag as latest for main branch
-        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
-          LATEST_TAG="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ matrix.app }}:latest"
-          docker tag ${{ env.IMAGE_TAG }} $LATEST_TAG
-          docker push $LATEST_TAG
+        if [ -n "${{ secrets.GCP_SA_KEY }}" ] || [ -n "${{ secrets.WIF_PROVIDER }}" ]; then
+          docker push ${{ env.IMAGE_TAG }}
+          
+          # Also tag as latest for main branch
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            LATEST_TAG="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ matrix.app }}:latest"
+            docker tag ${{ env.IMAGE_TAG }} $LATEST_TAG
+            docker push $LATEST_TAG
+          fi
+        else
+          echo "⚠️ Skipping Docker push - GCP credentials not configured"
+          echo "To enable deployment, configure GCP_SA_KEY or WIF_PROVIDER secret"
         fi
 
     - name: Set image tags output
@@ -113,6 +122,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'staging' }}
+    if: ${{ secrets.GCP_SA_KEY || secrets.WIF_PROVIDER }}
     
     steps:
     - name: Checkout code
@@ -122,6 +132,7 @@ jobs:
       uses: google-github-actions/auth@v2
       with:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
+        workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
 
     - name: Set up Google Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
