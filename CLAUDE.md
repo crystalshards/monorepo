@@ -118,7 +118,7 @@ rm -rf /tmp/* && docker system prune -f
 
 - Update task checkboxes in PROMPT.md
 - Log all actions with timestamps
-- Commit working code frequently
+- Commit and Push working code frequently
 - Use descriptive commit messages
 - Track blockers and dependencies
 

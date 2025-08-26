@@ -14,8 +14,6 @@ spec:
     - name: dev
       image: ghcr.io/coder/envbuilder:latest
       imagePullPolicy: Always
-      securityContext:
-        runAsNonRoot: true
       env:
         - name: ENVBUILDER_GIT_URL
           value: https://github.com/crystalshards/crystalshards-claude.git
@@ -28,7 +26,7 @@ spec:
         - name: ENVBUILDER_CACHE_REPO
           value: "" # Optional: Add cache repository for faster builds
         - name: ENVBUILDER_WORKSPACE_FOLDER
-          value: /workspaces/monrepo
+          value: /workspaces/monorepo
         - name: CLAUDE_CODE_OAUTH_TOKEN
           valueFrom:
             secretKeyRef:
@@ -49,7 +47,7 @@ spec:
           value: "agent@crystalshards.org"
       volumeMounts:
         - name: workspace
-          mountPath: /workspaces/monrepo
+          mountPath: /workspaces/monorepo
         - name: docker-socket
           mountPath: /var/run/docker.sock
       resources:

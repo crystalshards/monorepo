@@ -26,22 +26,19 @@ echo "Git URL: $GIT_URL"
 echo "Git Branch: $GIT_BRANCH"
 echo ""
 
-# Read the kubernetes-dev-pod.yaml and substitute environment variables
+# Delete existing resources
+echo "🧹 Cleaning up existing resources..."
+kubectl delete pod "$POD_NAME" -n "$NAMESPACE" --ignore-not-found=true --wait
+# kubectl delete pvc crystalshards-workspace -n "$NAMESPACE" --ignore-not-found=true --wait
+
+# Apply the manifest
+echo "📦 Creating resources..."
 cat kubernetes-dev-pod.yaml | \
     sed "s|YOUR_CLAUDE_API_KEY_HERE|$ANTHROPIC_API_KEY|g" | \
     sed "s|YOUR_GITHUB_TOKEN_HERE|$GITHUB_TOKEN|g" | \
     sed "s|crystalshards-agent|$POD_NAME|g" | \
     sed "s|ENVBUILDER_GIT_URL: https://github.com/crystalshards/crystalshards-claude.git|ENVBUILDER_GIT_URL: $GIT_URL|g" | \
-    sed "s|value: main|value: $GIT_BRANCH|g" > kubectl apply -f -
-
-# Delete existing resources
-echo "🧹 Cleaning up existing resources..."
-kubectl delete pod "$POD_NAME" -n "$NAMESPACE" --ignore-not-found=true --wait=false
-kubectl delete pvc crystalshards-workspace -n "$NAMESPACE" --ignore-not-found=true --wait=false
-
-# Apply the manifest
-echo "📦 Creating resources..."
-kubectl apply -f $TEMP_MANIFEST
+    sed "s|value: main|value: $GIT_BRANCH|g" | kubectl apply -f -
 
 # Wait for pod to be ready
 echo "⏳ Waiting for pod to be ready..."
