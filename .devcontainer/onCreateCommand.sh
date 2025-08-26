@@ -35,7 +35,6 @@ git config --global push.autoSetupRemote true
 # Configure GitHub CLI if token is available
 if [ -n "${GITHUB_TOKEN}" ]; then
     echo "🔐 Configuring GitHub CLI..."
-    echo "${GITHUB_TOKEN}" | gh auth login --with-token
     gh auth status
 fi
 
