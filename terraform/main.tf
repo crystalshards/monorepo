@@ -1,11 +1,11 @@
 terraform {
   required_version = ">= 1.0"
 
-  cloud {
-    organization = "crystalshards"
-    workspaces {
-      name = "crystalshards-monorepo"
-    }
+  # Use Terraform Cloud in production, local state in CI
+  # To use Terraform Cloud, set TF_CLOUD_ORGANIZATION and TF_WORKSPACE env vars
+  # and remove this backend block
+  backend "local" {
+    path = "terraform.tfstate"
   }
 
   required_providers {

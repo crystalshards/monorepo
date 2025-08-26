@@ -41,8 +41,8 @@ output "kubectl_config" {
 }
 
 output "load_balancer_ip" {
-  description = "External IP address of the load balancer"
-  value       = helm_release.nginx_ingress.status[0].load_balancer[0].ingress[0].ip
+  description = "External IP address of the load balancer - check manually with kubectl"
+  value       = "Use: kubectl get service -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
 }
 
 output "namespaces" {
