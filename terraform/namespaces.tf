@@ -3,7 +3,7 @@ resource "kubernetes_namespace" "claude" {
   metadata {
     name = "claude"
     labels = {
-      "app.kubernetes.io/name" = "claude-agent"
+      "app.kubernetes.io/name"    = "claude-agent"
       "app.kubernetes.io/part-of" = "crystalshards"
     }
   }
@@ -14,7 +14,7 @@ resource "kubernetes_namespace" "crystalshards" {
   metadata {
     name = "crystalshards"
     labels = {
-      "app.kubernetes.io/name" = "shards-registry"
+      "app.kubernetes.io/name"    = "shards-registry"
       "app.kubernetes.io/part-of" = "crystalshards"
     }
   }
@@ -25,7 +25,7 @@ resource "kubernetes_namespace" "crystaldocs" {
   metadata {
     name = "crystaldocs"
     labels = {
-      "app.kubernetes.io/name" = "shards-docs"
+      "app.kubernetes.io/name"    = "shards-docs"
       "app.kubernetes.io/part-of" = "crystalshards"
     }
   }
@@ -36,7 +36,7 @@ resource "kubernetes_namespace" "crystalgigs" {
   metadata {
     name = "crystalgigs"
     labels = {
-      "app.kubernetes.io/name" = "gigs-board"
+      "app.kubernetes.io/name"    = "gigs-board"
       "app.kubernetes.io/part-of" = "crystalshards"
     }
   }
@@ -47,7 +47,7 @@ resource "kubernetes_namespace" "infrastructure" {
   metadata {
     name = "infrastructure"
     labels = {
-      "app.kubernetes.io/name" = "infrastructure"
+      "app.kubernetes.io/name"    = "infrastructure"
       "app.kubernetes.io/part-of" = "crystalshards"
     }
   }
@@ -57,7 +57,7 @@ resource "kubernetes_namespace" "infrastructure" {
 # Network policies for namespace isolation
 resource "kubernetes_network_policy" "deny_all_ingress" {
   for_each = toset(["claude", "crystalshards", "crystaldocs", "crystalgigs", "infrastructure"])
-  
+
   metadata {
     name      = "deny-all-ingress"
     namespace = each.key

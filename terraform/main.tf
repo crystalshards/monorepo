@@ -1,5 +1,13 @@
 terraform {
   required_version = ">= 1.0"
+
+  cloud {
+    organization = "crystalshards"
+    workspaces {
+      name = "crystalshards-monorepo"
+    }
+  }
+
   required_providers {
     google = {
       source  = "hashicorp/google"
@@ -12,6 +20,10 @@ terraform {
     helm = {
       source  = "hashicorp/helm"
       version = "~> 2.11"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
     }
   }
 }

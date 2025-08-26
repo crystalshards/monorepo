@@ -5,9 +5,9 @@ resource "helm_release" "keda" {
   chart      = "keda"
   version    = "2.12.1"
   namespace  = "keda-system"
-  
+
   create_namespace = true
-  
+
   set {
     name  = "operator.replicaCount"
     value = "1"
@@ -131,7 +131,7 @@ resource "helm_release" "prometheus_operator" {
   chart      = "kube-prometheus-stack"
   version    = "54.2.2"
   namespace  = "monitoring"
-  
+
   create_namespace = true
 
   # Minimal configuration for cost optimization
@@ -139,15 +139,15 @@ resource "helm_release" "prometheus_operator" {
     yamlencode({
       prometheus = {
         prometheusSpec = {
-          replicas = 1
+          replicas  = 1
           retention = "7d"
           resources = {
             limits = {
-              cpu = "500m"
+              cpu    = "500m"
               memory = "1Gi"
             }
             requests = {
-              cpu = "100m"
+              cpu    = "100m"
               memory = "512Mi"
             }
           }
@@ -169,15 +169,15 @@ resource "helm_release" "prometheus_operator" {
         enabled = false
       }
       grafana = {
-        enabled = true
+        enabled  = true
         replicas = 1
         resources = {
           limits = {
-            cpu = "200m"
+            cpu    = "200m"
             memory = "512Mi"
           }
           requests = {
-            cpu = "100m"
+            cpu    = "100m"
             memory = "256Mi"
           }
         }
@@ -204,7 +204,7 @@ resource "helm_release" "nginx_ingress" {
   chart      = "ingress-nginx"
   version    = "4.8.3"
   namespace  = "ingress-nginx"
-  
+
   create_namespace = true
 
   set {

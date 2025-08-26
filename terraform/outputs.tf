@@ -48,10 +48,10 @@ output "load_balancer_ip" {
 output "namespaces" {
   description = "Created Kubernetes namespaces"
   value = {
-    claude          = kubernetes_namespace.claude.metadata[0].name
-    crystalshards   = kubernetes_namespace.crystalshards.metadata[0].name
-    crystaldocs     = kubernetes_namespace.crystaldocs.metadata[0].name
-    crystalgigs     = kubernetes_namespace.crystalgigs.metadata[0].name
-    infrastructure  = kubernetes_namespace.infrastructure.metadata[0].name
+    claude         = kubernetes_namespace.claude.metadata[0].name
+    crystalshards  = kubernetes_namespace.crystalshards.metadata[0].name
+    crystaldocs    = kubernetes_namespace.crystaldocs.metadata[0].name
+    crystalgigs    = kubernetes_namespace.crystalgigs.metadata[0].name
+    infrastructure = kubernetes_namespace.infrastructure.metadata[0].name
   }
 }

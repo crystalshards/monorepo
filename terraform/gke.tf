@@ -83,7 +83,7 @@ resource "google_container_node_pool" "primary_nodes" {
 
   # Auto-scaling configuration
   autoscaling {
-    min_node_count = 0  # Enable scale to zero
+    min_node_count = 0 # Enable scale to zero
     max_node_count = 10
   }
 

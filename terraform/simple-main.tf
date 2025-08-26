@@ -1,5 +1,71 @@
-# Simple deployment for minimal Crystal Shards Registry
-# Focus: Get something basic deployed and web-accessible first
+# Simple Terraform configuration for Cloud Run deployment only
+# This is a focused configuration for getting the simple app deployed
+
+terraform {
+  required_version = ">= 1.0"
+
+  cloud {
+    organization = "crystalshards"
+    workspaces {
+      name = "crystalshards-simple"
+    }
+  }
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 4.84"
+    }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
+  }
+}
+
+provider "google" {
+  project = var.project_id
+  region  = var.region
+}
+
+# Enable required APIs
+resource "google_project_service" "cloud_run_api" {
+  service = "run.googleapis.com"
+
+  disable_dependent_services = true
+}
+
+resource "google_project_service" "container_registry_api" {
+  service = "containerregistry.googleapis.com"
+
+  disable_dependent_services = true
+}
+
+# Build and push the container image
+resource "null_resource" "build_and_push" {
+  provisioner "local-exec" {
+    working_dir = "../apps/simple-registry"
+    command     = <<-EOT
+      # Build the Docker image
+      docker build -t gcr.io/${var.project_id}/simple-registry:latest .
+      
+      # Configure Docker to use gcloud as a credential helper
+      gcloud auth configure-docker --quiet
+      
+      # Push the image to Google Container Registry
+      docker push gcr.io/${var.project_id}/simple-registry:latest
+    EOT
+  }
+
+  # Trigger rebuild when source files change
+  triggers = {
+    dockerfile_hash = filemd5("../apps/simple-registry/Dockerfile")
+    source_hash     = filemd5("../apps/simple-registry/src/simple-registry.cr")
+    shard_hash      = filemd5("../apps/simple-registry/shard.yml")
+  }
+
+  depends_on = [google_project_service.container_registry_api]
+}
 
 # Google Cloud Run service for simple deployment
 resource "google_cloud_run_service" "simple_registry" {
@@ -59,7 +125,7 @@ resource "google_cloud_run_service" "simple_registry" {
     latest_revision = true
   }
 
-  depends_on = [google_project_service.cloud_run_api]
+  depends_on = [google_project_service.cloud_run_api, null_resource.build_and_push]
 }
 
 # Make the Cloud Run service publicly accessible
@@ -69,45 +135,6 @@ resource "google_cloud_run_service_iam_member" "public" {
   service  = google_cloud_run_service.simple_registry.name
   role     = "roles/run.invoker"
   member   = "allUsers"
-}
-
-# Enable required APIs
-resource "google_project_service" "cloud_run_api" {
-  service = "run.googleapis.com"
-
-  disable_dependent_services = true
-}
-
-resource "google_project_service" "container_registry_api" {
-  service = "containerregistry.googleapis.com"
-
-  disable_dependent_services = true
-}
-
-# Build and push the container image
-resource "null_resource" "build_and_push" {
-  provisioner "local-exec" {
-    working_dir = "../apps/simple-registry"
-    command     = <<-EOT
-      # Build the Docker image
-      docker build -t gcr.io/${var.project_id}/simple-registry:latest .
-      
-      # Configure Docker to use gcloud as a credential helper
-      gcloud auth configure-docker --quiet
-      
-      # Push the image to Google Container Registry
-      docker push gcr.io/${var.project_id}/simple-registry:latest
-    EOT
-  }
-
-  # Trigger rebuild when source files change
-  triggers = {
-    dockerfile_hash = filemd5("../apps/simple-registry/Dockerfile")
-    source_hash     = filemd5("../apps/simple-registry/src/simple-registry.cr")
-    shard_hash      = filemd5("../apps/simple-registry/shard.yml")
-  }
-
-  depends_on = [google_project_service.container_registry_api]
 }
 
 # Output the service URL
