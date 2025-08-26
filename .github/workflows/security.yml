@@ -37,6 +37,7 @@ jobs:
       if: always()
       with:
         sarif_file: 'trivy-results.sarif'
+        category: dependencies
 
   # Infrastructure security scan
   infrastructure-scan:
@@ -61,6 +62,7 @@ jobs:
       if: always()
       with:
         sarif_file: checkov-terraform.sarif
+        category: terraform
 
     - name: Run Checkov against Kubernetes manifests
       uses: bridgecrewio/checkov-action@master
@@ -76,6 +78,7 @@ jobs:
       if: always()
       with:
         sarif_file: checkov-k8s.sarif
+        category: kubernetes
 
   # Secret scanning
   secret-scan:
@@ -92,8 +95,8 @@ jobs:
       uses: trufflesecurity/trufflehog@main
       with:
         path: ./
-        base: main
-        head: HEAD
+        base: ${{ github.event.before || 'main' }}
+        head: ${{ github.sha }}
         extra_args: --debug --only-verified
 
   # Docker image security scan (runs after build)
@@ -126,6 +129,7 @@ jobs:
       if: always()
       with:
         sarif_file: 'trivy-image-${{ matrix.app }}.sarif'
+        category: container-${{ matrix.app }}
 
     - name: Run Docker Scout (if available)
       continue-on-error: true
@@ -171,7 +175,7 @@ jobs:
         done
 
     - name: Upload license report
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: license-report
         path: license-report.md
