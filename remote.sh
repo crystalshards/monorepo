@@ -2,11 +2,6 @@
 set -e
 
 # Check required environment variables
-if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
-    echo "❌ Missing CLAUDE_CODE_OAUTH_TOKEN"
-    exit 1
-fi
-
 if [ -z "$GITHUB_TOKEN" ]; then
     echo "❌ Missing GITHUB_TOKEN"
     exit 1

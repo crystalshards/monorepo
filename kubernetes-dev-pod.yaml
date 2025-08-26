@@ -68,11 +68,6 @@ spec:
           value: "true"
         - name: ENVBUILDER_GIT_CLONE_DEPTH
           value: "1"
-        - name: CLAUDE_CODE_OAUTH_TOKEN
-          valueFrom:
-            secretKeyRef:
-              name: claude-secrets
-              key: api-key
         - name: GITHUB_TOKEN
           valueFrom:
             secretKeyRef:
