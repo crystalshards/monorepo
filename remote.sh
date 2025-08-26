@@ -53,4 +53,4 @@ echo "🔍 kubectl describe pod $POD_NAME -n $NAMESPACE"
 echo "💻 kubectl exec -it $POD_NAME -n $NAMESPACE -- bash"
 echo "🗑️  kubectl delete -f kubernetes-dev-pod.yaml"
 echo "📜 Following logs (Ctrl+C to exit)..."
-kubectl logs -f "$POD_NAME" -n "$NAMESPACE"
+kubectl logs -f "$POD_NAME" -n "$NAMESPACE" -c agent
