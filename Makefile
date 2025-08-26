@@ -1,6 +1,6 @@
 # CrystalShards Development Makefile
 
-.PHONY: help setup build start stop test clean lint format install-deps migrate
+.PHONY: help setup build start stop test clean lint format install-deps migrate docs docs-serve
 
 # Default target
 help: ## Show this help message
@@ -135,3 +135,21 @@ dev: ## Start development environment
 	@echo "MailHog: http://localhost:8025"
 	@echo "MinIO: http://localhost:9001"
 	make start
+
+docs: ## Generate API documentation (validate OpenAPI spec)
+	@echo "Validating OpenAPI specification..."
+	@if command -v swagger-codegen-cli >/dev/null 2>&1; then \
+		swagger-codegen-cli validate -i docs/api/openapi.yml; \
+	elif command -v openapi-generator-cli >/dev/null 2>&1; then \
+		openapi-generator-cli validate -i docs/api/openapi.yml; \
+	else \
+		echo "✅ OpenAPI spec exists at docs/api/openapi.yml"; \
+		echo "💡 Install swagger-codegen-cli or openapi-generator-cli to validate"; \
+	fi
+	@echo "📚 API Documentation: file://$(PWD)/docs/api/index.html"
+	@echo "📄 OpenAPI Spec: $(PWD)/docs/api/openapi.yml"
+
+docs-serve: ## Serve interactive API documentation
+	@echo "🚀 Starting API documentation server..."
+	@echo "📚 Documentation: http://localhost:8080"
+	cd docs/api && ./serve.sh

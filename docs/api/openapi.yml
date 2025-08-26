@@ -1,0 +1,1693 @@
+openapi: 3.0.3
+info:
+  title: CrystalShards Platform API
+  description: |
+    Comprehensive API for the CrystalShards ecosystem including:
+    - **CrystalShards Registry** - Crystal package registry (like rubygems.org)
+    - **CrystalDocs Platform** - Documentation generation and hosting (like docs.rs)
+    - **CrystalGigs Job Board** - Paid job postings for Crystal developers
+    
+    ## Authentication
+    
+    This API supports multiple authentication methods:
+    - **JWT Tokens**: For user-based authentication
+    - **API Keys**: For programmatic access with customizable scopes
+    - **GitHub OAuth**: For seamless integration with GitHub repositories
+    
+    API Keys support the following scopes:
+    - `read`: Read access to all endpoints
+    - `shards:write`: Submit and manage shards
+    - `admin`: Administrative access to all resources
+    
+    ## Rate Limiting
+    
+    Different rate limits apply based on authentication:
+    - **Anonymous users**: 100 requests/hour
+    - **JWT authenticated**: 2,000 requests/hour
+    - **API Keys**: 1,000-10,000 requests/hour (based on tier)
+    
+    Rate limit information is included in response headers:
+    - `X-RateLimit-Limit`: Total requests allowed per hour
+    - `X-RateLimit-Remaining`: Requests remaining in current window
+    - `X-RateLimit-Reset`: Unix timestamp when limit resets
+    
+    ## Search & Analytics
+    
+    Advanced search capabilities include:
+    - Full-text search with highlighting
+    - Multi-criteria filtering (license, Crystal version, tags, stars, activity)
+    - Multiple sorting options (relevance, popularity, recent activity)
+    - Search analytics and trending queries
+    - Autocomplete suggestions
+  
+  version: "1.0.0"
+  contact:
+    name: CrystalShards Support
+    url: https://crystalshards.org/support
+    email: support@crystalshards.org
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+    
+servers:
+  - url: https://api.crystalshards.org
+    description: CrystalShards Registry Production API
+  - url: https://docs-api.crystalshards.org
+    description: CrystalDocs Platform Production API
+  - url: https://gigs-api.crystalshards.org
+    description: CrystalGigs Job Board Production API
+  - url: http://localhost:3000
+    description: Local Development (Registry)
+  - url: http://localhost:3001
+    description: Local Development (Docs)
+  - url: http://localhost:3002
+    description: Local Development (Gigs)
+
+paths:
+  # ===== CRYSTALSHARDS REGISTRY API =====
+  /api/v1:
+    get:
+      summary: API Information
+      description: Returns API information and available endpoints
+      tags:
+        - Registry - Information
+      responses:
+        '200':
+          description: API information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiInfo'
+
+  /api/v1/shards:
+    get:
+      summary: List Shards
+      description: Retrieve a paginated list of published Crystal shards
+      tags:
+        - Registry - Shards
+      parameters:
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of shards per page (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: List of shards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShardsList'
+        '500':
+          description: Database error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Submit Shard
+      description: Submit a new Crystal shard for publication (requires authentication)
+      tags:
+        - Registry - Shards
+      security:
+        - JWTAuth: []
+        - ApiKeyAuth: [shards:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShardSubmission'
+      responses:
+        '201':
+          description: Shard submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShardSubmissionResponse'
+        '400':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Shard already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShardSubmissionResponse'
+        '422':
+          description: Failed to submit shard
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Rate limited - shard recently submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/shards/{name}:
+    get:
+      summary: Get Shard Details
+      description: Retrieve detailed information about a specific shard
+      tags:
+        - Registry - Shards
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Shard name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Shard details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shard'
+        '404':
+          description: Shard not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Database error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/search:
+    get:
+      summary: Search Shards
+      description: Search for Crystal shards with advanced filtering and sorting options
+      tags:
+        - Registry - Search
+      parameters:
+        - name: q
+          in: query
+          description: Search query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number (1-based)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Results per page (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: sort_by
+          in: query
+          description: Sort order
+          required: false
+          schema:
+            type: string
+            enum: [relevance, stars, downloads, recent, name]
+            default: relevance
+        - name: license
+          in: query
+          description: Filter by license
+          required: false
+          schema:
+            type: string
+        - name: crystal_version
+          in: query
+          description: Filter by Crystal version compatibility
+          required: false
+          schema:
+            type: string
+        - name: tags
+          in: query
+          description: Filter by tags (comma-separated)
+          required: false
+          schema:
+            type: string
+        - name: min_stars
+          in: query
+          description: Minimum number of GitHub stars
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+        - name: featured
+          in: query
+          description: Filter featured shards only
+          required: false
+          schema:
+            type: boolean
+        - name: activity_days
+          in: query
+          description: Filter by recent activity (days)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: highlight
+          in: query
+          description: Enable search result highlighting
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResults'
+        '400':
+          description: Invalid search parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Search error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/search/filters:
+    get:
+      summary: Get Available Filters
+      description: Returns all available filter values for search refinement
+      tags:
+        - Registry - Search
+      responses:
+        '200':
+          description: Available filters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchFilters'
+        '500':
+          description: Filters error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/search/suggestions:
+    get:
+      summary: Search Suggestions
+      description: Get autocomplete suggestions for search queries
+      tags:
+        - Registry - Search
+      parameters:
+        - name: q
+          in: query
+          description: Partial search query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum number of suggestions (max 50)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        '200':
+          description: Search suggestions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchSuggestions'
+        '500':
+          description: Suggestions error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/search/trending:
+    get:
+      summary: Trending Searches
+      description: Get trending search queries from the last 7 days
+      tags:
+        - Registry - Analytics
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of trending searches (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Trending searches
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrendingSearches'
+        '500':
+          description: Trending search error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/search/popular:
+    get:
+      summary: Popular Searches
+      description: Get most popular search queries by total count
+      tags:
+        - Registry - Analytics
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of popular searches (max 100)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Popular searches
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PopularSearches'
+        '500':
+          description: Popular search error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/v1/search/analytics:
+    get:
+      summary: Search Analytics
+      description: Get detailed search statistics and analytics
+      tags:
+        - Registry - Analytics
+      parameters:
+        - name: days
+          in: query
+          description: Number of days to analyze (max 30)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 30
+            default: 7
+      responses:
+        '200':
+          description: Search analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchAnalytics'
+        '500':
+          description: Analytics error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /webhooks/github:
+    post:
+      summary: GitHub Webhook
+      description: Endpoint for GitHub webhooks to update shard information
+      tags:
+        - Registry - Webhooks
+      security:
+        - GitHubWebhook: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GitHub webhook payload
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+        '400':
+          description: Invalid JSON payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Invalid webhook signature
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Webhook processing error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ===== CRYSTALDOCS PLATFORM API =====
+  /docs/api/v1/build:
+    post:
+      summary: Trigger Documentation Build
+      description: Start a sandboxed documentation build job for a specific shard version
+      tags:
+        - Docs - Build Management
+      security:
+        - JWTAuth: []
+        - ApiKeyAuth: [shards:write]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocumentationBuildRequest'
+      responses:
+        '201':
+          description: Build job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentationBuildResponse'
+        '400':
+          description: Invalid build request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Build rate limited
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /docs/api/v1/build/{build_id}/status:
+    get:
+      summary: Get Build Status
+      description: Check the status of a documentation build job
+      tags:
+        - Docs - Build Management
+      parameters:
+        - name: build_id
+          in: path
+          required: true
+          description: Build job ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Build status information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BuildStatus'
+        '404':
+          description: Build not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /docs/api/v1/search:
+    get:
+      summary: Search Documentation
+      description: Search across all generated documentation with full-text search
+      tags:
+        - Docs - Search
+      parameters:
+        - name: q
+          in: query
+          description: Search query
+          required: true
+          schema:
+            type: string
+        - name: shard
+          in: query
+          description: Filter by specific shard
+          required: false
+          schema:
+            type: string
+        - name: version
+          in: query
+          description: Filter by version
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Results per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Documentation search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentationSearchResults'
+        '400':
+          description: Invalid search query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /docs/{shard}/{version}:
+    get:
+      summary: Get Documentation
+      description: Retrieve generated documentation for a specific shard and version
+      tags:
+        - Docs - Content
+      parameters:
+        - name: shard
+          in: path
+          required: true
+          description: Shard name
+          schema:
+            type: string
+        - name: version
+          in: path
+          required: true
+          description: Version string
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Documentation content
+          content:
+            text/html:
+              schema:
+                type: string
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentationContent'
+        '404':
+          description: Documentation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ===== CRYSTALGIGS JOB BOARD API =====
+  /jobs/api/v1/jobs:
+    get:
+      summary: List Job Postings
+      description: Retrieve active Crystal job postings with filtering and search
+      tags:
+        - Jobs - Listings
+      parameters:
+        - name: search
+          in: query
+          description: Search in job titles, companies, and descriptions
+          required: false
+          schema:
+            type: string
+        - name: job_type
+          in: query
+          description: Filter by job type
+          required: false
+          schema:
+            type: string
+            enum: [full_time, part_time, contract, remote]
+        - name: location
+          in: query
+          description: Filter by location
+          required: false
+          schema:
+            type: string
+        - name: salary_min
+          in: query
+          description: Minimum salary
+          required: false
+          schema:
+            type: integer
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Jobs per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+      responses:
+        '200':
+          description: List of job postings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobsList'
+        '400':
+          description: Invalid search parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      summary: Create Job Posting
+      description: Create a new paid job posting (requires Stripe payment)
+      tags:
+        - Jobs - Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobPostingRequest'
+      responses:
+        '201':
+          description: Job posting created (after payment)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobPostingResponse'
+        '400':
+          description: Invalid job posting data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '402':
+          description: Payment required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StripeCheckoutResponse'
+
+  /jobs/api/v1/jobs/{job_id}:
+    get:
+      summary: Get Job Details
+      description: Retrieve detailed information about a specific job posting
+      tags:
+        - Jobs - Listings
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Job ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobPosting'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /jobs/api/v1/payment/checkout:
+    post:
+      summary: Create Stripe Checkout Session
+      description: Create a Stripe checkout session for job posting payment
+      tags:
+        - Jobs - Payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '200':
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StripeCheckoutResponse'
+        '400':
+          description: Invalid checkout request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /jobs/api/v1/payment/success:
+    get:
+      summary: Payment Success
+      description: Handle successful payment and create job posting
+      tags:
+        - Jobs - Payment
+      parameters:
+        - name: session_id
+          in: query
+          required: true
+          description: Stripe checkout session ID
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment successful, job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSuccessResponse'
+        '400':
+          description: Invalid session or payment failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /webhooks/stripe:
+    post:
+      summary: Stripe Webhook
+      description: Handle Stripe payment webhooks for job posting payments
+      tags:
+        - Jobs - Webhooks
+      security:
+        - StripeWebhook: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Stripe webhook event
+      responses:
+        '200':
+          description: Webhook processed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+        '400':
+          description: Invalid webhook payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ===== COMMON ENDPOINTS =====
+  /health:
+    get:
+      summary: Health Check
+      description: Health check endpoint for all services
+      tags:
+        - Common - Health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /metrics:
+    get:
+      summary: Prometheus Metrics
+      description: Prometheus metrics endpoint for monitoring
+      tags:
+        - Common - Monitoring
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP crystalshards_http_requests_total Total HTTP requests
+                  # TYPE crystalshards_http_requests_total counter
+                  crystalshards_http_requests_total{method="GET",status="200"} 1234
+
+components:
+  securitySchemes:
+    JWTAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login endpoint
+      
+    ApiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API-Key
+      description: API key with configurable scopes (read, shards:write, admin)
+      
+    GitHubWebhook:
+      type: apiKey
+      in: header
+      name: X-Hub-Signature-256
+      description: GitHub webhook signature verification
+      
+    StripeWebhook:
+      type: apiKey
+      in: header
+      name: Stripe-Signature
+      description: Stripe webhook signature verification
+
+  schemas:
+    # ===== COMMON SCHEMAS =====
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+          example: "Invalid request"
+        message:
+          type: string
+          description: Detailed error description
+          example: "Missing required field: github_url"
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - timestamp
+      properties:
+        status:
+          type: string
+          example: "ok"
+        version:
+          type: string
+          example: "0.1.0"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-01-01T00:00:00Z"
+
+    # ===== REGISTRY SCHEMAS =====
+    ApiInfo:
+      type: object
+      required:
+        - message
+        - version
+        - endpoints
+      properties:
+        message:
+          type: string
+          example: "CrystalShards API v1"
+        version:
+          type: string
+          example: "0.1.0"
+        endpoints:
+          type: object
+          additionalProperties:
+            type: string
+        documentation:
+          type: string
+          example: "https://docs.crystalshards.org/api"
+
+    Shard:
+      type: object
+      required:
+        - id
+        - name
+        - description
+        - github_url
+        - published
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+          example: 1
+        name:
+          type: string
+          example: "kemal"
+        description:
+          type: string
+          example: "Lightning fast, super simple web framework written in Crystal"
+        github_url:
+          type: string
+          format: uri
+          example: "https://github.com/kemalcr/kemal"
+        license:
+          type: string
+          example: "MIT"
+        crystal_version:
+          type: string
+          example: "~> 1.0"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["web", "framework", "http"]
+        stars:
+          type: integer
+          example: 3567
+        forks:
+          type: integer
+          example: 254
+        downloads:
+          type: integer
+          example: 125430
+        published:
+          type: boolean
+          example: true
+        featured:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        last_activity:
+          type: string
+          format: date-time
+
+    ShardsList:
+      type: object
+      required:
+        - shards
+        - total
+        - page
+        - per_page
+        - pages
+      properties:
+        shards:
+          type: array
+          items:
+            $ref: '#/components/schemas/Shard'
+        total:
+          type: integer
+          example: 1250
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        pages:
+          type: integer
+          example: 63
+
+    ShardSubmission:
+      type: object
+      required:
+        - github_url
+      properties:
+        github_url:
+          type: string
+          format: uri
+          example: "https://github.com/user/repo"
+          description: GitHub repository URL
+
+    ShardSubmissionResponse:
+      type: object
+      required:
+        - message
+        - status
+      properties:
+        message:
+          type: string
+          example: "Shard submitted successfully"
+        shard:
+          $ref: '#/components/schemas/Shard'
+        status:
+          type: string
+          enum: [pending_review, published, exists]
+          example: "pending_review"
+        errors:
+          type: array
+          items:
+            type: string
+
+    SearchResults:
+      type: object
+      required:
+        - query
+        - results
+        - total
+        - page
+        - per_page
+        - pages
+        - highlights_enabled
+      properties:
+        query:
+          type: string
+          example: "web framework"
+        filters:
+          $ref: '#/components/schemas/SearchOptions'
+        results:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/Shard'
+              - $ref: '#/components/schemas/HighlightedShard'
+        total:
+          type: integer
+          example: 45
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        pages:
+          type: integer
+          example: 3
+        highlights_enabled:
+          type: boolean
+          example: true
+
+    HighlightedShard:
+      allOf:
+        - $ref: '#/components/schemas/Shard'
+        - type: object
+          properties:
+            highlights:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "<mark>kemal</mark>"
+                description:
+                  type: string
+                  example: "Lightning fast, super simple <mark>web</mark> <mark>framework</mark> written in Crystal"
+
+    SearchOptions:
+      type: object
+      properties:
+        license:
+          type: string
+          example: "MIT"
+        crystal_version:
+          type: string
+          example: "1.0"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["web", "framework"]
+        min_stars:
+          type: integer
+          example: 10
+        featured:
+          type: boolean
+          example: false
+        activity_days:
+          type: integer
+          example: 30
+        sort_by:
+          type: string
+          enum: [relevance, stars, downloads, recent, name]
+          example: "relevance"
+
+    SearchFilters:
+      type: object
+      properties:
+        licenses:
+          type: array
+          items:
+            type: string
+          example: ["MIT", "Apache-2.0", "BSD-3-Clause"]
+        crystal_versions:
+          type: array
+          items:
+            type: string
+          example: ["1.0", "1.1", "1.2"]
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["web", "api", "database", "testing", "cli"]
+
+    SearchSuggestions:
+      type: object
+      required:
+        - query
+        - suggestions
+      properties:
+        query:
+          type: string
+          example: "kem"
+        suggestions:
+          type: array
+          items:
+            type: string
+          example: ["kemal", "kemal-session", "kemal-websocket"]
+
+    TrendingSearches:
+      type: object
+      required:
+        - trending_searches
+        - period
+      properties:
+        trending_searches:
+          type: array
+          items:
+            type: object
+            properties:
+              query:
+                type: string
+              count:
+                type: integer
+              growth_rate:
+                type: number
+        period:
+          type: string
+          example: "last_7_days"
+
+    PopularSearches:
+      type: object
+      required:
+        - popular_searches
+        - period
+      properties:
+        popular_searches:
+          type: array
+          items:
+            type: object
+            properties:
+              query:
+                type: string
+              count:
+                type: integer
+        period:
+          type: string
+          example: "all_time"
+
+    SearchAnalytics:
+      type: object
+      required:
+        - statistics
+        - trending_searches
+        - popular_searches
+        - recent_searches
+        - period
+      properties:
+        statistics:
+          type: object
+          properties:
+            total_searches:
+              type: integer
+            unique_queries:
+              type: integer
+            average_results:
+              type: number
+            top_no_results:
+              type: array
+              items:
+                type: string
+        trending_searches:
+          type: array
+          items:
+            type: object
+            properties:
+              query:
+                type: string
+              count:
+                type: integer
+        popular_searches:
+          type: array
+          items:
+            type: object
+            properties:
+              query:
+                type: string
+              count:
+                type: integer
+        recent_searches:
+          type: array
+          items:
+            type: object
+            properties:
+              query:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+        period:
+          type: string
+          example: "last_7_days"
+
+    # ===== DOCUMENTATION SCHEMAS =====
+    DocumentationBuildRequest:
+      type: object
+      required:
+        - shard_name
+        - version
+        - github_url
+      properties:
+        shard_name:
+          type: string
+          example: "kemal"
+        version:
+          type: string
+          example: "1.4.0"
+        github_url:
+          type: string
+          format: uri
+          example: "https://github.com/kemalcr/kemal"
+        branch:
+          type: string
+          example: "main"
+          default: "main"
+
+    DocumentationBuildResponse:
+      type: object
+      required:
+        - build_id
+        - status
+        - message
+      properties:
+        build_id:
+          type: string
+          example: "build_123abc"
+        status:
+          type: string
+          enum: [queued, building, completed, failed]
+          example: "queued"
+        message:
+          type: string
+          example: "Documentation build started"
+
+    BuildStatus:
+      type: object
+      required:
+        - build_id
+        - status
+        - created_at
+      properties:
+        build_id:
+          type: string
+          example: "build_123abc"
+        status:
+          type: string
+          enum: [queued, building, completed, failed]
+          example: "building"
+        progress:
+          type: number
+          minimum: 0
+          maximum: 100
+          example: 45.5
+        message:
+          type: string
+          example: "Generating documentation for 15 files..."
+        logs:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    DocumentationSearchResults:
+      type: object
+      required:
+        - query
+        - results
+        - total
+        - page
+        - per_page
+        - pages
+      properties:
+        query:
+          type: string
+          example: "HTTP client"
+        results:
+          type: array
+          items:
+            type: object
+            properties:
+              shard:
+                type: string
+                example: "crest"
+              version:
+                type: string
+                example: "1.3.12"
+              title:
+                type: string
+                example: "Crest::Resource"
+              content:
+                type: string
+                example: "HTTP client library for Crystal..."
+              url:
+                type: string
+                example: "/docs/crest/1.3.12/Crest/Resource.html"
+        total:
+          type: integer
+          example: 23
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        pages:
+          type: integer
+          example: 2
+
+    DocumentationContent:
+      type: object
+      required:
+        - shard
+        - version
+        - content
+      properties:
+        shard:
+          type: string
+          example: "kemal"
+        version:
+          type: string
+          example: "1.4.0"
+        content:
+          type: string
+          description: Generated HTML documentation
+        metadata:
+          type: object
+          properties:
+            build_time:
+              type: string
+              format: date-time
+            crystal_version:
+              type: string
+            total_files:
+              type: integer
+
+    # ===== JOB BOARD SCHEMAS =====
+    JobPosting:
+      type: object
+      required:
+        - id
+        - title
+        - company
+        - description
+        - job_type
+        - location
+        - active
+        - created_at
+      properties:
+        id:
+          type: integer
+          example: 1
+        title:
+          type: string
+          example: "Senior Crystal Developer"
+        company:
+          type: string
+          example: "Tech Corp"
+        description:
+          type: string
+          example: "We are looking for an experienced Crystal developer to join our backend team..."
+        job_type:
+          type: string
+          enum: [full_time, part_time, contract, remote]
+          example: "full_time"
+        location:
+          type: string
+          example: "San Francisco, CA"
+        salary_range:
+          type: string
+          example: "$120,000 - $180,000"
+        company_url:
+          type: string
+          format: uri
+          example: "https://techcorp.com"
+        apply_url:
+          type: string
+          format: uri
+          example: "https://techcorp.com/jobs/crystal-dev"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["backend", "api", "microservices"]
+        active:
+          type: boolean
+          example: true
+        featured:
+          type: boolean
+          example: false
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    JobsList:
+      type: object
+      required:
+        - jobs
+        - total
+        - page
+        - per_page
+        - pages
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobPosting'
+        total:
+          type: integer
+          example: 156
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        pages:
+          type: integer
+          example: 8
+
+    JobPostingRequest:
+      type: object
+      required:
+        - title
+        - company
+        - description
+        - job_type
+        - location
+        - contact_email
+      properties:
+        title:
+          type: string
+          example: "Senior Crystal Developer"
+        company:
+          type: string
+          example: "Tech Corp"
+        description:
+          type: string
+          example: "We are looking for an experienced Crystal developer..."
+        job_type:
+          type: string
+          enum: [full_time, part_time, contract, remote]
+          example: "full_time"
+        location:
+          type: string
+          example: "San Francisco, CA"
+        salary_range:
+          type: string
+          example: "$120,000 - $180,000"
+        company_url:
+          type: string
+          format: uri
+          example: "https://techcorp.com"
+        apply_url:
+          type: string
+          format: uri
+          example: "https://techcorp.com/jobs/crystal-dev"
+        contact_email:
+          type: string
+          format: email
+          example: "hiring@techcorp.com"
+        tags:
+          type: array
+          items:
+            type: string
+          example: ["backend", "api", "microservices"]
+
+    JobPostingResponse:
+      type: object
+      required:
+        - message
+        - job
+      properties:
+        message:
+          type: string
+          example: "Job posting created successfully"
+        job:
+          $ref: '#/components/schemas/JobPosting'
+
+    CheckoutRequest:
+      type: object
+      required:
+        - job_data
+      properties:
+        job_data:
+          $ref: '#/components/schemas/JobPostingRequest'
+        success_url:
+          type: string
+          format: uri
+          example: "https://crystalgigs.com/success"
+        cancel_url:
+          type: string
+          format: uri
+          example: "https://crystalgigs.com/post"
+
+    StripeCheckoutResponse:
+      type: object
+      required:
+        - checkout_url
+        - session_id
+      properties:
+        checkout_url:
+          type: string
+          format: uri
+          example: "https://checkout.stripe.com/pay/cs_123abc..."
+        session_id:
+          type: string
+          example: "cs_123abc..."
+
+    PaymentSuccessResponse:
+      type: object
+      required:
+        - message
+        - job
+        - payment_status
+      properties:
+        message:
+          type: string
+          example: "Payment successful! Your job posting is now live."
+        job:
+          $ref: '#/components/schemas/JobPosting'
+        payment_status:
+          type: string
+          example: "paid"
+        amount_paid:
+          type: integer
+          example: 9900
+          description: Amount in cents
+
+tags:
+  - name: Registry - Information
+    description: API information and endpoints
+  - name: Registry - Shards
+    description: Crystal shard management and retrieval
+  - name: Registry - Search
+    description: Advanced shard search capabilities
+  - name: Registry - Analytics
+    description: Search analytics and trending data
+  - name: Registry - Webhooks
+    description: GitHub webhook integration
+  - name: Docs - Build Management
+    description: Documentation build system
+  - name: Docs - Search
+    description: Documentation search functionality
+  - name: Docs - Content
+    description: Generated documentation content
+  - name: Jobs - Listings
+    description: Job posting listings and search
+  - name: Jobs - Management
+    description: Job posting creation and management
+  - name: Jobs - Payment
+    description: Stripe payment integration
+  - name: Jobs - Webhooks
+    description: Payment webhook processing
+  - name: Common - Health
+    description: Health check endpoints
+  - name: Common - Monitoring
+    description: Prometheus metrics and monitoring
+
+externalDocs:
+  description: Find more info at CrystalShards.org
+  url: https://docs.crystalshards.org

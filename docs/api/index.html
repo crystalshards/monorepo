@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CrystalShards Platform API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui.css" />
+    <link rel="icon" type="image/png" href="https://crystalshards.org/favicon.png" sizes="32x32" />
+    <link rel="icon" type="image/png" href="https://crystalshards.org/favicon.png" sizes="16x16" />
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow: -moz-scrollbars-vertical;
+            overflow-y: scroll;
+        }
+
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+
+        body {
+            margin: 0;
+            background: #fafafa;
+        }
+
+        .swagger-ui .topbar {
+            background-color: #667eea;
+            background-image: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .swagger-ui .topbar .download-url-wrapper {
+            display: none;
+        }
+
+        .swagger-ui .info .title {
+            color: #333;
+        }
+
+        .swagger-ui .info .description p {
+            color: #666;
+        }
+
+        /* Custom styling for better readability */
+        .swagger-ui .opblock-summary-description {
+            font-weight: 500;
+        }
+
+        .swagger-ui .opblock .opblock-summary-method {
+            min-width: 80px;
+        }
+
+        /* Crystal-themed colors */
+        .swagger-ui .opblock.opblock-post {
+            border-color: #764ba2;
+        }
+
+        .swagger-ui .opblock.opblock-get {
+            border-color: #667eea;
+        }
+
+        .swagger-ui .opblock.opblock-put {
+            border-color: #f093fb;
+        }
+
+        .swagger-ui .opblock.opblock-delete {
+            border-color: #ffecd2;
+        }
+
+        /* Header customization */
+        .api-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 0;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .api-header h1 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+
+        .api-header p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+
+        .api-links {
+            background: white;
+            padding: 15px;
+            margin: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .api-links h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .api-links a {
+            display: inline-block;
+            margin: 5px 10px 5px 0;
+            padding: 8px 16px;
+            background: #f8f9fa;
+            color: #007bff;
+            text-decoration: none;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            transition: all 0.2s;
+        }
+
+        .api-links a:hover {
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+        }
+
+        .footer {
+            background: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            margin-top: 40px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="api-header">
+        <h1>CrystalShards Platform API</h1>
+        <p>Comprehensive API for Crystal package registry, documentation, and job board</p>
+    </div>
+
+    <div class="api-links">
+        <h3>🚀 Quick Links</h3>
+        <a href="https://crystalshards.org">CrystalShards Registry</a>
+        <a href="https://crystaldocs.org">CrystalDocs Platform</a>
+        <a href="https://crystalgigs.com">CrystalGigs Job Board</a>
+        <a href="https://github.com/crystalshards/monorepo">GitHub Repository</a>
+        <a href="openapi.yml" download>Download OpenAPI Spec</a>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <div class="footer">
+        <p>
+            📚 <strong>CrystalShards Platform API v1.0.0</strong><br>
+            Built with ❤️ for the Crystal community<br>
+            <a href="https://github.com/crystalshards/monorepo/issues">Report Issues</a> |
+            <a href="mailto:support@crystalshards.org">Contact Support</a>
+        </p>
+    </div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-bundle.js" charset="UTF-8"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-standalone-preset.js" charset="UTF-8"></script>
+    <script>
+        window.onload = function() {
+            // Begin Swagger UI call region
+            const ui = SwaggerUIBundle({
+                url: './openapi.yml',
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "StandaloneLayout",
+                // Custom configuration
+                displayRequestDuration: true,
+                docExpansion: "none",
+                filter: true,
+                showExtensions: true,
+                showCommonExtensions: true,
+                tryItOutEnabled: true,
+                requestSnippetsEnabled: true,
+                requestSnippets: {
+                    generators: {
+                        "curl_bash": {
+                            title: "cURL (bash)",
+                            syntax: "bash"
+                        },
+                        "curl_powershell": {
+                            title: "cURL (PowerShell)",
+                            syntax: "powershell"
+                        },
+                        "curl_cmd": {
+                            title: "cURL (CMD)",
+                            syntax: "bash"
+                        }
+                    },
+                    defaultExpanded: false,
+                    languages: null // null = use default languages
+                },
+                // Add custom server selection
+                onComplete: function() {
+                    // Add custom styling after load
+                    console.log("CrystalShards API Documentation loaded successfully!");
+                    
+                    // Add version info to the page
+                    const infoSection = document.querySelector('.info');
+                    if (infoSection) {
+                        const versionBadge = document.createElement('div');
+                        versionBadge.innerHTML = '<span style="background: #667eea; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin-left: 10px;">v1.0.0</span>';
+                        infoSection.appendChild(versionBadge);
+                    }
+                }
+            });
+            // End Swagger UI call region
+
+            window.ui = ui;
+        };
+    </script>
+</body>
+</html>
