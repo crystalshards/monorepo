@@ -10,6 +10,20 @@ metadata:
   namespace: claude
 spec:
   restartPolicy: Always
+  initContainers:
+    - name: fix-permissions
+      image: busybox:1.35
+      command:
+        [
+          "sh",
+          "-c",
+          "chown -R 1000:1000 /workspaces && chmod -R 755 /workspaces",
+        ]
+      volumeMounts:
+        - name: workspaces
+          mountPath: /workspaces
+      securityContext:
+        runAsUser: 0
   containers:
     - name: dind
       image: docker:24-dind
@@ -21,8 +35,8 @@ spec:
       volumeMounts:
         - name: docker-storage
           mountPath: /var/lib/docker
-        - name: workspace
-          mountPath: /workspaces/monorepo
+        - name: workspaces
+          mountPath: /workspaces
       resources:
         requests:
           memory: "2Gi"
@@ -69,8 +83,8 @@ spec:
         - name: GIT_COMMITTER_EMAIL
           value: "agent@crystalshards.org"
       volumeMounts:
-        - name: workspace
-          mountPath: /workspaces/monorepo
+        - name: workspaces
+          mountPath: /workspaces
       resources:
         requests:
           memory: "4Gi"
@@ -79,9 +93,9 @@ spec:
           memory: "8Gi"
           cpu: "4"
   volumes:
-    - name: workspace
+    - name: workspaces
       persistentVolumeClaim:
-        claimName: crystalshards-workspace
+        claimName: crystalshards-workspaces
     - name: docker-storage
       persistentVolumeClaim:
         claimName: crystalshards-docker-storage
