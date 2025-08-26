@@ -7,10 +7,13 @@ require "yaml"
 require "openssl/hmac"
 require "digest/md5"
 require "base64"
+require "./models/auth_models"
 require "./repositories/shard_repository"
 require "./search_options"
 require "./services/shard_submission_service"
 require "./services/search_analytics_service"
+require "./middleware/auth_middleware"
+require "./controllers/auth_controller"
 require "./metrics"
 
 # Load environment variables
@@ -33,6 +36,9 @@ module CrystalShards
   shard_repo = ShardRepository.new(DB)
   submission_service = ShardSubmissionService.new(DB, REDIS)
   analytics_service = SearchAnalyticsService.new(REDIS)
+  
+  # Add authentication middleware
+  add_handler CrystalShards::AuthMiddleware.new
   
   # Add metrics middleware
   add_handler Metrics::MetricsHandler.new
@@ -301,9 +307,19 @@ module CrystalShards
     end
   end
   
-  # Shard submission endpoint
+  # Shard submission endpoint (requires authentication)
   post "/api/v1/shards" do |env|
     env.response.content_type = "application/json"
+    
+    # Require authentication for shard submission
+    user = CrystalShards.require_auth(env)
+    next if user.nil?
+    
+    # Check API key scope if using API key authentication
+    unless CrystalShards.check_api_scope(env, "shards:write")
+      env.response.status_code = 403
+      next {error: "Insufficient permissions. Required scope: shards:write"}.to_json
+    end
     
     # Parse request body
     begin
