@@ -1,0 +1,22 @@
+name: crystal_shared_models
+version: 0.1.0
+
+authors:
+  - CrystalShards Team <team@crystalshards.org>
+
+crystal: 1.14.0
+
+license: MIT
+
+dependencies:
+  pg:
+    github: will/crystal-pg
+    version: ~> 0.29.0
+  json:
+    github: crystal-lang/json
+    version: ~> 0.1.0
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    version: ~> 1.6.1
