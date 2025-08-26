@@ -170,23 +170,23 @@ module CrystalShardsAdmin
               "SELECT id, name, description, github_url, stars, published, created_at FROM shards ORDER BY created_at DESC LIMIT $1 OFFSET $2"
             end
     
-    result = [] of Hash(Symbol, Int32 | String | String? | Bool | Time)
+    result = Array(Hash(Symbol, Int32 | String | String? | Bool | Time)).new
     REGISTRY_DB.query(query, per_page, offset) do |rs|
       rs.each do
-        result << {
-          id: rs.read(Int32),
-          name: rs.read(String),
-          description: rs.read(String?),
-          github_url: rs.read(String),
-          stars: rs.read(Int32),
-          published: rs.read(Bool),
-          created_at: rs.read(Time)
-        }
+        shard = Hash(Symbol, Int32 | String | String? | Bool | Time).new
+        shard[:id] = rs.read(Int32)
+        shard[:name] = rs.read(String)
+        shard[:description] = rs.read(String?)
+        shard[:github_url] = rs.read(String)
+        shard[:stars] = rs.read(Int32)
+        shard[:published] = rs.read(Bool)
+        shard[:created_at] = rs.read(Time)
+        result << shard
       end
     end
     result
   rescue
-    [] of Hash(Symbol, Int32 | String | String? | Bool | Time)
+    Array(Hash(Symbol, Int32 | String | String? | Bool | Time)).new
   end
   
   def self.count_shards_for_review(status)
@@ -237,7 +237,7 @@ module CrystalShardsAdmin
   end
   
   def self.get_job_postings(offset, per_page)
-    result = [] of Hash(Symbol, Int32 | Int32? | String | String? | Bool | Time)
+    result = Array(Hash(Symbol, Int32 | Int32? | String | String? | Bool | Time)).new
     GIGS_DB.query("
       SELECT id, company, title, location, salary_min, salary_max, active, created_at 
       FROM job_postings 
@@ -245,21 +245,21 @@ module CrystalShardsAdmin
       LIMIT $1 OFFSET $2
     ", per_page, offset) do |rs|
       rs.each do
-        result << {
-          id: rs.read(Int32),
-          company: rs.read(String),
-          title: rs.read(String),
-          location: rs.read(String?),
-          salary_min: rs.read(Int32?),
-          salary_max: rs.read(Int32?),
-          active: rs.read(Bool),
-          created_at: rs.read(Time)
-        }
+        job = Hash(Symbol, Int32 | Int32? | String | String? | Bool | Time).new
+        job[:id] = rs.read(Int32)
+        job[:company] = rs.read(String)
+        job[:title] = rs.read(String)
+        job[:location] = rs.read(String?)
+        job[:salary_min] = rs.read(Int32?)
+        job[:salary_max] = rs.read(Int32?)
+        job[:active] = rs.read(Bool)
+        job[:created_at] = rs.read(Time)
+        result << job
       end
     end
     result
   rescue
-    [] of Hash(Symbol, Int32 | Int32? | String | String? | Bool | Time)
+    Array(Hash(Symbol, Int32 | Int32? | String | String? | Bool | Time)).new
   end
   
   def self.count_job_postings
@@ -288,7 +288,7 @@ module CrystalShardsAdmin
   end
   
   def self.get_recent_builds
-    result = [] of Hash(Symbol, String | String? | Time)
+    result = Array(Hash(Symbol, String | String? | Time)).new
     DOCS_DB.query("
       SELECT shard_name, version, status, created_at, build_logs
       FROM documentation 
@@ -296,18 +296,18 @@ module CrystalShardsAdmin
       LIMIT 50
     ") do |rs|
       rs.each do
-        result << {
-          shard_name: rs.read(String),
-          version: rs.read(String),
-          status: rs.read(String),
-          created_at: rs.read(Time),
-          build_logs: rs.read(String?)
-        }
+        build = Hash(Symbol, String | String? | Time).new
+        build[:shard_name] = rs.read(String)
+        build[:version] = rs.read(String)
+        build[:status] = rs.read(String)
+        build[:created_at] = rs.read(Time)
+        build[:build_logs] = rs.read(String?)
+        result << build
       end
     end
     result
   rescue
-    [] of Hash(Symbol, String | String? | Time)
+    Array(Hash(Symbol, String | String? | Time)).new
   end
   
   # WebSocket endpoint for real-time notifications
@@ -976,7 +976,7 @@ module CrystalShardsAdmin
             
             <div class="shard-list">
                 #{shards.map { |shard|
-                  actions_html = unless shard[:published]
+                  actions_html = unless shard[:published].as(Bool)
                     %(<div class="actions">
                         <form action="/shards/#{shard[:id]}/approve" method="POST" style="display: inline;">
                             <input type="hidden" name="action" value="approve">
@@ -998,13 +998,13 @@ module CrystalShardsAdmin
                           <p>#{shard[:description] || "No description available"}</p>
                           <div class="shard-meta">
                               <span>⭐ #{shard[:stars]} stars</span>
-                              <span>📅 #{shard[:created_at].to_s("%Y-%m-%d")}</span>
+                              <span>📅 #{shard[:created_at].as(Time).to_s("%Y-%m-%d")}</span>
                               <span>🔗 <a href="#{shard[:github_url]}" target="_blank">GitHub</a></span>
                           </div>
                       </div>
                       <div>
-                          <span class="status-badge #{shard[:published] ? "status-published" : "status-pending"}">
-                              #{shard[:published] ? "Published" : "Pending"}
+                          <span class="status-badge #{shard[:published].as(Bool) ? "status-published" : "status-pending"}">
+                              #{shard[:published].as(Bool) ? "Published" : "Pending"}
                           </span>
                       </div>
                       #{actions_html}
@@ -1143,25 +1143,27 @@ module CrystalShardsAdmin
                     <div class="stat-label">Total Jobs</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-number">#{jobs.count(&.[:active])}</div>
+                    <div class="stat-number">#{jobs.count { |j| j[:active].as(Bool) }}</div>
                     <div class="stat-label">Active Jobs</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-number">#{jobs.count { |j| !j[:active] }}</div>
+                    <div class="stat-number">#{jobs.count { |j| !j[:active].as(Bool) }}</div>
                     <div class="stat-label">Inactive Jobs</div>
                 </div>
             </div>
             
             <div class="job-list">
                 #{jobs.map { |job|
-                  salary_range = if job[:salary_min] && job[:salary_max]
-                                   if job[:salary_min] == job[:salary_max]
-                                     "$#{(job[:salary_max] / 1000).to_i}k"
+                  salary_min = job[:salary_min].as(Int32?)
+                  salary_max = job[:salary_max].as(Int32?)
+                  salary_range = if salary_min && salary_max
+                                   if salary_min == salary_max
+                                     "$#{(salary_max / 1000).to_i}k"
                                    else
-                                     "$#{(job[:salary_min].not_nil! / 1000).to_i}k - $#{(job[:salary_max].not_nil! / 1000).to_i}k"
+                                     "$#{(salary_min / 1000).to_i}k - $#{(salary_max / 1000).to_i}k"
                                    end
-                                 elsif job[:salary_max]
-                                   "Up to $#{(job[:salary_max].not_nil! / 1000).to_i}k"
+                                 elsif salary_max
+                                   "Up to $#{(salary_max / 1000).to_i}k"
                                  else
                                    "Salary not specified"
                                  end
@@ -1172,18 +1174,18 @@ module CrystalShardsAdmin
                           <p><strong>Location:</strong> #{job[:location] || "Remote/Unspecified"}</p>
                           <div class="job-meta">
                               <span class="salary">💰 #{salary_range}</span>
-                              <span>📅 #{job[:created_at].to_s("%Y-%m-%d")}</span>
+                              <span>📅 #{job[:created_at].as(Time).to_s("%Y-%m-%d")}</span>
                           </div>
                       </div>
                       <div>
-                          <span class="status-badge #{job[:active] ? "status-active" : "status-inactive"}">
-                              #{job[:active] ? "Active" : "Inactive"}
+                          <span class="status-badge #{job[:active].as(Bool) ? "status-active" : "status-inactive"}">
+                              #{job[:active].as(Bool) ? "Active" : "Inactive"}
                           </span>
                       </div>
                       <div class="actions">
                           <form action="/jobs/#{job[:id]}/toggle" method="POST" style="display: inline;">
                               <button type="submit" class="btn btn-toggle">
-                                  #{job[:active] ? "Deactivate" : "Activate"}
+                                  #{job[:active].as(Bool) ? "Deactivate" : "Activate"}
                               </button>
                           </form>
                       </div>
@@ -1334,9 +1336,10 @@ module CrystalShardsAdmin
                                   "status-failed"
                                 end
                   
-                  logs_html = if build[:build_logs] && !build[:build_logs].empty?
+                  build_logs = build[:build_logs].as(String?)
+                  logs_html = if build_logs && !build_logs.empty?
                     %(<div class="build-logs expandable" onclick="this.style.maxHeight = this.style.maxHeight === 'none' ? '100px' : 'none'">
-                        #{build[:build_logs]}
+                        #{build_logs}
                     </div>)
                   else
                     ""
@@ -1346,14 +1349,14 @@ module CrystalShardsAdmin
                       <div class="build-info">
                           <h4>#{build[:shard_name]} v#{build[:version]}</h4>
                           <div class="build-meta">
-                              <span>📅 #{build[:created_at].to_s("%Y-%m-%d %H:%M")}</span>
+                              <span>📅 #{build[:created_at].as(Time).to_s("%Y-%m-%d %H:%M")}</span>
                               <span>🔧 Build Status</span>
                           </div>
                           #{logs_html}
                       </div>
                       <div>
                           <span class="status-badge #{status_class}">
-                              #{build[:status].capitalize}
+                              #{build[:status].as(String).capitalize}
                           </span>
                       </div>
                   </div>)
