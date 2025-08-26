@@ -13,7 +13,9 @@ require "./search_options"
 require "./services/shard_submission_service"
 require "./services/search_analytics_service"
 require "./middleware/auth_middleware"
+require "./middleware/rate_limit_middleware"
 require "./controllers/auth_controller"
+require "./controllers/analytics_controller"
 require "./metrics"
 
 # Load environment variables
@@ -36,6 +38,12 @@ module CrystalShards
   shard_repo = ShardRepository.new(DB)
   submission_service = ShardSubmissionService.new(DB, REDIS)
   analytics_service = SearchAnalyticsService.new(REDIS)
+  
+  # Set up analytics routes
+  CrystalShards::AnalyticsController.setup_routes(REDIS)
+  
+  # Add rate limiting middleware (before auth)
+  add_handler CrystalShards::RateLimitMiddleware.new(REDIS)
   
   # Add authentication middleware
   add_handler CrystalShards::AuthMiddleware.new
@@ -99,6 +107,9 @@ module CrystalShards
         trending: "/api/v1/search/trending",
         popular: "/api/v1/search/popular",
         analytics: "/api/v1/search/analytics",
+        "usage_analytics": "/api/analytics/usage",
+        "rate_limit_status": "/api/analytics/rate-limit-status",
+        "rate_limits_info": "/api/analytics/rate-limits",
         webhooks: "/webhooks/github",
         health: "/health"
       },

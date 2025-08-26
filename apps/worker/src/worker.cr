@@ -3,6 +3,7 @@ require "pg"
 require "redis"
 require "http/client"
 require "cr-dotenv"
+require "./jobs/analytics_cleanup_job"
 
 # Load environment variables
 Dotenv.load
@@ -258,6 +259,21 @@ spawn do
   loop do
     CrystalWorker::SearchAnalyticsCleanupJob.async.perform
     sleep 24.hours
+  end
+end
+
+# Schedule daily usage analytics cleanup
+spawn do
+  loop do
+    # Wait until 2 AM UTC to run cleanup
+    now = Time.utc
+    target_time = now.at_beginning_of_day + 2.hours
+    target_time = target_time + 1.day if target_time <= now
+    
+    sleep_duration = target_time - now
+    sleep sleep_duration
+    
+    AnalyticsCleanupJob.async.perform(30) # Keep 30 days of data
   end
 end
 
