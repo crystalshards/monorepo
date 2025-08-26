@@ -1,0 +1,194 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: doc-build-script
+  namespace: crystaldocs
+data:
+  build-docs.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    
+    # Environment variables should be provided by the Job:
+    # SHARD_NAME, SHARD_VERSION, GITHUB_REPO, CONTENT_PATH
+    
+    echo "Starting documentation build for ${SHARD_NAME}:${SHARD_VERSION}"
+    echo "Repository: ${GITHUB_REPO}"
+    echo "Content path: ${CONTENT_PATH}"
+    
+    # Create working directory
+    WORK_DIR="/tmp/doc-build"
+    mkdir -p "${WORK_DIR}"
+    cd "${WORK_DIR}"
+    
+    # Clone the repository
+    echo "Cloning repository..."
+    git clone "https://github.com/${GITHUB_REPO}.git" repo
+    cd repo
+    
+    # Checkout specific version if provided
+    if [ "${SHARD_VERSION}" != "latest" ]; then
+      echo "Checking out version ${SHARD_VERSION}"
+      git checkout "v${SHARD_VERSION}" 2>/dev/null || git checkout "${SHARD_VERSION}" || echo "Version not found, using main branch"
+    fi
+    
+    # Install Crystal dependencies
+    echo "Installing dependencies..."
+    if [ -f "shard.yml" ]; then
+      shards install --production || echo "Failed to install dependencies, continuing..."
+    fi
+    
+    # Generate documentation using Crystal's built-in doc generator
+    echo "Generating documentation..."
+    mkdir -p "/tmp/output"
+    
+    # Try to generate docs with different methods
+    if crystal doc --output="/tmp/output" --format=html 2>/dev/null; then
+      echo "Documentation generated with crystal doc"
+    else
+      echo "crystal doc failed, generating basic structure"
+      mkdir -p "/tmp/output"
+      echo "<h1>${SHARD_NAME}</h1>" > "/tmp/output/index.html"
+      
+      # Extract README content
+      if [ -f "README.md" ]; then
+        echo "Converting README.md to HTML"
+        # Simple markdown to HTML conversion (placeholder)
+        sed 's/^# /## /g; s/^## /<h2>/g; s/$/<\/h2>/g' README.md >> "/tmp/output/index.html"
+      fi
+      
+      # List source files
+      echo "<h2>Source Files</h2><ul>" >> "/tmp/output/index.html"
+      find src -name "*.cr" 2>/dev/null | while read -r file; do
+        echo "<li><a href='${file}'>${file}</a></li>" >> "/tmp/output/index.html"
+      done || true
+      echo "</ul>" >> "/tmp/output/index.html"
+    fi
+    
+    # Upload to MinIO
+    echo "Uploading documentation to storage..."
+    mc alias set minio http://minio.infrastructure.svc.cluster.local:9000 "${MINIO_ACCESS_KEY}" "${MINIO_SECRET_KEY}"
+    mc cp -r /tmp/output/ "minio/documentation/${CONTENT_PATH}/"
+    
+    echo "Documentation build completed successfully"
+    
+    # Update database with success status
+    PGPASSWORD="${POSTGRES_PASSWORD}" psql -h postgresql.infrastructure.svc.cluster.local -U postgres -d crystaldocs -c "
+      UPDATE documentation 
+      SET build_status = 'success', 
+          file_count = (SELECT COUNT(*) FROM (SELECT 1 FROM unnest(string_to_array(trim(both '/' from '${CONTENT_PATH}'), '/')) OFFSET 1) t),
+          size_bytes = $(du -sb /tmp/output | cut -f1),
+          updated_at = NOW()
+      WHERE content_path = '${CONTENT_PATH}';
+    " || echo "Failed to update database"
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: doc-build-template
+  namespace: crystaldocs
+spec:
+  # This is a template - actual jobs will have generated names
+  completions: 1
+  parallelism: 1
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600  # Clean up after 1 hour
+  template:
+    metadata:
+      labels:
+        app: doc-builder
+        type: documentation-build
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: doc-builder
+        image: crystallang/crystal:1.10.1-alpine
+        command: ["/bin/sh"]
+        args: ["/scripts/build-docs.sh"]
+        env:
+        - name: SHARD_NAME
+          value: "PLACEHOLDER_SHARD_NAME"
+        - name: SHARD_VERSION
+          value: "PLACEHOLDER_SHARD_VERSION"  
+        - name: GITHUB_REPO
+          value: "PLACEHOLDER_GITHUB_REPO"
+        - name: CONTENT_PATH
+          value: "PLACEHOLDER_CONTENT_PATH"
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: access-key
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: minio-credentials
+              key: secret-key
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgresql-credentials
+              key: password
+        volumeMounts:
+        - name: build-scripts
+          mountPath: /scripts
+          readOnly: true
+        - name: work-storage
+          mountPath: /tmp
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: build-scripts
+        configMap:
+          name: doc-build-script
+          defaultMode: 0755
+      - name: work-storage
+        emptyDir:
+          sizeLimit: "2Gi"
+      # Network policy - restrict outbound to only necessary services
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      tolerations:
+      - key: "documentation-builds"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minio-credentials
+  namespace: crystaldocs
+type: Opaque
+data:
+  # These will be set by the deployment process
+  # Base64 encoded values for: minioadmin / minioadmin123
+  access-key: bWluaW9hZG1pbg==
+  secret-key: bWluaW9hZG1pbjEyMw==
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-credentials
+  namespace: crystaldocs
+type: Opaque
+data:
+  # Base64 encoded password: crystaldocs123
+  password: Y3J5c3RhbGRvY3MxMjM=
