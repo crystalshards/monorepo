@@ -29,7 +29,7 @@ echo ""
 # Delete existing resources
 echo "🧹 Cleaning up existing resources..."
 kubectl delete pod "$POD_NAME" -n "$NAMESPACE" --ignore-not-found=true --wait
-kubectl delete pvc crystalshards-workspace -n "$NAMESPACE" --ignore-not-found=true --wait
+kubectl delete pvc crystalshards-workspaces -n "$NAMESPACE" --ignore-not-found=true --wait
 kubectl delete pvc crystalshards-docker-storage -n "$NAMESPACE" --ignore-not-found=true --wait
 
 # Apply the manifest

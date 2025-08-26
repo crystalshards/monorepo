@@ -103,7 +103,7 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: crystalshards-workspace
+  name: crystalshards-workspaces
   namespace: claude
 spec:
   accessModes:
