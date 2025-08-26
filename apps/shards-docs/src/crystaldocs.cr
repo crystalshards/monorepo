@@ -2,11 +2,12 @@ require "kemal"
 require "pg"
 require "redis"
 require "markd"
-require "cr-dotenv"
+require "dotenv"
 require "./services/doc_build_service"
 require "./services/doc_storage_service"
 require "./services/doc_parser_service"
 require "./repositories/documentation_repository"
+require "./metrics"
 
 # Load environment variables
 Dotenv.load
@@ -24,6 +25,9 @@ module CrystalDocs
   # Initialize Redis connection
   REDIS = Redis.new(url: REDIS_URL)
   
+  # Add metrics middleware
+  add_handler Metrics::MetricsHandler.new
+  
   # Health check endpoint
   get "/health" do |env|
     env.response.content_type = "application/json"
@@ -32,6 +36,23 @@ module CrystalDocs
       version: VERSION,
       timestamp: Time.utc.to_s
     }.to_json
+  end
+  
+  # Prometheus metrics endpoint
+  get "/metrics" do |env|
+    env.response.content_type = "text/plain; version=0.0.4; charset=utf-8"
+    
+    # Update database connections gauge
+    begin
+      result = DB.query("SELECT count(*) FROM pg_stat_activity")
+      result.each do |row|
+        Metrics::DATABASE_CONNECTIONS.set(row[0].as(Int64).to_f64)
+      end
+    rescue
+      # Ignore database errors for metrics collection
+    end
+    
+    Metrics::REGISTRY.to_prometheus
   end
   
   # Documentation root

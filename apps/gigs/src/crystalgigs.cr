@@ -3,11 +3,12 @@ require "pg"
 require "redis"
 require "jwt"
 require "stripe"
-require "cr-dotenv"
+require "dotenv"
 
 # Load application services
 require "./services/stripe_service"
 require "./repositories/job_repository"
+require "./metrics"
 
 # Load environment variables
 Dotenv.load
@@ -30,6 +31,9 @@ module CrystalGigs
   # Initialize Stripe
   Stripe.api_key = STRIPE_SECRET_KEY if !STRIPE_SECRET_KEY.empty?
   
+  # Add metrics middleware
+  add_handler Metrics::MetricsHandler.new
+  
   # Health check endpoint
   get "/health" do |env|
     env.response.content_type = "application/json"
@@ -38,6 +42,23 @@ module CrystalGigs
       version: VERSION,
       timestamp: Time.utc.to_s
     }.to_json
+  end
+  
+  # Prometheus metrics endpoint
+  get "/metrics" do |env|
+    env.response.content_type = "text/plain; version=0.0.4; charset=utf-8"
+    
+    # Update database connections gauge
+    begin
+      result = DB.query("SELECT count(*) FROM pg_stat_activity")
+      result.each do |row|
+        Metrics::DATABASE_CONNECTIONS.set(row[0].as(Int64).to_f64)
+      end
+    rescue
+      # Ignore database errors for metrics collection
+    end
+    
+    Metrics::REGISTRY.to_prometheus
   end
   
   # Job board homepage

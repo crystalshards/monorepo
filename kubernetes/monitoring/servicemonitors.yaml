@@ -1,0 +1,160 @@
+---
+# ServiceMonitor for CrystalShards Registry
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: crystalshards-registry
+  namespace: monitoring
+  labels:
+    app: crystalshards-registry
+    release: prometheus-operator
+spec:
+  namespaceSelector:
+    matchNames:
+    - crystalshards
+  selector:
+    matchLabels:
+      app: crystalshards-registry
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# ServiceMonitor for CrystalDocs
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: crystaldocs
+  namespace: monitoring
+  labels:
+    app: crystaldocs
+    release: prometheus-operator
+spec:
+  namespaceSelector:
+    matchNames:
+    - crystaldocs
+  selector:
+    matchLabels:
+      app: crystaldocs
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# ServiceMonitor for CrystalGigs
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: crystalgigs
+  namespace: monitoring
+  labels:
+    app: crystalgigs
+    release: prometheus-operator
+spec:
+  namespaceSelector:
+    matchNames:
+    - crystalgigs
+  selector:
+    matchLabels:
+      app: crystalgigs
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# ServiceMonitor for Worker
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: crystalworker
+  namespace: monitoring
+  labels:
+    app: crystalworker
+    release: prometheus-operator
+spec:
+  namespaceSelector:
+    matchNames:
+    - crystalshards  # Worker is deployed in crystalshards namespace
+  selector:
+    matchLabels:
+      app: crystalworker
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# ServiceMonitor for PostgreSQL (CloudNativePG)
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: postgresql-cluster
+  namespace: monitoring
+  labels:
+    app: postgresql-cluster
+    release: prometheus-operator
+spec:
+  namespaceSelector:
+    matchNames:
+    - infrastructure
+  selector:
+    matchLabels:
+      cnpg.io/cluster: postgresql-cluster
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# ServiceMonitor for Redis
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: redis-cluster
+  namespace: monitoring
+  labels:
+    app: redis-cluster
+    release: prometheus-operator
+spec:
+  namespaceSelector:
+    matchNames:
+    - infrastructure
+  selector:
+    matchLabels:
+      app: redis
+  endpoints:
+  - port: metrics
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 10s
+
+---
+# ServiceMonitor for MinIO
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: minio-tenant
+  namespace: monitoring
+  labels:
+    app: minio-tenant
+    release: prometheus-operator
+spec:
+  namespaceSelector:
+    matchNames:
+    - infrastructure
+  selector:
+    matchLabels:
+      v1.min.io/tenant: crystalshards-docs
+  endpoints:
+  - port: minio
+    path: /minio/v2/metrics/cluster
+    interval: 30s
+    scrapeTimeout: 10s

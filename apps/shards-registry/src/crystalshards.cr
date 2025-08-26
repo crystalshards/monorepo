@@ -9,6 +9,7 @@ require "digest/md5"
 require "base64"
 require "./repositories/shard_repository"
 require "./services/shard_submission_service"
+require "./metrics"
 
 # Load environment variables
 Dotenv.load
@@ -29,6 +30,9 @@ module CrystalShards
   # Initialize services
   shard_repo = ShardRepository.new(DB)
   submission_service = ShardSubmissionService.new(DB, REDIS)
+  
+  # Add metrics middleware
+  add_handler Metrics::MetricsHandler.new
   
   # Helper function to verify GitHub webhook signatures
   def verify_github_signature(payload : String?, signature : String, secret : String) : Bool
@@ -51,6 +55,23 @@ module CrystalShards
       version: VERSION,
       timestamp: Time.utc.to_s
     }.to_json
+  end
+  
+  # Prometheus metrics endpoint
+  get "/metrics" do |env|
+    env.response.content_type = "text/plain; version=0.0.4; charset=utf-8"
+    
+    # Update database connections gauge
+    begin
+      result = DB.query("SELECT count(*) FROM pg_stat_activity")
+      result.each do |row|
+        Metrics::DATABASE_CONNECTIONS.set(row[0].as(Int64).to_f64)
+      end
+    rescue
+      # Ignore database errors for metrics collection
+    end
+    
+    Metrics::REGISTRY.to_prometheus
   end
   
   # API root
@@ -110,8 +131,11 @@ module CrystalShards
       offset = (page - 1) * per_page
       
       begin
+        search_start = Time.utc
         results = shard_repo.search(query, offset, per_page)
         total = shard_repo.count_search(query)
+        search_duration = (Time.utc - search_start).total_seconds
+        Metrics::SEARCH_DURATION.observe(search_duration)
         
         {
           query: query,
@@ -150,6 +174,11 @@ module CrystalShards
       
       # Submit the shard
       result = submission_service.submit_from_github(github_url)
+      
+      # Track shard submission
+      if result[:shard]
+        Metrics::SHARD_SUBMISSIONS_TOTAL.increment
+      end
       
       if result[:shard]
         if result[:errors].empty?
