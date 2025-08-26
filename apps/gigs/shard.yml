@@ -1,0 +1,40 @@
+name: crystalgigs
+version: 0.1.0
+
+authors:
+  - CrystalShards Team <team@crystalshards.org>
+
+crystal: 1.14.0
+
+license: MIT
+
+targets:
+  crystalgigs:
+    main: src/crystalgigs.cr
+
+dependencies:
+  kemal:
+    github: kemalcr/kemal
+    version: ~> 1.5.0
+  pg:
+    github: will/crystal-pg
+    version: ~> 0.29.0
+  redis:
+    github: stefanwille/crystal-redis
+    version: ~> 2.9.1
+  jwt:
+    github: crystal-community/jwt
+    version: ~> 1.6.0
+  stripe:
+    github: confact/stripe.cr
+  dotenv:
+    github: gdotdesign/cr-dotenv
+    version: ~> 1.0.0
+
+development_dependencies:
+  spec-kemal:
+    github: kemalcr/spec-kemal
+    version: ~> 1.0.0
+  ameba:
+    github: crystal-ameba/ameba
+    version: ~> 1.6.1

@@ -1,0 +1,52 @@
+name: Webdrivers CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  check-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: latest
+      - name: Install shards
+        run: shards install
+      - name: Format
+        run: crystal tool format --check
+      - name: Lint
+        run: ./bin/ameba
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Available images https://github.com/actions/runner-images?tab=readme-ov-file#available-images
+        include:
+          - os: ubuntu-latest
+            crystal: latest
+          - os: windows-latest
+            crystal: latest
+          - os: macos-13 # Intel platform
+            crystal: latest
+          - os: macos-latest # ARM platform
+            crystal: latest
+    runs-on: ${{matrix.os}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+        if: matrix.os == 'windows-latest'
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{matrix.crystal}}
+      - name: Install dependencies
+        run: shards install --ignore-crystal-version --skip-executables --skip-postinstall
+      - name: Run tests
+        run: crystal spec

@@ -1,0 +1,88 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: gcr.io
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+jobs:
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    strategy:
+      matrix:
+        app: [shards-registry, shards-docs, gigs, worker, admin]
+        include:
+          - app: shards-registry
+            dockerfile: apps/shards-registry/Dockerfile
+          - app: shards-docs  
+            dockerfile: apps/shards-docs/Dockerfile
+          - app: gigs
+            dockerfile: apps/gigs/Dockerfile
+          - app: worker
+            dockerfile: apps/worker/Dockerfile
+          - app: admin
+            dockerfile: apps/admin/Dockerfile
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud (Service Account)
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+      if: ${{ secrets.GCP_SA_KEY != '' }}
+
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      if: ${{ secrets.GCP_SA_KEY != '' }}
+
+    - name: Configure Docker to use gcloud as credential helper
+      run: gcloud auth configure-docker
+      if: ${{ secrets.GCP_SA_KEY != '' }}
+
+    - name: Build Docker image
+      run: |
+        IMAGE_TAG="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ matrix.app }}:${{ github.sha }}"
+        echo "Building $IMAGE_TAG"
+        docker build -f ${{ matrix.dockerfile }} -t $IMAGE_TAG .
+        echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+    - name: Push Docker image
+      run: |
+        if [ "${{ secrets.GCP_SA_KEY }}" != "" ]; then
+          docker push ${{ env.IMAGE_TAG }}
+          
+          # Also tag as latest for main branch
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            LATEST_TAG="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ matrix.app }}:latest"
+            docker tag ${{ env.IMAGE_TAG }} $LATEST_TAG
+            docker push $LATEST_TAG
+          fi
+        else
+          echo "WARNING: Skipping Docker push - GCP credentials not configured"
+          echo "To enable deployment, configure GCP_SA_KEY secret"
+        fi
+
+    - name: Run security scan on image
+      uses: aquasecurity/trivy-action@master
+      continue-on-error: true
+      with:
+        image-ref: ${{ env.IMAGE_TAG }}
+        format: 'sarif'
+        output: 'trivy-image-results.sarif'
+
+    - name: Upload image scan results
+      uses: github/codeql-action/upload-sarif@v3
+      if: always() && hashFiles('trivy-image-results.sarif') != ''
+      with:
+        sarif_file: 'trivy-image-results.sarif'
+        category: build-image-${{ matrix.app }}
+      continue-on-error: true

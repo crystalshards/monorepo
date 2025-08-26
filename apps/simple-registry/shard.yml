@@ -1,0 +1,21 @@
+name: simple-registry
+version: 1.0.0
+
+authors:
+  - CrystalShards Team
+
+description: |
+  Minimal Crystal Shards Registry for initial deployment.
+  Focus on getting basic functionality deployed first.
+  Uses only Crystal standard library for maximum compatibility.
+
+crystal: 1.17.0
+
+license: MIT
+
+# No external dependencies - using Crystal standard library only
+# This ensures maximum compatibility and eliminates dependency issues
+
+targets:
+  simple-registry:
+    main: src/simple-registry.cr

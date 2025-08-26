@@ -1,0 +1,55 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@master
+
+      - name: Crystal Ameba Linter
+        uses: crystal-ameba/github-action@v0.9.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Crystal
+        uses: MeilCli/setup-crystal-action@master
+        with:
+          crystal_version: latest
+          shards_version: latest
+
+      - name: Install dependencies
+        run: shards install --ignore-crystal-version
+
+      - name: Check Formatting
+        run: crystal tool format --check
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.7
+
+      - name: Install Redis Gem
+        run: gem install redis
+
+      - name: Run Tests
+        run: crystal spec
+
+      - name: Compile Examples
+        run: |
+          crystal build examples/sidekiq.cr
+          crystal build examples/web.cr

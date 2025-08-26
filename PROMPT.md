@@ -23,6 +23,9 @@ Check `.agent/STATUS.md` for what's been done.
 
 ## Next Steps
 
+**IMPORTANT**:
+1. Before you continue your current task, check on the CI/CD pipeline of your previous push. If there are failures fix them.
+
 **IMPORTANT**: If no tasks are currently in progress or all tasks are blocked:
 1. Check GitHub issues with `gh issue list --repo crystalshards/crystalshards-claude`
 2. Look for issues labeled `ready`, `good-first-issue`, or `help-wanted`
@@ -64,6 +67,9 @@ Otherwise, continue with:
 - **CSS**: Tailwind CSS (no JS frameworks)
 - **Payments**: Stripe for CrystalGigs
 - **CI/CD**: GitHub Actions → GKE (via terraform)
+
+## IMPORTANT TO REMEMBER
+- Do not provision any kubernetes resources with plan YAML, Everything should be configured and deployed with terrform resources.
 
 ## KUBERNETES NAMESPACES
 
