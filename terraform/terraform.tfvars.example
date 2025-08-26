@@ -1,0 +1,15 @@
+# Example Terraform variables
+# Copy this file to terraform.tfvars and fill in your values
+
+project_id = "your-gcp-project-id"
+region     = "us-central1"
+
+# Cluster configuration
+cluster_name     = "crystalshards-cluster"
+node_count       = 1
+machine_type     = "e2-standard-4"
+disk_size_gb     = 50
+
+# Cost optimization options
+enable_autopilot = true   # Use GKE Autopilot for better cost management
+preemptible      = true   # Use preemptible nodes for additional savings

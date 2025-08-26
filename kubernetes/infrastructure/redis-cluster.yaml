@@ -1,0 +1,196 @@
+apiVersion: redis.redis.opstreelabs.in/v1beta1
+kind: Redis
+metadata:
+  name: redis-cluster
+  namespace: infrastructure
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: crystalshards
+spec:
+  # Redis configuration
+  kubernetesConfig:
+    image: "redis:7.2-alpine"
+    imagePullPolicy: IfNotPresent
+    
+    # Resource limits for cost optimization
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "200m"
+        memory: "512Mi"
+    
+    # Service configuration
+    serviceType: ClusterIP
+    
+    # Redis configuration
+    redisConfig:
+      maxmemory: "256mb"
+      maxmemory-policy: "allkeys-lru"
+      timeout: "300"
+      tcp-keepalive: "60"
+      databases: "16"
+      save: "900 1 300 10 60 10000"
+      rdbcompression: "yes"
+      rdbchecksum: "yes"
+      # Disable dangerous commands
+      rename-command:
+        FLUSHDB: ""
+        FLUSHALL: ""
+        DEBUG: ""
+    
+  # Storage configuration
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "5Gi"
+        storageClassName: "standard"
+
+  # Security
+  redisExporter:
+    enabled: true
+    image: "oliver006/redis_exporter:v1.55.0"
+    resources:
+      requests:
+        cpu: "10m"
+        memory: "32Mi"
+      limits:
+        cpu: "50m"
+        memory: "64Mi"
+
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta1  
+kind: RedisCluster
+metadata:
+  name: redis-ha-cluster
+  namespace: infrastructure
+  labels:
+    app.kubernetes.io/name: redis-cluster
+    app.kubernetes.io/part-of: crystalshards
+spec:
+  clusterSize: 3
+  
+  kubernetesConfig:
+    image: "redis:7.2-alpine"
+    imagePullPolicy: IfNotPresent
+    
+    # Resource limits
+    resources:
+      requests:
+        cpu: "50m"
+        memory: "128Mi"
+      limits:
+        cpu: "100m"
+        memory: "256Mi"
+
+  # Storage for cluster nodes
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: "2Gi"
+        storageClassName: "standard"
+
+  # Redis cluster configuration
+  redisConfig:
+    maxmemory: "128mb"
+    maxmemory-policy: "allkeys-lru"
+    cluster-enabled: "yes"
+    cluster-config-file: "nodes.conf"
+    cluster-node-timeout: "5000"
+    appendonly: "yes"
+    appendfsync: "everysec"
+
+---
+# Service for Redis access
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: infrastructure
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: crystalshards
+spec:
+  selector:
+    app: redis-cluster
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+    protocol: TCP
+  type: ClusterIP
+
+---
+# Service for Redis Cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-cluster-service
+  namespace: infrastructure
+  labels:
+    app.kubernetes.io/name: redis-cluster
+    app.kubernetes.io/part-of: crystalshards
+spec:
+  selector:
+    app: redis-ha-cluster
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+    protocol: TCP
+  type: ClusterIP
+
+---
+# NetworkPolicy for Redis access
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis-access
+  namespace: infrastructure
+spec:
+  podSelector:
+    matchLabels:
+      app: redis-cluster
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: crystalshards
+    - namespaceSelector:
+        matchLabels:
+          name: crystaldocs
+    - namespaceSelector:
+        matchLabels:
+          name: crystalgigs
+    - namespaceSelector:
+        matchLabels:
+          name: claude
+    ports:
+    - protocol: TCP
+      port: 6379
+
+---
+# ConfigMap for Redis monitoring
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-monitoring
+  namespace: infrastructure
+data:
+  redis.conf: |
+    # Redis monitoring configuration
+    # Enable keyspace notifications for monitoring
+    notify-keyspace-events Ex
+    # Set client output buffer limits
+    client-output-buffer-limit normal 0 0 0
+    client-output-buffer-limit replica 256mb 64mb 60
+    client-output-buffer-limit pubsub 32mb 8mb 60

@@ -1,0 +1,225 @@
+# KEDA ScaledObject for CrystalShards Registry
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: crystalshards-registry-scaler
+  namespace: crystalshards
+  labels:
+    app.kubernetes.io/name: crystalshards-registry
+    app.kubernetes.io/part-of: crystalshards
+spec:
+  scaleTargetRef:
+    name: crystalshards-registry
+  minReplicaCount: 0  # Scale to zero when idle
+  maxReplicaCount: 10
+  pollingInterval: 30
+  cooldownPeriod: 300  # 5 minutes cooldown
+  idleReplicaCount: 0  # Ensure scale to zero
+  
+  triggers:
+  # HTTP trigger - scale based on incoming requests
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-operator-prometheus.monitoring.svc.cluster.local:9090
+      metricName: nginx_ingress_controller_requests
+      threshold: '5'
+      query: 'rate(nginx_ingress_controller_requests{service="crystalshards-registry"}[1m])'
+  
+  # CPU trigger as backup
+  - type: cpu
+    metadata:
+      type: Utilization
+      value: '70'
+
+---
+# KEDA ScaledObject for CrystalDocs
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: crystaldocs-scaler
+  namespace: crystaldocs
+  labels:
+    app.kubernetes.io/name: crystaldocs
+    app.kubernetes.io/part-of: crystalshards
+spec:
+  scaleTargetRef:
+    name: crystaldocs
+  minReplicaCount: 0  # Scale to zero when idle
+  maxReplicaCount: 8
+  pollingInterval: 30
+  cooldownPeriod: 300  # 5 minutes cooldown
+  idleReplicaCount: 0
+  
+  triggers:
+  # HTTP trigger for documentation requests
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-operator-prometheus.monitoring.svc.cluster.local:9090
+      metricName: nginx_ingress_controller_requests
+      threshold: '3'
+      query: 'rate(nginx_ingress_controller_requests{service="crystaldocs"}[1m])'
+  
+  # Memory trigger for documentation builds
+  - type: memory
+    metadata:
+      type: Utilization
+      value: '80'
+
+---
+# KEDA ScaledObject for CrystalGigs
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: crystalgigs-scaler
+  namespace: crystalgigs
+  labels:
+    app.kubernetes.io/name: crystalgigs
+    app.kubernetes.io/part-of: crystalshards
+spec:
+  scaleTargetRef:
+    name: crystalgigs
+  minReplicaCount: 0  # Scale to zero when idle
+  maxReplicaCount: 5
+  pollingInterval: 30
+  cooldownPeriod: 600  # 10 minutes cooldown for job board
+  idleReplicaCount: 0
+  
+  triggers:
+  # HTTP trigger
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-operator-prometheus.monitoring.svc.cluster.local:9090
+      metricName: nginx_ingress_controller_requests
+      threshold: '2'
+      query: 'rate(nginx_ingress_controller_requests{service="crystalgigs"}[1m])'
+
+---
+# KEDA ScaledObject for Background Worker
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker-scaler
+  namespace: crystalshards
+  labels:
+    app.kubernetes.io/name: worker
+    app.kubernetes.io/part-of: crystalshards
+spec:
+  scaleTargetRef:
+    name: worker
+  minReplicaCount: 0  # Scale to zero when no jobs
+  maxReplicaCount: 20
+  pollingInterval: 10  # Check more frequently for jobs
+  cooldownPeriod: 60   # Short cooldown for responsive job processing
+  idleReplicaCount: 0
+  
+  triggers:
+  # Redis trigger for Sidekiq jobs
+  - type: redis
+    metadata:
+      address: redis-service.infrastructure.svc.cluster.local:6379
+      listName: default  # Sidekiq default queue
+      listLength: '1'    # Scale up if any jobs exist
+      connectionFromEnv: REDIS_CONNECTION
+  
+  # Fallback CPU trigger
+  - type: cpu
+    metadata:
+      type: Utilization
+      value: '60'
+
+---
+# KEDA TriggerAuthentication for Redis
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: redis-auth
+  namespace: crystalshards
+spec:
+  secretTargetRef:
+  - parameter: connection
+    name: redis-connection
+    key: connection
+
+---
+# Secret for Redis connection
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-connection
+  namespace: crystalshards
+type: Opaque
+data:
+  connection: cmVkaXM6Ly9yZWRpcy1zZXJ2aWNlLmluZnJhc3RydWN0dXJlLnN2Yy5jbHVzdGVyLmxvY2FsOjYzNzk=  # redis://redis-service.infrastructure.svc.cluster.local:6379
+
+---
+# KEDA HTTPScaledObject for more responsive HTTP scaling
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: crystalshards-http-scaler
+  namespace: crystalshards
+spec:
+  hosts:
+  - crystalshards.org
+  - www.crystalshards.org
+  scaleTargetRef:
+    deployment: crystalshards-registry
+    service: crystalshards-registry
+    port: 3000
+  replicas:
+    min: 0
+    max: 10
+  scaledownPeriod: 300  # 5 minutes
+  scalingMetric:
+    requestRate:
+      granularity: 1s
+      window: 1m
+      targetValue: 100  # requests per second
+
+---
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: crystaldocs-http-scaler
+  namespace: crystaldocs
+spec:
+  hosts:
+  - crystaldocs.org
+  - www.crystaldocs.org
+  scaleTargetRef:
+    deployment: crystaldocs
+    service: crystaldocs
+    port: 3000
+  replicas:
+    min: 0
+    max: 8
+  scaledownPeriod: 300
+  scalingMetric:
+    requestRate:
+      granularity: 1s
+      window: 1m
+      targetValue: 50
+
+---
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: crystalgigs-http-scaler
+  namespace: crystalgigs
+spec:
+  hosts:
+  - crystalgigs.com
+  - www.crystalgigs.com
+  scaleTargetRef:
+    deployment: crystalgigs
+    service: crystalgigs
+    port: 3000
+  replicas:
+    min: 0
+    max: 5
+  scaledownPeriod: 600  # 10 minutes for job board
+  scalingMetric:
+    requestRate:
+      granularity: 1s
+      window: 1m
+      targetValue: 20
