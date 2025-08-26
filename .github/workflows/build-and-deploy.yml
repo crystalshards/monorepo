@@ -63,15 +63,15 @@ jobs:
       with:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
         workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
-      if: ${{ secrets.GCP_SA_KEY || secrets.WIF_PROVIDER }}
+      if: ${{ secrets.GCP_SA_KEY != '' || secrets.WIF_PROVIDER != '' }}
 
     - name: Set up Google Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
-      if: ${{ secrets.GCP_SA_KEY || secrets.WIF_PROVIDER }}
+      if: ${{ secrets.GCP_SA_KEY != '' || secrets.WIF_PROVIDER != '' }}
 
     - name: Configure Docker to use gcloud as credential helper
       run: gcloud auth configure-docker
-      if: ${{ secrets.GCP_SA_KEY || secrets.WIF_PROVIDER }}
+      if: ${{ secrets.GCP_SA_KEY != '' || secrets.WIF_PROVIDER != '' }}
 
     - name: Build Docker image
       run: |
@@ -97,7 +97,7 @@ jobs:
 
     - name: Push Docker image
       run: |
-        if [ -n "${{ secrets.GCP_SA_KEY }}" ] || [ -n "${{ secrets.WIF_PROVIDER }}" ]; then
+        if [ "${{ secrets.GCP_SA_KEY }}" != "" ] || [ "${{ secrets.WIF_PROVIDER }}" != "" ]; then
           docker push ${{ env.IMAGE_TAG }}
           
           # Also tag as latest for main branch
@@ -122,7 +122,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'staging' }}
-    if: ${{ secrets.GCP_SA_KEY || secrets.WIF_PROVIDER }}
+    if: ${{ secrets.GCP_SA_KEY != '' || secrets.WIF_PROVIDER != '' }}
     
     steps:
     - name: Checkout code
