@@ -93,6 +93,74 @@ describe "CrystalShards Registry" do
       json["page"].should eq(2)
       json["per_page"].should eq(10)
     end
+
+    it "supports advanced search filters" do
+      get "/api/v1/search?q=test&license=MIT&min_stars=10&sort_by=stars"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      json["query"].should eq("test")
+      filters = json["filters"]
+      filters["license"]?.try(&.as_s).should eq("MIT")
+      filters["min_stars"]?.try(&.as_i).should eq(10)
+      filters["sort_by"]?.try(&.as_s).should eq("stars")
+    end
+
+    it "validates sort_by parameter" do
+      get "/api/v1/search?q=test&sort_by=invalid"
+      response.status_code.should eq(400)
+      
+      json = JSON.parse(response.body)
+      json["error"].as_s.should contain("Invalid sort_by parameter")
+    end
+
+    it "supports tag filtering" do
+      get "/api/v1/search?tag=web&crystal_version=1.0.0"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      filters = json["filters"]
+      filters["tag"]?.try(&.as_s).should eq("web")
+      filters["crystal_version"]?.try(&.as_s).should eq("1.0.0")
+    end
+
+    it "supports featured-only search" do
+      get "/api/v1/search?featured_only=true"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      filters = json["filters"]
+      filters["featured_only"]?.try(&.as_bool).should eq(true)
+    end
+
+    it "returns search filters" do
+      get "/api/v1/search/filters"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      json.should have_key("licenses")
+      json.should have_key("crystal_versions")
+      json.should have_key("tags")
+    end
+
+    it "returns search suggestions" do
+      get "/api/v1/search/suggestions?q=ke"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      json["query"].should eq("ke")
+      json.should have_key("suggestions")
+      json["suggestions"].should be_a(Array)
+    end
+
+    it "limits suggestions" do
+      get "/api/v1/search/suggestions?q=test&limit=5"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      suggestions = json["suggestions"].as_a
+      suggestions.size.should be <= 5
+    end
   end
 
   describe "Shard submission endpoint" do

@@ -8,6 +8,7 @@ require "openssl/hmac"
 require "digest/md5"
 require "base64"
 require "./repositories/shard_repository"
+require "./search_options"
 require "./services/shard_submission_service"
 require "./metrics"
 
@@ -85,6 +86,8 @@ module CrystalShards
         "shard_detail": "/api/v1/shards/:name",
         "submit_shard": "POST /api/v1/shards",
         search: "/api/v1/search",
+        filters: "/api/v1/search/filters",
+        suggestions: "/api/v1/search/suggestions",
         webhooks: "/webhooks/github",
         health: "/health"
       },
@@ -122,9 +125,13 @@ module CrystalShards
     env.response.content_type = "application/json"
     query = env.params.query["q"]? || ""
     
-    if query.empty?
+    # Parse search options from query parameters
+    search_options = SearchOptions.from_params(env.params.query.to_h)
+    
+    # Validate sort parameter
+    unless search_options.valid_sort_by?
       env.response.status_code = 400
-      {error: "Missing query parameter 'q'"}.to_json
+      {error: "Invalid sort_by parameter. Valid options: relevance, stars, downloads, recent, name"}.to_json
     else
       page = env.params.query["page"]?.try(&.to_i) || 1
       per_page = [env.params.query["per_page"]?.try(&.to_i) || 20, 100].min
@@ -132,13 +139,14 @@ module CrystalShards
       
       begin
         search_start = Time.utc
-        results = shard_repo.search(query, offset, per_page)
-        total = shard_repo.count_search(query)
+        results = shard_repo.search(query, offset, per_page, search_options)
+        total = shard_repo.count_search(query, search_options)
         search_duration = (Time.utc - search_start).total_seconds
         Metrics::SEARCH_DURATION.observe(search_duration)
         
         {
           query: query,
+          filters: search_options,
           results: results.map(&.to_json),
           total: total,
           page: page,
@@ -149,6 +157,37 @@ module CrystalShards
         env.response.status_code = 500
         {error: "Search error", message: ex.message}.to_json
       end
+    end
+  end
+
+  # Search filters endpoint - returns available filter values
+  get "/api/v1/search/filters" do |env|
+    env.response.content_type = "application/json"
+    
+    begin
+      filters = shard_repo.get_available_filters
+      filters.to_json
+    rescue ex
+      env.response.status_code = 500
+      {error: "Filters error", message: ex.message}.to_json
+    end
+  end
+
+  # Search suggestions endpoint - returns autocomplete suggestions
+  get "/api/v1/search/suggestions" do |env|
+    env.response.content_type = "application/json"
+    query = env.params.query["q"]? || ""
+    limit = [env.params.query["limit"]?.try(&.to_i) || 10, 50].min
+    
+    begin
+      suggestions = shard_repo.get_search_suggestions(query, limit)
+      {
+        query: query,
+        suggestions: suggestions
+      }.to_json
+    rescue ex
+      env.response.status_code = 500
+      {error: "Suggestions error", message: ex.message}.to_json
     end
   end
   

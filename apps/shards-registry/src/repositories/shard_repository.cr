@@ -2,6 +2,7 @@ require "pg"
 require "json" 
 require "db"
 require "../models"
+require "../search_options"
 require "../../../libraries/shared/src/services/cache_service"
 require "../../../libraries/shared/src/services/email_service"
 
@@ -86,32 +87,110 @@ module CrystalShards
     end
     
     def search(query : String, offset = 0, limit = 20) : Array(CrystalShared::Shard)
-      # Try to get cached results first
-      cached_results = CACHE.get_search_results("shards", query, limit, offset, Array(CrystalShared::Shard))
+      search(query, offset, limit, SearchOptions.new)
+    end
+
+    def search(query : String, offset = 0, limit = 20, options : SearchOptions = SearchOptions.new) : Array(CrystalShared::Shard)
+      # Create cache key including filters for proper caching
+      cache_key = "#{query}:#{options.to_cache_key}"
+      cached_results = CACHE.get_search_results("shards", cache_key, limit, offset, Array(CrystalShared::Shard))
       return cached_results if cached_results
+
+      # Build dynamic WHERE conditions
+      where_conditions = ["published = TRUE"] of String
+      query_params = [] of DB::Any
+      param_index = 1
+
+      # Add text search condition
+      if !query.empty?
+        where_conditions << "(to_tsvector('english', name || ' ' || COALESCE(description, '')) @@ plainto_tsquery('english', $#{param_index}) OR name ILIKE '%' || $#{param_index} || '%')"
+        query_params << query
+        param_index += 1
+      end
+
+      # Add license filter
+      if license = options.license
+        where_conditions << "LOWER(license) = LOWER($#{param_index})"
+        query_params << license
+        param_index += 1
+      end
+
+      # Add Crystal version compatibility filter
+      if crystal_version = options.crystal_version
+        where_conditions << "$#{param_index} = ANY(crystal_versions)"
+        query_params << crystal_version
+        param_index += 1
+      end
+
+      # Add tag filter
+      if tag = options.tag
+        where_conditions << "$#{param_index} = ANY(tags)"
+        query_params << tag
+        param_index += 1
+      end
+
+      # Add minimum stars filter
+      if min_stars = options.min_stars
+        where_conditions << "stars >= $#{param_index}"
+        query_params << min_stars
+        param_index += 1
+      end
+
+      # Add featured filter
+      if options.featured_only
+        where_conditions << "featured = TRUE"
+      end
+
+      # Add last activity filter (updated in last X days)
+      if days = options.updated_within_days
+        where_conditions << "last_activity > (NOW() - INTERVAL '#{days} days')"
+      end
+
+      # Build ORDER BY clause
+      order_clause = case options.sort_by
+      when "stars"
+        "ORDER BY stars DESC, name ASC"
+      when "downloads"
+        "ORDER BY download_count DESC, name ASC"
+      when "recent"
+        "ORDER BY last_activity DESC NULLS LAST, created_at DESC"
+      when "name"
+        "ORDER BY name ASC"
+      else # "relevance" or default
+        if query.empty?
+          "ORDER BY stars DESC, download_count DESC"
+        else
+          "ORDER BY ts_rank(to_tsvector('english', name || ' ' || COALESCE(description, '')), plainto_tsquery('english', $1)) DESC, stars DESC"
+        end
+      end
+
+      # Build final query
+      rank_select = if query.empty?
+        ""
+      else
+        ", ts_rank(to_tsvector('english', name || ' ' || COALESCE(description, '')), plainto_tsquery('english', $1)) as rank"
+      end
+
+      sql = "SELECT id, name, description, github_url, homepage_url, documentation_url,
+             license, latest_version, download_count, stars, forks, last_activity, tags,
+             crystal_versions, dependencies, published, featured, created_at, updated_at#{rank_select}
+             FROM shards 
+             WHERE #{where_conditions.join(" AND ")}
+             #{order_clause}
+             OFFSET $#{param_index} LIMIT $#{param_index + 1}"
+
+      query_params << offset << limit
 
       # Perform database query
       shards = [] of CrystalShared::Shard
-      @db.query(
-        "SELECT id, name, description, github_url, homepage_url, documentation_url,
-         license, latest_version, download_count, stars, forks, last_activity, tags,
-         crystal_versions, dependencies, published, featured, created_at, updated_at,
-         ts_rank(to_tsvector('english', name || ' ' || COALESCE(description, '')), 
-                 plainto_tsquery('english', $1)) as rank
-         FROM shards 
-         WHERE published = TRUE 
-         AND (to_tsvector('english', name || ' ' || COALESCE(description, '')) @@ plainto_tsquery('english', $1)
-              OR name ILIKE '%' || $1 || '%')
-         ORDER BY rank DESC, stars DESC
-         OFFSET $2 LIMIT $3", query, offset, limit
-      ) do |rs|
+      @db.query(sql, args: query_params) do |rs|
         rs.each do
-          shards << build_shard_from_result_set(rs, has_rank: true)
+          shards << build_shard_from_result_set(rs, has_rank: !query.empty?)
         end
       end
 
       # Cache the results for 5 minutes
-      CACHE.cache_search_results("shards", query, limit, offset, shards, CacheService::TTL_SHORT)
+      CACHE.cache_search_results("shards", cache_key, limit, offset, shards, CacheService::TTL_SHORT)
       
       shards
     end
@@ -133,13 +212,63 @@ module CrystalShards
     end
     
     def count_search(query : String) : Int32
-      # Search counts are cached with search results, so just compute directly
-      @db.scalar(
-        "SELECT COUNT(*) FROM shards 
-         WHERE published = TRUE 
-         AND (to_tsvector('english', name || ' ' || COALESCE(description, '')) @@ plainto_tsquery('english', $1)
-              OR name ILIKE '%' || $1 || '%')", query
-      ).as(Int64).to_i32
+      count_search(query, SearchOptions.new)
+    end
+
+    def count_search(query : String, options : SearchOptions) : Int32
+      # Build same WHERE conditions as search method
+      where_conditions = ["published = TRUE"] of String
+      query_params = [] of DB::Any
+      param_index = 1
+
+      # Add text search condition
+      if !query.empty?
+        where_conditions << "(to_tsvector('english', name || ' ' || COALESCE(description, '')) @@ plainto_tsquery('english', $#{param_index}) OR name ILIKE '%' || $#{param_index} || '%')"
+        query_params << query
+        param_index += 1
+      end
+
+      # Add license filter
+      if license = options.license
+        where_conditions << "LOWER(license) = LOWER($#{param_index})"
+        query_params << license
+        param_index += 1
+      end
+
+      # Add Crystal version compatibility filter
+      if crystal_version = options.crystal_version
+        where_conditions << "$#{param_index} = ANY(crystal_versions)"
+        query_params << crystal_version
+        param_index += 1
+      end
+
+      # Add tag filter
+      if tag = options.tag
+        where_conditions << "$#{param_index} = ANY(tags)"
+        query_params << tag
+        param_index += 1
+      end
+
+      # Add minimum stars filter
+      if min_stars = options.min_stars
+        where_conditions << "stars >= $#{param_index}"
+        query_params << min_stars
+        param_index += 1
+      end
+
+      # Add featured filter
+      if options.featured_only
+        where_conditions << "featured = TRUE"
+      end
+
+      # Add last activity filter
+      if days = options.updated_within_days
+        where_conditions << "last_activity > (NOW() - INTERVAL '#{days} days')"
+      end
+
+      sql = "SELECT COUNT(*) FROM shards WHERE #{where_conditions.join(" AND ")}"
+
+      @db.scalar(sql, args: query_params).as(Int64).to_i32
     end
     
     def update_github_stats(id : Int32, stars : Int32, forks : Int32, last_activity : Time?) : Bool
@@ -196,6 +325,99 @@ module CrystalShards
       true
     rescue
       false
+    end
+
+    def get_available_filters : Hash(String, Array(String))
+      cached_filters = CACHE.get_stats("filters")
+      if cached_filters
+        return cached_filters.transform_values { |v| v.as(Array(JSON::Any)).map(&.as_s) }
+      end
+
+      filters = Hash(String, Array(String)).new
+
+      # Get available licenses
+      licenses = [] of String
+      @db.query("SELECT DISTINCT license FROM shards WHERE published = TRUE AND license IS NOT NULL ORDER BY license") do |rs|
+        rs.each { licenses << rs.read(String) }
+      end
+      filters["licenses"] = licenses
+
+      # Get available Crystal versions
+      crystal_versions = Set(String).new
+      @db.query("SELECT DISTINCT UNNEST(crystal_versions) as version FROM shards WHERE published = TRUE ORDER BY version") do |rs|
+        rs.each { crystal_versions.add(rs.read(String)) }
+      end
+      filters["crystal_versions"] = crystal_versions.to_a
+
+      # Get available tags  
+      tags = Set(String).new
+      @db.query("SELECT DISTINCT UNNEST(tags) as tag FROM shards WHERE published = TRUE ORDER BY tag") do |rs|
+        rs.each { tags.add(rs.read(String)) }
+      end
+      filters["tags"] = tags.to_a
+
+      # Cache for 1 hour
+      CACHE.cache_stats("filters", filters.transform_values { |v| v.map(&.as(JSON::Any)) }, CacheService::TTL_LONG)
+      
+      filters
+    end
+
+    def get_search_suggestions(query : String, limit = 10) : Array(Hash(String, String))
+      return [] of Hash(String, String) if query.empty? || query.size < 2
+
+      suggestions = [] of Hash(String, String)
+      
+      # Get shard name suggestions (exact prefix matches prioritized)
+      @db.query(
+        "SELECT name, description, stars FROM shards 
+         WHERE published = TRUE 
+         AND (name ILIKE $1 || '%' OR name ILIKE '%' || $1 || '%')
+         ORDER BY 
+           CASE WHEN name ILIKE $1 || '%' THEN 0 ELSE 1 END,
+           stars DESC
+         LIMIT $2", query, limit
+      ) do |rs|
+        rs.each do
+          name = rs.read(String)
+          description = rs.read(String?)
+          stars = rs.read(Int32)
+          
+          suggestions << {
+            "type" => "shard",
+            "text" => name,
+            "description" => description || "",
+            "stars" => stars.to_s
+          }
+        end
+      end
+
+      # If we need more suggestions, add tag suggestions
+      if suggestions.size < limit
+        remaining_limit = limit - suggestions.size
+        @db.query(
+          "SELECT DISTINCT UNNEST(tags) as tag, COUNT(*) as shard_count 
+           FROM shards 
+           WHERE published = TRUE 
+           AND UNNEST(tags) ILIKE '%' || $1 || '%'
+           GROUP BY tag 
+           ORDER BY shard_count DESC, tag ASC
+           LIMIT $2", query, remaining_limit
+        ) do |rs|
+          rs.each do
+            tag = rs.read(String)
+            count = rs.read(Int64)
+            
+            suggestions << {
+              "type" => "tag",
+              "text" => tag,
+              "description" => "#{count} shards",
+              "stars" => ""
+            }
+          end
+        end
+      end
+
+      suggestions
     end
     
     private def build_shard_from_result_set(rs : DB::ResultSet, has_rank = false) : CrystalShared::Shard
