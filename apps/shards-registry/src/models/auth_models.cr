@@ -1,5 +1,5 @@
 require "crypto/bcrypt/password"
-require "secure_random"
+require "random/secure"
 require "jwt"
 require "time"
 
@@ -10,7 +10,7 @@ module CrystalShards
       password_hash = Crypto::Bcrypt::Password.create(password).to_s
       
       # Generate email verification token
-      verification_token = SecureRandom.urlsafe_base64(32)
+      verification_token = Random::Secure.urlsafe_base64(32)
       verification_expires = Time.utc + 24.hours
 
       user_id = db.scalar(
@@ -144,7 +144,7 @@ module CrystalShards
   class ApiKeyAuth
     def self.create_for_user(db : PG::Connection, user_id : Int32, name : String, scopes : Array(String) = [] of String, expires_at : Time? = nil)
       # Generate random API key
-      key = "cs_#{SecureRandom.hex(32)}"
+      key = "cs_#{Random::Secure.hex(32)}"
       key_hash = Crypto::Bcrypt::Password.create(key).to_s
 
       api_key_id = db.scalar(

@@ -7,7 +7,7 @@ require "../repositories/shard_repository"
 
 module CrystalShards
   class ShardSubmissionService
-    def initialize(@db : DB::Database, @redis : Redis::Client)
+    def initialize(@db : ::DB::Database, @redis : ::Redis)
       @shard_repo = ShardRepository.new(@db)
     end
     

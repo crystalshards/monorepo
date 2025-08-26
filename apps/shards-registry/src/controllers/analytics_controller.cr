@@ -1,5 +1,7 @@
 require "kemal"
 require "../middleware/rate_limit_middleware"
+require "../middleware/auth_middleware"
+require "time"
 
 module CrystalShards
   # API endpoints for usage analytics and rate limiting information
@@ -10,16 +12,16 @@ module CrystalShards
       
       # Get usage statistics (admin only)
       get "/api/analytics/usage" do |env|
-        user = require_admin(env)
+        user = CrystalShards.require_admin(env)
         next unless user
         
         # Parse date range parameters
-        start_date_str = env.params.query["start_date"]? || (Date.utc - 7.days).to_s
-        end_date_str = env.params.query["end_date"]? || Date.utc.to_s
+        start_date_str = env.params.query["start_date"]? || (Time.utc - 7.days).to_s("%Y-%m-%d")
+        end_date_str = env.params.query["end_date"]? || Time.utc.to_s("%Y-%m-%d")
         
         begin
-          start_date = Date.parse(start_date_str, "%Y-%m-%d")
-          end_date = Date.parse(end_date_str, "%Y-%m-%d")
+          start_date = Time.parse(start_date_str, "%Y-%m-%d", Time::Location::UTC)
+          end_date = Time.parse(end_date_str, "%Y-%m-%d", Time::Location::UTC)
           
           if end_date < start_date
             env.response.status_code = 400
@@ -55,14 +57,14 @@ module CrystalShards
       
       # Get top endpoints by usage (admin only)
       get "/api/analytics/top-endpoints" do |env|
-        user = require_admin(env)
+        user = CrystalShards.require_admin(env)
         next unless user
         
-        date_str = env.params.query["date"]? || Date.utc.to_s
+        date_str = env.params.query["date"]? || Time.utc.date.to_s
         limit = env.params.query["limit"]?.try(&.to_i) || 10
         
         begin
-          date = Date.parse(date_str, "%Y-%m-%d")
+          date = Time.parse(date_str, "%Y-%m-%d")
           
           if limit < 1 || limit > 100
             env.response.status_code = 400
@@ -186,7 +188,7 @@ module CrystalShards
       
       # Analytics cleanup endpoint (admin only, typically called by background job)
       post "/api/analytics/cleanup" do |env|
-        user = require_admin(env)
+        user = CrystalShards.require_admin(env)
         next unless user
         
         days_to_keep = env.params.json["days_to_keep"]?.try(&.as_i) || 30

@@ -185,7 +185,8 @@ module CrystalShards
       
       data = JSON.parse(body.gets_to_end)
       name = data["name"]?.as(String?)
-      scopes = data["scopes"]?.as(Array(JSON::Any))?.map(&.as(String)) || ["read"]
+      scopes_array = data["scopes"]?.as(Array(JSON::Any)?)
+      scopes = scopes_array ? scopes_array.map(&.as(String)) : ["read"]
       
       raise "Name is required" unless name
       

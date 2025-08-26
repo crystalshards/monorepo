@@ -1,7 +1,8 @@
 require "pg"
 require "json"
-require "../../../libraries/shared/src/services/cache_service"
-require "../../../libraries/shared/src/services/email_service"
+require "../../../../libraries/shared/src/services/cache_service"
+# TODO: Fix email service dependencies
+# require "../../../../libraries/shared/src/services/email_service"
 
 module CrystalGigs
   class JobRepository

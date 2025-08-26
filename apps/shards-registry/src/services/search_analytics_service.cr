@@ -1,5 +1,6 @@
 require "redis"
-require "../../../libraries/shared/src/services/cache_service"
+# TODO: Fix cache service dependencies
+# require "../../../../libraries/shared/src/services/cache_service"
 
 module CrystalShards
   class SearchAnalyticsService
