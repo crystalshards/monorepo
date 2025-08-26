@@ -1,0 +1,13 @@
+name: selenium
+version: 0.12.1
+authors:
+  - Matthew McGarvey <matthewmcgarvey14@gmail.com>
+crystal: ">= 1.4.0, < 2.0.0"
+license: MIT
+development_dependencies:
+  webdrivers:
+    github: crystal-loot/webdrivers.cr
+    version: ~> 0.4
+  ameba:
+    github: crystal-ameba/ameba
+    version: ~> 1.5

@@ -1,0 +1,69 @@
+name: Lucky Flow CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: "*"
+
+jobs:
+  check_format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: latest
+      - run: shards install
+      - run: crystal tool format --check
+      - run: ./bin/ameba
+  webless_specs:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            crystal: latest
+          - os: windows-latest
+            crystal: latest
+          - os: macos-latest
+            crystal: latest
+    runs-on: ${{matrix.os}}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+        if: matrix.os == 'windows-latest'
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{matrix.crystal_version}}
+      - run: shards install --ignore-crystal-version --skip-executables --skip-postinstall
+      - run: crystal spec --tag ~headless_chrome
+        env:
+          LUCKYFLOW_DRIVER: webless
+  selenium_specs:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            crystal: latest
+          - os: windows-latest
+            crystal: latest
+          - os: macos-latest
+            crystal: latest
+    runs-on: ${{matrix.os}}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+        if: matrix.os == 'windows-latest'
+      - uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{matrix.crystal_version}}
+      - run: shards install --ignore-crystal-version --skip-executables --skip-postinstall
+      - run: crystal spec --tag ~webless
+        env:
+          LUCKYFLOW_DRIVER: headless_chrome

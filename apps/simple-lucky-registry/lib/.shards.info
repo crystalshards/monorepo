@@ -37,3 +37,54 @@ shards:
   lucky:
     git: https://github.com/luckyframework/lucky.git
     version: 1.0.0
+  db:
+    git: https://github.com/crystal-lang/crystal-db.git
+    version: 0.11.0
+  pg:
+    git: https://github.com/will/crystal-pg.git
+    version: 0.26.0
+  splay_tree_map:
+    git: https://github.com/wyhaines/splay_tree_map.cr.git
+    version: 0.3.0
+  lucky_cache:
+    git: https://github.com/luckyframework/lucky_cache.git
+    version: 0.1.1
+  cadmium_transliterator:
+    git: https://github.com/cadmiumcr/transliterator.git
+    version: 0.1.0+git.commit.46c4c14594057dbcfaf27e7e7c8c164d3f0ce3f1
+  avram:
+    git: https://github.com/luckyframework/avram.git
+    version: 1.0.0
+  carbon:
+    git: https://github.com/luckyframework/carbon.git
+    version: 0.2.0
+  lucky_env:
+    git: https://github.com/luckyframework/lucky_env.git
+    version: 0.1.4
+  selenium:
+    git: https://github.com/crystal-loot/selenium.cr.git
+    version: 0.12.1
+  crystar:
+    git: https://github.com/naqvis/crystar.git
+    version: 0.3.1
+  webdrivers:
+    git: https://github.com/crystal-loot/webdrivers.cr.git
+    version: 0.4.4
+  webless:
+    git: https://github.com/crystal-loot/webless.git
+    version: 0.1.0
+  fnv:
+    git: https://github.com/naqvis/crystal-fnv.git
+    version: 0.1.3
+  xpath2:
+    git: https://github.com/naqvis/crystal-xpath2.git
+    version: 0.1.3
+  html5:
+    git: https://github.com/naqvis/crystal-html5.git
+    version: 0.5.0
+  lucky_flow:
+    git: https://github.com/luckyframework/lucky_flow.git
+    version: 0.9.2
+  spec-kemal:
+    git: https://github.com/kemalcr/spec-kemal.git
+    version: 1.0.0
