@@ -11,10 +11,31 @@ metadata:
 spec:
   restartPolicy: Always
   containers:
+    - name: dind
+      image: docker:24-dind
+      securityContext:
+        privileged: true
+      env:
+        - name: DOCKER_TLS_CERTDIR
+          value: ""  # Disable TLS for simplicity in dev
+      volumeMounts:
+        - name: docker-storage
+          mountPath: /var/lib/docker
+        - name: workspace
+          mountPath: /workspaces/monorepo
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1"
+        limits:
+          memory: "4Gi"
+          cpu: "2"
     - name: dev
       image: ghcr.io/coder/envbuilder:latest
       imagePullPolicy: Always
       env:
+        - name: DOCKER_HOST
+          value: tcp://localhost:2375
         - name: ENVBUILDER_GIT_URL
           value: https://github.com/crystalshards/crystalshards-claude.git
         - name: ENVBUILDER_GIT_BRANCH
@@ -48,8 +69,6 @@ spec:
       volumeMounts:
         - name: workspace
           mountPath: /workspaces/monorepo
-        - name: docker-socket
-          mountPath: /var/run/docker.sock
       resources:
         requests:
           memory: "4Gi"
@@ -61,10 +80,9 @@ spec:
     - name: workspace
       persistentVolumeClaim:
         claimName: crystalshards-workspace
-    - name: docker-socket
-      hostPath:
-        path: /var/run/docker.sock
-        type: Socket
+    - name: docker-storage
+      persistentVolumeClaim:
+        claimName: crystalshards-docker-storage
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -77,6 +95,19 @@ spec:
   resources:
     requests:
       storage: 50Gi
+  storageClassName: standard-rwo
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: crystalshards-docker-storage
+  namespace: claude
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Gi
   storageClassName: standard-rwo
 ---
 apiVersion: v1
