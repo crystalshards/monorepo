@@ -40,8 +40,7 @@ fi
 
 # Configure Claude with project settings
 echo "🤖 Configuring Claude..."
-# Claude config directory and file
-CLAUDE_CONFIG_DIR="/workspaces/.cache/.claude"
+# Claude config directory and file (using environment variable from devcontainer.json)
 CLAUDE_CONFIG_FILE="${CLAUDE_CONFIG_DIR}/config.json"
 
 # Ensure config directory exists

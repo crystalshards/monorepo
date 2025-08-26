@@ -25,7 +25,7 @@
     "WORKSPACE": "/workspaces/monorepo",
     "LANG": "C.UTF-8",
     "LC_ALL": "C.UTF-8",
-    "CLAUDE_CONFIG_DIR": "/workspaces/.cache/.claude",
+    "CLAUDE_CONFIG_DIR": "/home/claude/.config/claude",
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}",
     "GIT_AUTHOR_NAME": "CrystalShards Agent",
     "GIT_AUTHOR_EMAIL": "agent@crystalshards.org",
