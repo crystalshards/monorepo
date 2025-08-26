@@ -12,7 +12,7 @@ Building CrystalShards.org and CrystalDocs.org - a comprehensive Crystal languag
 
 ### 1. Autonomous Execution (RepoMirror Style)
 
-- **Commit after EVERY file edit** - This is non-negotiable
+- **Commit logical groups of changes and push frequently** - Keep git history meaningful
 - Focus on building, not planning
 - Self-regulate scope - know when to stop
 - Let the simple prompt guide you
@@ -193,7 +193,7 @@ lucky db.migrate
 2. **Frequent Commits**: Commit working code at least every 30 minutes
 3. **Descriptive Messages**: Use clear, concise commit messages
 4. **Feature Branches**: Create branches for each major feature
-5. **Push Regularly**: Push to remote after every 2-3 commits
+5. **Push Frequently**: Push to remote after completing logical units of work
 
 ### Commit Message Format
 
@@ -254,7 +254,7 @@ gh pr create --title "Feature: Task Name" --body "Description of changes"
 7. **Commit working code immediately** (with issue reference if applicable)
 8. Update PROMPT.md with results
 9. Handle any errors appropriately
-10. **Push to remote repository**
+10. **Push to remote repository after completing logical work units**
 11. Prepare notes for next iteration
 12. Close issue if complete: `gh issue close <number> --comment "Completed in <commit-sha>"`
 

@@ -21,6 +21,8 @@ git config --global user.email "${GIT_AUTHOR_EMAIL:-agent@crystalshards.org}"
 
 # Simple loop
 while true; do
+    echo "🤖 Starting next loop..."
+    echo "==========================="
     cat PROMPT.md | claude --verbose -p --dangerously-skip-permissions
     sleep 5
 done

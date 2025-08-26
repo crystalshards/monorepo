@@ -6,7 +6,7 @@ Your job is to build:
 2. **CrystalDocs.org** - Documentation platform (like <https://hexdocs.pm/>)
 3. **CrystalGigs.com** - Paid job board for Crystal jobs (like <https://www.elixirdevs.com/>)
 
-Make a commit after EVERY file edit.
+**Commit related changes together, push frequently.**
 
 ## Critical Requirements
 

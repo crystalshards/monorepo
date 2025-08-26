@@ -32,6 +32,13 @@ git config --global user.email "${GIT_AUTHOR_EMAIL:-agent@crystalshards.org}"
 git config --global init.defaultBranch main
 git config --global push.autoSetupRemote true
 
+# Configure git to use GitHub token for HTTPS authentication
+if [ -n "${GITHUB_TOKEN}" ]; then
+    git config --global credential.helper store
+    echo "https://x-access-token:${GITHUB_TOKEN}@github.com" > ~/.git-credentials
+    chmod 600 ~/.git-credentials
+fi
+
 # Configure GitHub CLI if token is available
 if [ -n "${GITHUB_TOKEN}" ]; then
     echo "🔐 Configuring GitHub CLI..."
