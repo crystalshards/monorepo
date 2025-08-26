@@ -2,8 +2,8 @@
 set -e
 
 # Check required environment variables
-if [ -z "$ANTHROPIC_API_KEY" ]; then
-    echo "❌ Missing ANTHROPIC_API_KEY"
+if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+    echo "❌ Missing CLAUDE_CODE_OAUTH_TOKEN"
     exit 1
 fi
 
@@ -29,12 +29,13 @@ echo ""
 # Delete existing resources
 echo "🧹 Cleaning up existing resources..."
 kubectl delete pod "$POD_NAME" -n "$NAMESPACE" --ignore-not-found=true --wait
-# kubectl delete pvc crystalshards-workspace -n "$NAMESPACE" --ignore-not-found=true --wait
+kubectl delete pvc crystalshards-workspace -n "$NAMESPACE" --ignore-not-found=true --wait
+kubectl delete pvc crystalshards-docker-storage -n "$NAMESPACE" --ignore-not-found=true --wait
 
 # Apply the manifest
 echo "📦 Creating resources..."
 cat kubernetes-dev-pod.yaml | \
-    sed "s|YOUR_CLAUDE_API_KEY_HERE|$ANTHROPIC_API_KEY|g" | \
+    sed "s|YOUR_CLAUDE_API_KEY_HERE|$CLAUDE_CODE_OAUTH_TOKEN|g" | \
     sed "s|YOUR_GITHUB_TOKEN_HERE|$GITHUB_TOKEN|g" | \
     sed "s|crystalshards-agent|$POD_NAME|g" | \
     sed "s|ENVBUILDER_GIT_URL: https://github.com/crystalshards/crystalshards-claude.git|ENVBUILDER_GIT_URL: $GIT_URL|g" | \

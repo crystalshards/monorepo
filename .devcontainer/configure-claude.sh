@@ -18,8 +18,7 @@ fi
 
 # Create the configuration using jq
 # This follows the same pattern as the Go code but using jq for JSON manipulation
-jq --arg api_key "${ANTHROPIC_API_KEY:-}" \
-   '. + {
+jq  '. + {
      "hasCompletedOnboarding": true,
      "bypassPermissionsModeAccepted": true,
      "autoUpdaterStatus": "disabled",

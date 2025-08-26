@@ -6,7 +6,7 @@ An autonomous agent that builds CrystalShards.org and CrystalDocs.org - a compre
 
 ```bash
 # Set your credentials
-export ANTHROPIC_API_KEY="your-claude-api-key"
+export CLAUDE_CODE_OAUTH_TOKEN="your-claude-api-key"
 export GITHUB_TOKEN="your-github-token"
 
 # Launch the agent (uses kubernetes-dev-pod.yaml)

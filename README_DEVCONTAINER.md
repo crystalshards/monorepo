@@ -60,7 +60,7 @@ kubectl run crystalshards-dev \
   --env="ENVBUILDER_GIT_URL=https://github.com/crystalshards/crystalshards-claude.git" \
   --env="ENVBUILDER_DEVCONTAINER_DIR=/workspaces/monorepo/.devcontainer" \
   --env="ENVBUILDER_INIT_SCRIPT=/workspaces/monorepo/develop.sh" \
-  --env="ANTHROPIC_API_KEY=your-api-key" \
+  --env="CLAUDE_CODE_OAUTH_TOKEN=your-api-key" \
   --env="GITHUB_TOKEN=your-github-token" \
   --env="GIT_AUTHOR_NAME=CrystalShards Bot" \
   --env="GIT_AUTHOR_EMAIL=bot@crystalshards.org"
@@ -72,7 +72,7 @@ Use the `remote.sh` script for easier deployment:
 
 ```bash
 # Export required environment variables
-export ANTHROPIC_API_KEY="your-claude-api-key"
+export CLAUDE_CODE_OAUTH_TOKEN="your-claude-api-key"
 export GITHUB_TOKEN="your-github-token"
 
 # Run the launcher script
