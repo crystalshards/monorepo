@@ -6,44 +6,6 @@
                 "-y",
                 "@upstash/context7-mcp@latest"
             ]
-        },
-        "desktop-commander": {
-            "command": "npx",
-            "args": [
-                "-y",
-                "@wonderwhy-er/desktop-commander"
-            ]
-        },
-        "github": {
-            "command": "docker",
-            "args": [
-                "run",
-                "-i",
-                "--rm",
-                "-e",
-                "GITHUB_PERSONAL_ACCESS_TOKEN",
-                "ghcr.io/github/github-mcp-server"
-            ]
-        },
-        "playwright": {
-            "command": "npx",
-            "args": [
-                "-y",
-                "@playwright/mcp@latest",
-                "--headless",
-                "--isolated",
-                "--no-sandbox"
-            ]
-        },
-        "postgres": {
-            "command": "uvx",
-            "args": [
-                "postgres-mcp",
-                "--access-mode=unrestricted"
-            ],
-            "env": {
-                "DATABASE_URI": "postgresql://postgres:postgres@localhost:5432/gigsmart_dev"
-            }
         }
     }
 }

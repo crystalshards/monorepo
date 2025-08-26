@@ -35,7 +35,6 @@ kubectl delete pvc crystalshards-docker-storage -n "$NAMESPACE" --ignore-not-fou
 # Apply the manifest
 echo "📦 Creating resources..."
 cat kubernetes-dev-pod.yaml | \
-    sed "s|YOUR_CLAUDE_API_KEY_HERE|$CLAUDE_CODE_OAUTH_TOKEN|g" | \
     sed "s|YOUR_GITHUB_TOKEN_HERE|$GITHUB_TOKEN|g" | \
     sed "s|crystalshards-agent|$POD_NAME|g" | \
     sed "s|ENVBUILDER_GIT_URL: https://github.com/crystalshards/crystalshards-claude.git|ENVBUILDER_GIT_URL: $GIT_URL|g" | \
@@ -46,12 +45,15 @@ echo "⏳ Waiting for pod to be ready..."
 kubectl wait --for=condition=Ready pod/$POD_NAME -n $NAMESPACE --timeout=300s || true
 
 echo ""
-echo "✅ Agent launched!"
+echo "✅ Pod is ready!"
+echo ""
+echo "Next steps:"
+echo "1. Run ./remote-login.sh to authenticate with Claude Code"
+echo "2. The agent will start automatically after successful login"
 echo ""
 echo "Useful commands:"
-echo "📜 kubectl logs -f $POD_NAME -n $NAMESPACE"
+echo "📜 kubectl logs -f $POD_NAME -n $NAMESPACE -c agent"
 echo "🔍 kubectl describe pod $POD_NAME -n $NAMESPACE"
-echo "💻 kubectl exec -it $POD_NAME -n $NAMESPACE -- bash"
-echo "🗑️  kubectl delete -f kubernetes-dev-pod.yaml"
-echo "📜 Following logs (Ctrl+C to exit)..."
-kubectl logs -f "$POD_NAME" -n "$NAMESPACE" -c agent
+echo "💻 kubectl exec -it $POD_NAME -n $NAMESPACE -c agent -- bash"
+echo "🗑️  kubectl delete pod $POD_NAME -n $NAMESPACE"
+echo ""

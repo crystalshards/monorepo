@@ -229,6 +229,70 @@ git push origin feature/task-name
 gh pr create --title "Feature: Task Name" --body "Description of changes"
 ```
 
+## GitHub CLI Tool Reference
+
+The GitHub CLI (`gh`) is the primary tool for interacting with GitHub. Instead of loading extensive MCP context, use `gh --help` and subcommand help to discover functionality.
+
+### Getting Help
+
+```bash
+# Main help
+gh --help
+
+# Subcommand help
+gh issue --help
+gh pr --help
+gh repo --help
+gh workflow --help
+
+# Specific command help
+gh issue create --help
+gh pr view --help
+```
+
+### Common GitHub CLI Commands
+
+```bash
+# Issues
+gh issue list                           # List issues
+gh issue create --title "Title"         # Create issue
+gh issue view <number>                   # View issue details
+gh issue edit <number>                   # Edit issue
+gh issue close <number>                  # Close issue
+gh issue comment <number> --body "msg"  # Add comment
+
+# Pull Requests
+gh pr list                              # List PRs
+gh pr create                            # Create PR interactively
+gh pr view <number>                     # View PR details
+gh pr checkout <number>                 # Checkout PR branch
+gh pr merge <number>                    # Merge PR
+gh pr review <number>                   # Review PR
+
+# Repositories
+gh repo view                            # View current repo
+gh repo clone <owner>/<name>           # Clone repo
+gh repo fork                           # Fork current repo
+
+# Workflows
+gh workflow list                        # List workflows
+gh workflow view <name>                # View workflow details
+gh workflow run <name>                 # Trigger workflow
+gh run list                           # List workflow runs
+gh run view <run-id>                  # View run details
+
+# Authentication
+gh auth status                         # Check auth status
+gh auth login                         # Login to GitHub
+```
+
+### Best Practices
+
+1. **Use help pages instead of memorizing**: Always check `--help` for accurate syntax
+2. **Leverage interactive modes**: Many commands have interactive modes when flags are omitted
+3. **Use JSON output for parsing**: Add `--json` flag for machine-readable output
+4. **Filter and format**: Use `--jq` for filtering JSON output
+
 ## Development Workflow
 
 ### Finding Work
