@@ -36,7 +36,7 @@
     "GIT_COMMITTER_EMAIL": "agent@crystalshards.org",
     "MISE_TRUSTED_CONFIG_PATHS": "/workspaces/monorepo"
   },
-  "postCreateCommand": ".devcontainer/onCreateCommand.sh",
+  "onCreateCommand": ".devcontainer/onCreateCommand.sh",
   "forwardPorts": [
     3000,
     3001,
