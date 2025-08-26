@@ -419,6 +419,157 @@ module CrystalShards
 
       suggestions
     end
+
+    # Get search results with highlighted text snippets
+    def search_with_highlights(query : String, offset = 0, limit = 20, options : SearchOptions = SearchOptions.new) : Array(Hash(String, JSON::Any))
+      return [] of Hash(String, JSON::Any) if query.empty?
+
+      # Create cache key including highlights
+      cache_key = "#{query}:highlights:#{options.to_cache_key}"
+      cached_results = CACHE.get_search_results("shards", cache_key, limit, offset, Array(Hash(String, JSON::Any)))
+      return cached_results if cached_results
+
+      # Build dynamic WHERE conditions (same as regular search)
+      where_conditions = ["published = TRUE"] of String
+      query_params = [] of DB::Any
+      param_index = 1
+
+      # Add text search condition with highlighting support
+      where_conditions << "(to_tsvector('english', name || ' ' || COALESCE(description, '')) @@ plainto_tsquery('english', $#{param_index}) OR name ILIKE '%' || $#{param_index} || '%')"
+      query_params << query
+      param_index += 1
+
+      # Add filters (same as regular search)
+      if license = options.license
+        where_conditions << "LOWER(license) = LOWER($#{param_index})"
+        query_params << license
+        param_index += 1
+      end
+
+      if crystal_version = options.crystal_version
+        where_conditions << "$#{param_index} = ANY(crystal_versions)"
+        query_params << crystal_version
+        param_index += 1
+      end
+
+      if tag = options.tag
+        where_conditions << "$#{param_index} = ANY(tags)"
+        query_params << tag
+        param_index += 1
+      end
+
+      if min_stars = options.min_stars
+        where_conditions << "stars >= $#{param_index}"
+        query_params << min_stars
+        param_index += 1
+      end
+
+      if options.featured_only
+        where_conditions << "featured = TRUE"
+      end
+
+      if days = options.updated_within_days
+        where_conditions << "last_activity > (NOW() - INTERVAL '#{days} days')"
+      end
+
+      # Build ORDER BY clause
+      order_clause = case options.sort_by
+      when "stars"
+        "ORDER BY stars DESC, name ASC"
+      when "downloads"
+        "ORDER BY download_count DESC, name ASC"
+      when "recent"
+        "ORDER BY last_activity DESC NULLS LAST, created_at DESC"
+      when "name"
+        "ORDER BY name ASC"
+      else # "relevance" or default
+        "ORDER BY ts_rank(to_tsvector('english', name || ' ' || COALESCE(description, '')), plainto_tsquery('english', $1)) DESC, stars DESC"
+      end
+
+      # Build query with highlighting
+      sql = "SELECT id, name, description, github_url, homepage_url, documentation_url,
+             license, latest_version, download_count, stars, forks, last_activity, tags,
+             crystal_versions, dependencies, published, featured, created_at, updated_at,
+             ts_rank(to_tsvector('english', name || ' ' || COALESCE(description, '')), plainto_tsquery('english', $1)) as rank,
+             ts_headline('english', COALESCE(description, name), plainto_tsquery('english', $1), 
+                        'StartSel=<mark>, StopSel=</mark>, MaxWords=50, MinWords=20, MaxFragments=3') as highlight
+             FROM shards 
+             WHERE #{where_conditions.join(" AND ")}
+             #{order_clause}
+             OFFSET $#{param_index} LIMIT $#{param_index + 1}"
+
+      query_params << offset << limit
+
+      # Perform database query
+      results = [] of Hash(String, JSON::Any)
+      @db.query(sql, args: query_params) do |rs|
+        rs.each do
+          shard = build_shard_from_result_set_with_highlights(rs)
+          results << shard
+        end
+      end
+
+      # Cache the results for 5 minutes
+      CACHE.cache_search_results("shards", cache_key, limit, offset, results, CacheService::TTL_SHORT)
+      
+      results
+    end
+
+    private def build_shard_from_result_set_with_highlights(rs : DB::ResultSet) : Hash(String, JSON::Any)
+      # Read all the regular shard fields
+      id = rs.read(Int32)
+      name = rs.read(String)
+      description = rs.read(String?)
+      github_url = rs.read(String)
+      homepage_url = rs.read(String?)
+      documentation_url = rs.read(String?)
+      license = rs.read(String?)
+      latest_version = rs.read(String?)
+      download_count = rs.read(Int32)
+      stars = rs.read(Int32)
+      forks = rs.read(Int32)
+      last_activity = rs.read(Time?)
+      tags = rs.read(Array(String))
+      crystal_versions = rs.read(Array(String))
+      dependencies_json = rs.read(String?)
+      published = rs.read(Bool)
+      featured = rs.read(Bool)
+      created_at = rs.read(Time)
+      updated_at = rs.read(Time)
+      rank = rs.read(Float64)
+      highlight = rs.read(String)
+
+      # Parse dependencies
+      dependencies = {} of String => String
+      if dependencies_json
+        dependencies = Hash(String, String).from_json(dependencies_json)
+      end
+
+      # Build response with highlighted content
+      {
+        "id" => JSON::Any.new(id.to_i64),
+        "name" => JSON::Any.new(name),
+        "description" => JSON::Any.new(description),
+        "github_url" => JSON::Any.new(github_url),
+        "homepage_url" => JSON::Any.new(homepage_url),
+        "documentation_url" => JSON::Any.new(documentation_url),
+        "license" => JSON::Any.new(license),
+        "latest_version" => JSON::Any.new(latest_version),
+        "download_count" => JSON::Any.new(download_count.to_i64),
+        "stars" => JSON::Any.new(stars.to_i64),
+        "forks" => JSON::Any.new(forks.to_i64),
+        "last_activity" => JSON::Any.new(last_activity.try(&.to_s)),
+        "tags" => JSON::Any.new(tags.map { |t| JSON::Any.new(t) }),
+        "crystal_versions" => JSON::Any.new(crystal_versions.map { |v| JSON::Any.new(v) }),
+        "dependencies" => JSON::Any.new(dependencies.transform_values { |v| JSON::Any.new(v) }),
+        "published" => JSON::Any.new(published),
+        "featured" => JSON::Any.new(featured),
+        "created_at" => JSON::Any.new(created_at.to_s),
+        "updated_at" => JSON::Any.new(updated_at.to_s),
+        "relevance_score" => JSON::Any.new(rank),
+        "highlighted_snippet" => JSON::Any.new(highlight)
+      }
+    end
     
     private def build_shard_from_result_set(rs : DB::ResultSet, has_rank = false) : CrystalShared::Shard
       id = rs.read(Int32)

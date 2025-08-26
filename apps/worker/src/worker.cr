@@ -157,6 +157,54 @@ module CrystalWorker
     end
   end
   
+  # Search analytics cleanup job
+  class SearchAnalyticsCleanupJob
+    include Sidekiq::Job
+    
+    def perform
+      puts "Running search analytics cleanup..."
+      
+      begin
+        # Initialize Redis connection for analytics
+        redis = Redis.new(url: REDIS_URL)
+        
+        # Clean up old search queries (>30 days)
+        cutoff_time = (Time.utc - 30.days).to_unix_f
+        redis.zremrangebyscore("search:queries", "-inf", cutoff_time.to_s)
+        
+        # Clean up old trending data
+        trending_cutoff = cutoff_time / 3600.0
+        redis.zremrangebyscore("search:trending", "-inf", trending_cutoff.to_s)
+        
+        # Clean up single-use searches older than 7 days
+        queries = redis.hgetall("search:queries:counts")
+        old_queries = [] of String
+        
+        queries.each do |query, count|
+          if count == "1"
+            query_time = redis.zscore("search:queries", query)
+            if query_time && query_time < (Time.utc - 7.days).to_unix_f
+              old_queries << query
+            end
+          end
+        end
+        
+        # Remove old single-use queries
+        old_queries.each do |query|
+          redis.hdel("search:queries:counts", query)
+          redis.zrem("search:queries", query)
+          redis.zrem("search:trending", query)
+        end
+        
+        redis.close
+        puts "✓ Search analytics cleanup completed: removed #{old_queries.size} old queries"
+        
+      rescue ex
+        puts "✗ Search analytics cleanup failed: #{ex.message}"
+      end
+    end
+  end
+
   # Health check job
   class HealthCheckJob
     include Sidekiq::Job
@@ -202,6 +250,14 @@ spawn do
   loop do
     CrystalWorker::HealthCheckJob.async.perform
     sleep 5.minutes
+  end
+end
+
+# Schedule daily search analytics cleanup
+spawn do
+  loop do
+    CrystalWorker::SearchAnalyticsCleanupJob.async.perform
+    sleep 24.hours
   end
 end
 

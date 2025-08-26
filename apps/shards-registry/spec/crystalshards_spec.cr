@@ -161,6 +161,62 @@ describe "CrystalShards Registry" do
       suggestions = json["suggestions"].as_a
       suggestions.size.should be <= 5
     end
+
+    it "returns trending searches" do
+      get "/api/v1/search/trending"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      json.should have_key("trending_searches")
+      json.should have_key("period")
+      json["period"].should eq("last_7_days")
+    end
+
+    it "returns popular searches" do
+      get "/api/v1/search/popular"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      json.should have_key("popular_searches")
+      json.should have_key("period")
+      json["period"].should eq("all_time")
+    end
+
+    it "returns search analytics" do
+      get "/api/v1/search/analytics"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      json.should have_key("statistics")
+      json.should have_key("trending_searches")
+      json.should have_key("popular_searches")
+      json.should have_key("recent_searches")
+      json.should have_key("period")
+    end
+
+    it "supports custom analytics period" do
+      get "/api/v1/search/analytics?days=14"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      json["period"].should eq("last_14_days")
+    end
+
+    it "supports search highlighting" do
+      get "/api/v1/search?q=test&highlight=true"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      json["highlights_enabled"].as_bool.should eq(true)
+    end
+
+    it "disables highlighting when not requested" do
+      get "/api/v1/search?q=test"
+      response.status_code.should eq(200)
+      
+      json = JSON.parse(response.body)
+      json["highlights_enabled"].as_bool.should eq(false)
+    end
   end
 
   describe "Shard submission endpoint" do

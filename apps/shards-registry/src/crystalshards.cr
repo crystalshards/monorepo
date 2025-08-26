@@ -10,6 +10,7 @@ require "base64"
 require "./repositories/shard_repository"
 require "./search_options"
 require "./services/shard_submission_service"
+require "./services/search_analytics_service"
 require "./metrics"
 
 # Load environment variables
@@ -31,6 +32,7 @@ module CrystalShards
   # Initialize services
   shard_repo = ShardRepository.new(DB)
   submission_service = ShardSubmissionService.new(DB, REDIS)
+  analytics_service = SearchAnalyticsService.new(REDIS)
   
   # Add metrics middleware
   add_handler Metrics::MetricsHandler.new
@@ -88,6 +90,9 @@ module CrystalShards
         search: "/api/v1/search",
         filters: "/api/v1/search/filters",
         suggestions: "/api/v1/search/suggestions",
+        trending: "/api/v1/search/trending",
+        popular: "/api/v1/search/popular",
+        analytics: "/api/v1/search/analytics",
         webhooks: "/webhooks/github",
         health: "/health"
       },
@@ -139,20 +144,67 @@ module CrystalShards
       
       begin
         search_start = Time.utc
-        results = shard_repo.search(query, offset, per_page, search_options)
-        total = shard_repo.count_search(query, search_options)
-        search_duration = (Time.utc - search_start).total_seconds
-        Metrics::SEARCH_DURATION.observe(search_duration)
         
-        {
-          query: query,
-          filters: search_options,
-          results: results.map(&.to_json),
-          total: total,
-          page: page,
-          per_page: per_page,
-          pages: (total / per_page.to_f).ceil.to_i
-        }.to_json
+        # Check if highlights are requested
+        highlight = env.params.query["highlight"]? == "true"
+        
+        if highlight && !query.empty?
+          # Use highlighting search for better user experience
+          highlighted_results = shard_repo.search_with_highlights(query, offset, per_page, search_options)
+          total = shard_repo.count_search(query, search_options)
+          search_duration = (Time.utc - search_start).total_seconds
+          Metrics::SEARCH_DURATION.observe(search_duration)
+          
+          # Record search analytics (non-blocking)
+          spawn do
+            begin
+              user_ip = env.request.headers["X-Forwarded-For"]? || env.request.remote_address.to_s
+              user_id = Digest::MD5.hexdigest(user_ip)
+              analytics_service.record_search(query, total, user_id, search_options)
+            rescue ex
+              puts "Search analytics recording failed: #{ex.message}"
+            end
+          end
+          
+          {
+            query: query,
+            filters: search_options,
+            results: highlighted_results,
+            total: total,
+            page: page,
+            per_page: per_page,
+            pages: (total / per_page.to_f).ceil.to_i,
+            highlights_enabled: true
+          }.to_json
+        else
+          # Regular search without highlights
+          results = shard_repo.search(query, offset, per_page, search_options)
+          total = shard_repo.count_search(query, search_options)
+          search_duration = (Time.utc - search_start).total_seconds
+          Metrics::SEARCH_DURATION.observe(search_duration)
+          
+          # Record search analytics (non-blocking)
+          spawn do
+            begin
+              user_ip = env.request.headers["X-Forwarded-For"]? || env.request.remote_address.to_s
+              user_id = Digest::MD5.hexdigest(user_ip)
+              analytics_service.record_search(query, total, user_id, search_options)
+            rescue ex
+              puts "Search analytics recording failed: #{ex.message}"
+            end
+          end
+          
+          {
+            query: query,
+            filters: search_options,
+            results: results.map(&.to_json),
+            total: total,
+            page: page,
+            per_page: per_page,
+            pages: (total / per_page.to_f).ceil.to_i,
+            highlights_enabled: false
+          }.to_json
+        end
       rescue ex
         env.response.status_code = 500
         {error: "Search error", message: ex.message}.to_json
@@ -188,6 +240,64 @@ module CrystalShards
     rescue ex
       env.response.status_code = 500
       {error: "Suggestions error", message: ex.message}.to_json
+    end
+  end
+
+  # Search trending endpoint - returns trending searches
+  get "/api/v1/search/trending" do |env|
+    env.response.content_type = "application/json"
+    limit = [env.params.query["limit"]?.try(&.to_i) || 20, 100].min
+    
+    begin
+      trending = analytics_service.get_trending_searches(limit)
+      {
+        trending_searches: trending,
+        period: "last_7_days"
+      }.to_json
+    rescue ex
+      env.response.status_code = 500
+      {error: "Trending search error", message: ex.message}.to_json
+    end
+  end
+
+  # Search popular endpoint - returns most popular searches by count
+  get "/api/v1/search/popular" do |env|
+    env.response.content_type = "application/json"
+    limit = [env.params.query["limit"]?.try(&.to_i) || 20, 100].min
+    
+    begin
+      popular = analytics_service.get_popular_searches(limit)
+      {
+        popular_searches: popular,
+        period: "all_time"
+      }.to_json
+    rescue ex
+      env.response.status_code = 500
+      {error: "Popular search error", message: ex.message}.to_json
+    end
+  end
+
+  # Search analytics endpoint - returns detailed search statistics
+  get "/api/v1/search/analytics" do |env|
+    env.response.content_type = "application/json"
+    days_back = [env.params.query["days"]?.try(&.to_i) || 7, 30].min
+    
+    begin
+      stats = analytics_service.get_search_stats(days_back)
+      trending = analytics_service.get_trending_searches(10)
+      popular = analytics_service.get_popular_searches(10)
+      recent = analytics_service.get_recent_searches(20)
+      
+      {
+        statistics: stats,
+        trending_searches: trending,
+        popular_searches: popular,
+        recent_searches: recent,
+        period: "last_#{days_back}_days"
+      }.to_json
+    rescue ex
+      env.response.status_code = 500
+      {error: "Analytics error", message: ex.message}.to_json
     end
   end
   
