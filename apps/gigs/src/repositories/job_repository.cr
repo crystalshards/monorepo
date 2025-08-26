@@ -1,6 +1,7 @@
 require "pg"
 require "json"
 require "../../../libraries/shared/src/services/cache_service"
+require "../../../libraries/shared/src/services/email_service"
 
 module CrystalGigs
   class JobRepository
@@ -41,6 +42,15 @@ module CrystalGigs
         CACHE.invalidate_search("jobs")
         CACHE.invalidate_pattern("stats:gigs")
         
+        # Send email confirmation (asynchronous to avoid blocking)
+        spawn do
+          begin
+            EMAIL_SERVICE.send_job_confirmation(job_data, stripe_payment_id)
+          rescue ex
+            puts "Email notification failed for job #{result[:id]}: #{ex.message}"
+          end
+        end
+        
         result
       rescue ex : Exception
         puts "Database error creating job: #{ex.message}"
@@ -57,9 +67,34 @@ module CrystalGigs
       SQL
       
       begin
-        DB.query_one(query, job_id, stripe_payment_id) do |rs|
+        result = DB.query_one(query, job_id, stripe_payment_id) do |rs|
           rs.read(Int32)
         end
+        
+        # Send payment confirmation email
+        if result
+          spawn do
+            begin
+              # Get job data for email
+              job_data = get_job_by_id(job_id)
+              if job_data && job_data.has_key?("application_email")
+                job_hash = {
+                  "title" => job_data["title"].as_s,
+                  "company" => job_data["company"].as_s,
+                  "location" => job_data["location"].as_s,
+                  "job_type" => job_data["job_type"].as_s,
+                  "salary" => job_data["salary_range"].as_s,
+                  "email" => job_data["application_email"].as_s
+                }
+                EMAIL_SERVICE.send_job_confirmation(job_hash, stripe_payment_id)
+              end
+            rescue ex
+              puts "Payment confirmation email failed for job #{job_id}: #{ex.message}"
+            end
+          end
+        end
+        
+        result
       rescue ex : Exception
         puts "Error updating payment status: #{ex.message}"
         nil

@@ -3,6 +3,7 @@ require "json"
 require "db"
 require "../models"
 require "../../../libraries/shared/src/services/cache_service"
+require "../../../libraries/shared/src/services/email_service"
 
 module CrystalShards
   class ShardRepository
@@ -163,6 +164,21 @@ module CrystalShards
       CACHE.invalidate_search("shards")
       CACHE.invalidate_pattern("stats:registry")
       CACHE.invalidate_pattern("record:shards:#{id}")
+      
+      # Send publication notification
+      spawn do
+        begin
+          shard = find_by_id(id)
+          if shard
+            # Extract author email from GitHub URL if possible
+            # In production, this would come from user accounts
+            author_email = "author@example.com" # Placeholder
+            EMAIL_SERVICE.send_shard_notification(shard.name, author_email, shard.github_url)
+          end
+        rescue ex
+          puts "Shard publication email notification failed: #{ex.message}"
+        end
+      end
       
       true
     rescue
