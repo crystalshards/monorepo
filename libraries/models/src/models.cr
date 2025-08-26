@@ -1,5 +1,6 @@
 require "pg"
 require "json"
+require "./authentication"
 
 module CrystalShared
   # Base model class with common functionality
