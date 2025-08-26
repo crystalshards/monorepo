@@ -226,7 +226,7 @@ jobs:
                 - name: ENV
                   value: "${{ github.event.inputs.environment || 'staging' }}"
                 - name: DATABASE_URL
-                  value: "postgresql://crystalshards:crystal_dev_pass@postgresql-service.infrastructure.svc.cluster.local:5432/$(echo ${app} | sed 's/-registry/shards/' | sed 's/-docs/docs/' | sed 's/gigs/gigs/' | sed 's/worker/crystalshards/')"
+                  value: "postgresql://crystalshards:crystal_dev_pass@postgresql-service.infrastructure.svc.cluster.local:5432/$(echo ${app} | sed 's/shards-registry/crystalshards/' | sed 's/shards-docs/crystaldocs/' | sed 's/gigs/crystalgigs/' | sed 's/worker/crystalshards/')"
                 - name: REDIS_URL
                   value: "redis://redis-service.infrastructure.svc.cluster.local:6379"
                 - name: MINIO_URL
