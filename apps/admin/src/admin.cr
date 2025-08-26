@@ -149,12 +149,12 @@ module CrystalShardsAdmin
         SUM(salary_max) as total_value
       FROM job_postings 
       WHERE created_at > NOW() - INTERVAL '30 days'
-    ")
+    ", as: {Int64, Int64, PG::Numeric?})
     
     {
-      total: result[0].as(Int64),
-      active: result[1].as(Int64),
-      total_value: (result[2]?.try(&.as(PG::Numeric)).try(&.to_f) || 0.0).to_i64
+      total: result[0],
+      active: result[1],
+      total_value: (result[2]?.try(&.to_f) || 0.0).to_i64
     }
   rescue
     {total: 0_i64, active: 0_i64, total_value: 0_i64}
@@ -170,17 +170,21 @@ module CrystalShardsAdmin
               "SELECT id, name, description, github_url, stars, published, created_at FROM shards ORDER BY created_at DESC LIMIT $1 OFFSET $2"
             end
     
-    REGISTRY_DB.query(query, per_page, offset).map do |row|
-      {
-        id: row[0].as(Int32),
-        name: row[1].as(String),
-        description: row[2].as(String?),
-        github_url: row[3].as(String),
-        stars: row[4].as(Int32),
-        published: row[5].as(Bool),
-        created_at: row[6].as(Time)
-      }
-    end.to_a
+    result = [] of Hash(Symbol, Int32 | String | String? | Bool | Time)
+    REGISTRY_DB.query(query, per_page, offset) do |rs|
+      rs.each do
+        result << {
+          id: rs.read(Int32),
+          name: rs.read(String),
+          description: rs.read(String?),
+          github_url: rs.read(String),
+          stars: rs.read(Int32),
+          published: rs.read(Bool),
+          created_at: rs.read(Time)
+        }
+      end
+    end
+    result
   rescue
     [] of Hash(Symbol, Int32 | String | String? | Bool | Time)
   end
@@ -195,7 +199,7 @@ module CrystalShardsAdmin
               "SELECT COUNT(*) FROM shards"
             end
     
-    REGISTRY_DB.query_one(query)[0].as(Int64)
+    REGISTRY_DB.query_one(query, as: Int64)
   rescue
     0_i64
   end
@@ -233,29 +237,33 @@ module CrystalShardsAdmin
   end
   
   def self.get_job_postings(offset, per_page)
+    result = [] of Hash(Symbol, Int32 | Int32? | String | String? | Bool | Time)
     GIGS_DB.query("
       SELECT id, company, title, location, salary_min, salary_max, active, created_at 
       FROM job_postings 
       ORDER BY created_at DESC 
       LIMIT $1 OFFSET $2
-    ", per_page, offset).map do |row|
-      {
-        id: row[0].as(Int32),
-        company: row[1].as(String),
-        title: row[2].as(String),
-        location: row[3].as(String?),
-        salary_min: row[4].as(Int32?),
-        salary_max: row[5].as(Int32?),
-        active: row[6].as(Bool),
-        created_at: row[7].as(Time)
-      }
-    end.to_a
+    ", per_page, offset) do |rs|
+      rs.each do
+        result << {
+          id: rs.read(Int32),
+          company: rs.read(String),
+          title: rs.read(String),
+          location: rs.read(String?),
+          salary_min: rs.read(Int32?),
+          salary_max: rs.read(Int32?),
+          active: rs.read(Bool),
+          created_at: rs.read(Time)
+        }
+      end
+    end
+    result
   rescue
     [] of Hash(Symbol, Int32 | Int32? | String | String? | Bool | Time)
   end
   
   def self.count_job_postings
-    GIGS_DB.query_one("SELECT COUNT(*) FROM job_postings")[0].as(Int64)
+    GIGS_DB.query_one("SELECT COUNT(*) FROM job_postings", as: Int64)
   rescue
     0_i64
   end
@@ -280,20 +288,24 @@ module CrystalShardsAdmin
   end
   
   def self.get_recent_builds
+    result = [] of Hash(Symbol, String | String? | Time)
     DOCS_DB.query("
       SELECT shard_name, version, status, created_at, build_logs
       FROM documentation 
       ORDER BY created_at DESC 
       LIMIT 50
-    ").map do |row|
-      {
-        shard_name: row[0].as(String),
-        version: row[1].as(String),
-        status: row[2].as(String),
-        created_at: row[3].as(Time),
-        build_logs: row[4].as(String?)
-      }
-    end.to_a
+    ") do |rs|
+      rs.each do
+        result << {
+          shard_name: rs.read(String),
+          version: rs.read(String),
+          status: rs.read(String),
+          created_at: rs.read(Time),
+          build_logs: rs.read(String?)
+        }
+      end
+    end
+    result
   rescue
     [] of Hash(Symbol, String | String? | Time)
   end
