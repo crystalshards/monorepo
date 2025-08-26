@@ -65,6 +65,9 @@ Otherwise, continue with:
 - **Payments**: Stripe for CrystalGigs
 - **CI/CD**: GitHub Actions → GKE (via terraform)
 
+## IMPORTANT TO REMEMBER
+- Do not provision any kubernetes resources with plan YAML, Everything should be configured and deployed with terrform resources.
+
 ## KUBERNETES NAMESPACES
 
 - `claude` - Development agent (this pod)
