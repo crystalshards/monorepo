@@ -1,0 +1,242 @@
+name: Security Scanning
+
+on:
+  schedule:
+    # Run security scans daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  # Dependency scanning
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner in repo mode
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH,MEDIUM'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Infrastructure security scan
+  infrastructure-scan:
+    name: Infrastructure Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Checkov against Terraform
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: terraform/
+        framework: terraform
+        output_format: sarif
+        output_file_path: checkov-terraform.sarif
+        soft_fail: true
+
+    - name: Upload Checkov Terraform scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: checkov-terraform.sarif
+
+    - name: Run Checkov against Kubernetes manifests
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: kubernetes/
+        framework: kubernetes
+        output_format: sarif
+        output_file_path: checkov-k8s.sarif
+        soft_fail: true
+
+    - name: Upload Checkov Kubernetes scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: checkov-k8s.sarif
+
+  # Secret scanning
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: TruffleHog OSS Secret Scanning
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD
+        extra_args: --debug --only-verified
+
+  # Docker image security scan (runs after build)
+  image-scan:
+    name: Container Image Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    
+    strategy:
+      matrix:
+        app: [shards-registry, shards-docs, crystalgigs, worker]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build Docker image for scanning
+      run: |
+        docker build -f apps/${{ matrix.app }}/Dockerfile -t security-scan/${{ matrix.app }}:latest .
+
+    - name: Run Trivy vulnerability scanner on image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'security-scan/${{ matrix.app }}:latest'
+        format: 'sarif'
+        output: 'trivy-image-${{ matrix.app }}.sarif'
+
+    - name: Upload Trivy image scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-image-${{ matrix.app }}.sarif'
+
+    - name: Run Docker Scout (if available)
+      continue-on-error: true
+      run: |
+        # Install Docker Scout
+        curl -fsSL https://raw.githubusercontent.com/docker/scout-cli/main/install.sh -o install-scout.sh
+        sh install-scout.sh
+        
+        # Scan image with Docker Scout
+        docker scout cves security-scan/${{ matrix.app }}:latest
+
+  # License compliance check
+  license-scan:
+    name: License Compliance Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Crystal
+      uses: crystal-lang/install-crystal@v1
+      with:
+        crystal: "1.10.1"
+
+    - name: Generate license report
+      run: |
+        echo "# License Report" > license-report.md
+        echo "Generated on $(date)" >> license-report.md
+        echo "" >> license-report.md
+        
+        # Check each application's dependencies
+        for app in shards-registry shards-docs crystalgigs worker; do
+          if [ -f "apps/$app/shard.yml" ]; then
+            echo "## $app Dependencies" >> license-report.md
+            cd apps/$app
+            if [ -f "shard.lock" ]; then
+              crystal deps
+              echo "Dependencies listed in shard.lock" >> ../../license-report.md
+            fi
+            cd ../..
+          fi
+        done
+
+    - name: Upload license report
+      uses: actions/upload-artifact@v3
+      with:
+        name: license-report
+        path: license-report.md
+
+  # Security policy compliance
+  policy-check:
+    name: Security Policy Compliance
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check for security policy files
+      run: |
+        echo "=== Security Policy Compliance Check ==="
+        
+        # Check for required security files
+        files_to_check=(
+          "SECURITY.md"
+          ".github/SECURITY.md"
+          "docs/SECURITY.md"
+        )
+        
+        security_file_found=false
+        for file in "${files_to_check[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✅ Security policy found: $file"
+            security_file_found=true
+            break
+          fi
+        done
+        
+        if [ "$security_file_found" = false ]; then
+          echo "⚠️ No security policy file found. Consider adding SECURITY.md"
+        fi
+        
+        # Check for other security-related files
+        [ -f ".gitignore" ] && echo "✅ .gitignore present" || echo "⚠️ .gitignore missing"
+        [ -f "CODEOWNERS" ] || [ -f ".github/CODEOWNERS" ] && echo "✅ CODEOWNERS present" || echo "⚠️ CODEOWNERS missing"
+        
+        # Check for secrets in common files
+        echo "=== Checking for potential secrets ==="
+        if grep -r -i "password\|secret\|key\|token" --exclude-dir=.git --exclude="*.md" --exclude="*.yml" --exclude="*.yaml" .; then
+          echo "⚠️ Potential secrets found in files above"
+        else
+          echo "✅ No obvious secrets found in source files"
+        fi
+
+  # Notification on critical findings
+  notify-security:
+    name: Security Notification
+    needs: [dependency-scan, infrastructure-scan, secret-scan, image-scan]
+    runs-on: ubuntu-latest
+    if: failure() && (github.event_name == 'schedule' || github.ref == 'refs/heads/main')
+    
+    steps:
+    - name: Notify security team
+      run: |
+        echo "🚨 Critical security vulnerabilities detected!"
+        echo "Repository: ${{ github.repository }}"
+        echo "Commit: ${{ github.sha }}"
+        echo "Please check the Security tab for details."
+        
+        # Here you could add Slack/Discord/email notifications
+        # curl -X POST -H 'Content-type: application/json' \
+        #   --data '{"text":"Security vulnerability detected in ${{ github.repository }}"}' \
+        #   $SLACK_WEBHOOK_URL

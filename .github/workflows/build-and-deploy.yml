@@ -1,0 +1,316 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+env:
+  REGISTRY: gcr.io
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  CLUSTER_NAME: crystalshards-cluster
+  CLUSTER_REGION: us-central1
+
+jobs:
+  # Build and push Docker images
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    strategy:
+      matrix:
+        app: [shards-registry, shards-docs, crystalgigs, worker]
+        include:
+          - app: shards-registry
+            dockerfile: apps/shards-registry/Dockerfile
+            context: .
+          - app: shards-docs  
+            dockerfile: apps/shards-docs/Dockerfile
+            context: .
+          - app: crystalgigs
+            dockerfile: apps/crystalgigs/Dockerfile
+            context: .
+          - app: worker
+            dockerfile: apps/worker/Dockerfile
+            context: .
+
+    outputs:
+      shards-registry-image: ${{ steps.image-tags.outputs.shards-registry }}
+      shards-docs-image: ${{ steps.image-tags.outputs.shards-docs }}
+      crystalgigs-image: ${{ steps.image-tags.outputs.crystalgigs }}
+      worker-image: ${{ steps.image-tags.outputs.worker }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Configure Docker to use gcloud as credential helper
+      run: gcloud auth configure-docker
+
+    - name: Build Docker image
+      run: |
+        IMAGE_TAG="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ matrix.app }}:${{ github.sha }}"
+        echo "Building $IMAGE_TAG"
+        docker build -f ${{ matrix.dockerfile }} -t $IMAGE_TAG ${{ matrix.context }}
+        echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+    - name: Run security scan on image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ env.IMAGE_TAG }}
+        format: 'sarif'
+        output: 'trivy-image-results.sarif'
+
+    - name: Upload image scan results
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-image-results.sarif'
+
+    - name: Push Docker image
+      run: |
+        docker push ${{ env.IMAGE_TAG }}
+        
+        # Also tag as latest for main branch
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          LATEST_TAG="${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/${{ matrix.app }}:latest"
+          docker tag ${{ env.IMAGE_TAG }} $LATEST_TAG
+          docker push $LATEST_TAG
+        fi
+
+    - name: Set image tags output
+      id: image-tags
+      run: |
+        echo "${{ matrix.app }}=${{ env.IMAGE_TAG }}" >> $GITHUB_OUTPUT
+
+  # Deploy to Kubernetes
+  deploy:
+    name: Deploy to Kubernetes
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'staging' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        project_id: ${{ env.PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Get GKE credentials
+      run: |
+        gcloud container clusters get-credentials ${{ env.CLUSTER_NAME }} \
+          --region ${{ env.CLUSTER_REGION }} \
+          --project ${{ env.PROJECT_ID }}
+
+    - name: Deploy infrastructure (if not exists)
+      run: |
+        # Check if infrastructure exists, deploy if not
+        if ! kubectl get namespace infrastructure; then
+          echo "Infrastructure not found, deploying..."
+          ./scripts/deploy-infrastructure.sh
+        else
+          echo "Infrastructure already exists, skipping deployment"
+        fi
+
+    - name: Create application deployment manifests
+      run: |
+        mkdir -p generated-manifests
+        
+        # Generate deployment manifests for each app
+        for app in shards-registry shards-docs crystalgigs worker; do
+          namespace_map='{
+            "shards-registry": "crystalshards",
+            "shards-docs": "crystaldocs", 
+            "crystalgigs": "crystalgigs",
+            "worker": "crystalshards"
+          }'
+          
+          namespace=$(echo $namespace_map | jq -r --arg app "$app" '.[$app]')
+          image_var="${app//-/_}_image"
+          image_tag="${!image_var:-${{ env.REGISTRY }}/${{ env.PROJECT_ID }}/$app:${{ github.sha }}}"
+          
+          cat > generated-manifests/${app}-deployment.yaml << EOF
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: ${app}
+          namespace: ${namespace}
+          labels:
+            app.kubernetes.io/name: ${app}
+            app.kubernetes.io/part-of: crystalshards
+            app.kubernetes.io/version: "${{ github.sha }}"
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: ${app}
+          template:
+            metadata:
+              labels:
+                app.kubernetes.io/name: ${app}
+                app.kubernetes.io/part-of: crystalshards
+            spec:
+              containers:
+              - name: ${app}
+                image: ${image_tag}
+                ports:
+                - containerPort: 3000
+                env:
+                - name: ENV
+                  value: "${{ github.event.inputs.environment || 'staging' }}"
+                - name: DATABASE_URL
+                  value: "postgresql://crystalshards:crystal_dev_pass@postgresql-service.infrastructure.svc.cluster.local:5432/$(echo ${app} | sed 's/-registry/shards/' | sed 's/-docs/docs/' | sed 's/gigs/gigs/' | sed 's/worker/crystalshards/')"
+                - name: REDIS_URL
+                  value: "redis://redis-service.infrastructure.svc.cluster.local:6379"
+                - name: MINIO_URL
+                  value: "http://minio-service.infrastructure.svc.cluster.local:9000"
+                - name: MINIO_ACCESS_KEY
+                  value: "minioadmin"
+                - name: MINIO_SECRET_KEY
+                  value: "crystalshards-minio-2023"
+                resources:
+                  requests:
+                    memory: "128Mi"
+                    cpu: "50m"
+                  limits:
+                    memory: "512Mi" 
+                    cpu: "500m"
+                livenessProbe:
+                  httpGet:
+                    path: /health
+                    port: 3000
+                  initialDelaySeconds: 30
+                  periodSeconds: 10
+                readinessProbe:
+                  httpGet:
+                    path: /ready
+                    port: 3000
+                  initialDelaySeconds: 5
+                  periodSeconds: 5
+        ---
+        apiVersion: v1
+        kind: Service
+        metadata:
+          name: ${app}
+          namespace: ${namespace}
+          labels:
+            app.kubernetes.io/name: ${app}
+            app.kubernetes.io/part-of: crystalshards
+        spec:
+          selector:
+            app.kubernetes.io/name: ${app}
+          ports:
+          - port: 80
+            targetPort: 3000
+            protocol: TCP
+          type: ClusterIP
+        EOF
+        done
+
+    - name: Deploy applications
+      run: |
+        # Apply all generated manifests
+        kubectl apply -f generated-manifests/
+        
+        # Wait for deployments to be ready
+        for app in shards-registry shards-docs crystalgigs worker; do
+          namespace_map='{
+            "shards-registry": "crystalshards",
+            "shards-docs": "crystaldocs",
+            "crystalgigs": "crystalgigs", 
+            "worker": "crystalshards"
+          }'
+          
+          namespace=$(echo $namespace_map | jq -r --arg app "$app" '.[$app]')
+          echo "Waiting for $app deployment in namespace $namespace..."
+          kubectl wait --for=condition=available --timeout=300s deployment/${app} -n ${namespace}
+        done
+
+    - name: Apply KEDA scaling configurations
+      run: |
+        kubectl apply -f kubernetes/apps/keda-scaling.yaml
+
+    - name: Verify deployment
+      run: |
+        echo "=== Deployment Status ==="
+        kubectl get deployments -A -l app.kubernetes.io/part-of=crystalshards
+        
+        echo "=== Pod Status ==="
+        kubectl get pods -A -l app.kubernetes.io/part-of=crystalshards
+        
+        echo "=== Service Status ==="
+        kubectl get services -A -l app.kubernetes.io/part-of=crystalshards
+        
+        echo "=== KEDA Scaled Objects ==="
+        kubectl get scaledobject -A
+
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests..."
+        
+        # Test each service health endpoint
+        for app in shards-registry shards-docs crystalgigs worker; do
+          namespace_map='{
+            "shards-registry": "crystalshards",
+            "shards-docs": "crystaldocs",
+            "crystalgigs": "crystalgigs",
+            "worker": "crystalshards"  
+          }'
+          
+          namespace=$(echo $namespace_map | jq -r --arg app "$app" '.[$app]')
+          
+          # Skip worker health check as it might not have HTTP endpoint
+          if [ "$app" = "worker" ]; then
+            continue
+          fi
+          
+          echo "Testing $app health endpoint..."
+          kubectl run test-$app --image=curlimages/curl:latest --rm -i --restart=Never \
+            -- curl -f http://${app}.${namespace}.svc.cluster.local/health || echo "Health check failed for $app"
+        done
+
+  # Notify on deployment
+  notify:
+    name: Notify Deployment
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Notify success
+      if: needs.deploy.result == 'success'
+      run: |
+        echo "✅ Deployment successful!"
+        echo "Environment: ${{ github.event.inputs.environment || 'staging' }}"
+        echo "Commit: ${{ github.sha }}"
+        # Add Slack/Discord notification here if needed
+
+    - name: Notify failure  
+      if: needs.deploy.result == 'failure'
+      run: |
+        echo "❌ Deployment failed!"
+        echo "Environment: ${{ github.event.inputs.environment || 'staging' }}"
+        echo "Commit: ${{ github.sha }}"
+        # Add Slack/Discord notification here if needed

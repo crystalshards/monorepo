@@ -1,0 +1,236 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CRYSTAL_VERSION: "1.10.1"
+  REGISTRY: gcr.io
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+
+jobs:
+  # Test Crystal applications
+  test:
+    name: Test Crystal Applications
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: crystalshards_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7.2-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Crystal
+      uses: crystal-lang/install-crystal@v1
+      with:
+        crystal: ${{ env.CRYSTAL_VERSION }}
+
+    - name: Cache shards
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/shards
+          lib
+        key: ${{ runner.os }}-shards-${{ hashFiles('**/shard.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-shards-
+
+    - name: Install dependencies - Registry
+      working-directory: ./apps/shards-registry
+      run: shards install --production
+
+    - name: Install dependencies - Docs
+      working-directory: ./apps/shards-docs
+      run: shards install --production
+
+    - name: Install dependencies - Gigs
+      working-directory: ./apps/crystalgigs
+      run: shards install --production
+
+    - name: Install dependencies - Worker
+      working-directory: ./apps/worker
+      run: shards install --production
+
+    - name: Install dependencies - Models
+      working-directory: ./libraries/models
+      run: shards install --production
+
+    - name: Setup test database
+      run: |
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalshards_test;"
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystaldocs_test;"
+        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalgigs_test;"
+        
+        # Run migrations
+        for migration in libraries/migrations/*.sql; do
+          echo "Running migration: $migration"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d crystalshards_test -f "$migration"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d crystaldocs_test -f "$migration"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d crystalgigs_test -f "$migration"
+        done
+
+    - name: Run tests - Registry
+      working-directory: ./apps/shards-registry
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crystalshards_test
+        REDIS_URL: redis://localhost:6379/0
+        ENV: test
+      run: |
+        if [ -d "spec" ]; then
+          crystal spec --error-trace
+        else
+          echo "No tests found for shards-registry"
+        fi
+
+    - name: Run tests - Docs
+      working-directory: ./apps/shards-docs
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crystaldocs_test
+        REDIS_URL: redis://localhost:6379/1
+        ENV: test
+      run: |
+        if [ -d "spec" ]; then
+          crystal spec --error-trace
+        else
+          echo "No tests found for shards-docs"
+        fi
+
+    - name: Run tests - Gigs
+      working-directory: ./apps/crystalgigs
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crystalgigs_test
+        REDIS_URL: redis://localhost:6379/2
+        ENV: test
+      run: |
+        if [ -d "spec" ]; then
+          crystal spec --error-trace
+        else
+          echo "No tests found for crystalgigs"
+        fi
+
+    - name: Run tests - Worker
+      working-directory: ./apps/worker
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crystalshards_test
+        REDIS_URL: redis://localhost:6379/3
+        ENV: test
+      run: |
+        if [ -d "spec" ]; then
+          crystal spec --error-trace
+        else
+          echo "No tests found for worker"
+        fi
+
+    - name: Check Crystal formatting
+      run: |
+        crystal tool format --check apps/
+        crystal tool format --check libraries/
+
+    - name: Crystal tool hierarchy analysis
+      run: |
+        cd apps/shards-registry && crystal tool hierarchy src/crystalshards.cr
+        cd ../shards-docs && crystal tool hierarchy src/crystaldocs.cr
+        cd ../crystalgigs && crystal tool hierarchy src/crystalgigs.cr
+        cd ../worker && crystal tool hierarchy src/worker.cr
+
+  # Security scanning
+  security:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # Lint and static analysis
+  lint:
+    name: Lint and Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Crystal
+      uses: crystal-lang/install-crystal@v1
+      with:
+        crystal: ${{ env.CRYSTAL_VERSION }}
+
+    - name: Install Ameba (Crystal linter)
+      run: |
+        git clone https://github.com/crystal-ameba/ameba.git
+        cd ameba
+        shards install --production
+        make install
+
+    - name: Run Ameba linter
+      run: |
+        # Run ameba on each application
+        cd apps/shards-registry && ~/.local/bin/ameba src/
+        cd ../shards-docs && ~/.local/bin/ameba src/
+        cd ../crystalgigs && ~/.local/bin/ameba src/
+        cd ../worker && ~/.local/bin/ameba src/
+        cd ../../libraries/models && ~/.local/bin/ameba src/
+
+    - name: Validate Kubernetes manifests
+      run: |
+        # Install kubeval for Kubernetes manifest validation
+        curl -L https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz | tar xz
+        sudo mv kubeval /usr/local/bin
+        
+        # Validate all manifests
+        find kubernetes/ -name "*.yaml" -exec kubeval {} \;
+
+    - name: Validate Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.6.0
+    
+    - name: Terraform Format
+      working-directory: ./terraform
+      run: terraform fmt -check
+
+    - name: Terraform Init
+      working-directory: ./terraform
+      run: terraform init
+
+    - name: Terraform Validate
+      working-directory: ./terraform
+      run: terraform validate
