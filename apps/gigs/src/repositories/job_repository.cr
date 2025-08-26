@@ -1,5 +1,6 @@
 require "pg"
 require "json"
+require "../../../libraries/shared/src/services/cache_service"
 
 module CrystalGigs
   class JobRepository
@@ -35,6 +36,10 @@ module CrystalGigs
             created_at: rs.read(Time)
           }
         end
+        
+        # Invalidate search caches when new job is created
+        CACHE.invalidate_search("jobs")
+        CACHE.invalidate_pattern("stats:gigs")
         
         result
       rescue ex : Exception
@@ -143,6 +148,10 @@ module CrystalGigs
     end
     
     def self.search_jobs(query : String, limit : Int32 = 20, offset : Int32 = 0)
+      # Try to get cached results first
+      cached_results = CACHE.get_search_results("jobs", query, limit, offset, Array(Hash(String, JSON::Any)))
+      return cached_results if cached_results
+
       search_query = <<-SQL
         SELECT id, title, company, location, job_type, salary_range, description,
                application_email, company_website, approved, featured, expires_at,
@@ -182,6 +191,9 @@ module CrystalGigs
             }
           end
         end
+        
+        # Cache the results for 5 minutes 
+        CACHE.cache_search_results("jobs", query, limit, offset, jobs, CacheService::TTL_SHORT)
         
         jobs
       rescue ex : Exception

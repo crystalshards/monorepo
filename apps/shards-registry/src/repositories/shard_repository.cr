@@ -2,6 +2,7 @@ require "pg"
 require "json" 
 require "db"
 require "../models"
+require "../../../libraries/shared/src/services/cache_service"
 
 module CrystalShards
   class ShardRepository
@@ -25,6 +26,10 @@ module CrystalShards
         shard.created_at = rs.read(Time)
         shard.updated_at = rs.read(Time)
       end
+      # Invalidate search cache and stats when new shard is created
+      CACHE.invalidate_search("shards")
+      CACHE.invalidate_pattern("stats:registry")
+      
       shard
     rescue PG::PQError
       nil
@@ -80,6 +85,11 @@ module CrystalShards
     end
     
     def search(query : String, offset = 0, limit = 20) : Array(CrystalShared::Shard)
+      # Try to get cached results first
+      cached_results = CACHE.get_search_results("shards", query, limit, offset, Array(CrystalShared::Shard))
+      return cached_results if cached_results
+
+      # Perform database query
       shards = [] of CrystalShared::Shard
       @db.query(
         "SELECT id, name, description, github_url, homepage_url, documentation_url,
@@ -98,14 +108,31 @@ module CrystalShards
           shards << build_shard_from_result_set(rs, has_rank: true)
         end
       end
+
+      # Cache the results for 5 minutes
+      CACHE.cache_search_results("shards", query, limit, offset, shards, CacheService::TTL_SHORT)
+      
       shards
     end
     
     def count_published : Int32
-      @db.scalar("SELECT COUNT(*) FROM shards WHERE published = TRUE").as(Int64).to_i32
+      # Try cache first
+      cached_stats = CACHE.get_stats("registry")
+      if cached_stats && cached_stats.has_key?("published_count")
+        return cached_stats["published_count"].to_i32
+      end
+
+      count = @db.scalar("SELECT COUNT(*) FROM shards WHERE published = TRUE").as(Int64).to_i32
+      
+      # Cache the count with other stats
+      stats = {"published_count" => count.to_i64}
+      CACHE.cache_stats("registry", stats, CacheService::TTL_MEDIUM)
+      
+      count
     end
     
     def count_search(query : String) : Int32
+      # Search counts are cached with search results, so just compute directly
       @db.scalar(
         "SELECT COUNT(*) FROM shards 
          WHERE published = TRUE 
@@ -119,6 +146,11 @@ module CrystalShards
         "UPDATE shards SET stars = $1, forks = $2, last_activity = $3, updated_at = $4 
          WHERE id = $5", stars, forks, last_activity, Time.utc, id
       )
+      
+      # Invalidate search cache since stats affect ranking
+      CACHE.invalidate_search("shards")
+      CACHE.invalidate_pattern("record:shards:#{id}")
+      
       true
     rescue
       false
@@ -126,6 +158,12 @@ module CrystalShards
     
     def publish(id : Int32) : Bool
       @db.exec("UPDATE shards SET published = TRUE, updated_at = $1 WHERE id = $2", Time.utc, id)
+      
+      # Invalidate all caches when publication status changes
+      CACHE.invalidate_search("shards")
+      CACHE.invalidate_pattern("stats:registry")
+      CACHE.invalidate_pattern("record:shards:#{id}")
+      
       true
     rescue
       false
@@ -133,6 +171,12 @@ module CrystalShards
     
     def unpublish(id : Int32) : Bool
       @db.exec("UPDATE shards SET published = FALSE, updated_at = $1 WHERE id = $2", Time.utc, id)
+      
+      # Invalidate all caches when publication status changes
+      CACHE.invalidate_search("shards")
+      CACHE.invalidate_pattern("stats:registry")
+      CACHE.invalidate_pattern("record:shards:#{id}")
+      
       true
     rescue
       false
