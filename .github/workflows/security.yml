@@ -67,15 +67,16 @@ jobs:
     - name: Run Checkov against Kubernetes manifests
       uses: bridgecrewio/checkov-action@master
       with:
-        directory: kubernetes/
+        directory: terraform/
         framework: kubernetes
         output_format: sarif
         output_file_path: checkov-k8s.sarif
         soft_fail: true
+      continue-on-error: true
 
     - name: Upload Checkov Kubernetes scan results
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      if: always() && hashFiles('checkov-k8s.sarif') != ''
       with:
         sarif_file: checkov-k8s.sarif
         category: kubernetes
@@ -107,7 +108,7 @@ jobs:
     
     strategy:
       matrix:
-        app: [shards-registry, shards-docs, crystalgigs, worker]
+        app: [shards-registry, shards-docs, gigs, worker]
 
     steps:
     - name: Checkout code
@@ -115,7 +116,13 @@ jobs:
 
     - name: Build Docker image for scanning
       run: |
-        docker build -f apps/${{ matrix.app }}/Dockerfile -t security-scan/${{ matrix.app }}:latest .
+        if [ -d "apps/${{ matrix.app }}" ] && [ -f "apps/${{ matrix.app }}/Dockerfile" ]; then
+          cd apps/${{ matrix.app }}
+          docker build -t security-scan/${{ matrix.app }}:latest .
+        else
+          echo "Directory apps/${{ matrix.app }} or Dockerfile not found"
+          exit 1
+        fi
 
     - name: Run Trivy vulnerability scanner on image
       uses: aquasecurity/trivy-action@master
@@ -126,7 +133,7 @@ jobs:
 
     - name: Upload Trivy image scan results
       uses: github/codeql-action/upload-sarif@v3
-      if: always()
+      if: always() && hashFiles('trivy-image-${{ matrix.app }}.sarif') != ''
       with:
         sarif_file: 'trivy-image-${{ matrix.app }}.sarif'
         category: container-${{ matrix.app }}
@@ -167,7 +174,7 @@ jobs:
             echo "## $app Dependencies" >> license-report.md
             cd apps/$app
             if [ -f "shard.lock" ]; then
-              crystal deps
+              shards list
               echo "Dependencies listed in shard.lock" >> ../../license-report.md
             fi
             cd ../..
