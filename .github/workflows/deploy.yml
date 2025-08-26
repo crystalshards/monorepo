@@ -1,0 +1,138 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'apps/simple-registry/**'
+      - 'apps/simple-lucky-registry/**'
+      - 'terraform/simple-deployment.tf'
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'App to deploy (simple-registry or simple-lucky-registry)'
+        required: true
+        default: 'simple-registry'
+        type: choice
+        options:
+        - simple-registry
+        - simple-lucky-registry
+
+env:
+  CRYSTAL_VERSION: "1.10.1"
+
+jobs:
+  deploy:
+    name: Deploy Simple Apps
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        export_default_credentials: true
+
+    - name: Configure Docker for GCR
+      run: gcloud auth configure-docker --quiet
+
+    - name: Install Crystal
+      uses: crystal-lang/install-crystal@v1
+      with:
+        crystal: ${{ env.CRYSTAL_VERSION }}
+
+    - name: Determine app to deploy
+      id: app_selector
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "app_name=${{ github.event.inputs.app_name }}" >> $GITHUB_OUTPUT
+        else
+          # Default to simple-registry for push events
+          echo "app_name=simple-registry" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Build and test app
+      working-directory: ./apps/${{ steps.app_selector.outputs.app_name }}
+      run: |
+        echo "Building ${{ steps.app_selector.outputs.app_name }}..."
+        
+        # Install dependencies if shard.yml exists
+        if [ -f "shard.yml" ]; then
+          shards install --production
+        fi
+        
+        # Build the app
+        crystal build src/${{ steps.app_selector.outputs.app_name }}.cr
+        
+        # Test compilation
+        crystal build --no-codegen src/${{ steps.app_selector.outputs.app_name }}.cr
+        
+        echo "Build successful!"
+
+    - name: Build Docker image
+      working-directory: ./apps/${{ steps.app_selector.outputs.app_name }}
+      run: |
+        echo "Building Docker image for ${{ steps.app_selector.outputs.app_name }}..."
+        docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ steps.app_selector.outputs.app_name }}:latest .
+        docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ steps.app_selector.outputs.app_name }}:latest
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.6.0
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    - name: Deploy with Terraform
+      working-directory: ./terraform
+      run: |
+        echo "Deploying ${{ steps.app_selector.outputs.app_name }} to Google Cloud Run..."
+        
+        # Initialize Terraform
+        terraform init
+        
+        # Plan the deployment
+        terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+                      -var="region=us-central1" \
+                      -out=tfplan
+        
+        # Apply the deployment
+        terraform apply tfplan
+        
+        echo "Deployment completed!"
+
+    - name: Get deployment URL
+      working-directory: ./terraform
+      run: |
+        echo "Getting deployment URL..."
+        terraform output simple_registry_url
+        
+        # Save URL to environment for later steps
+        URL=$(terraform output -raw simple_registry_url)
+        echo "DEPLOYMENT_URL=$URL" >> $GITHUB_ENV
+
+    - name: Test deployment
+      run: |
+        echo "Testing deployed service..."
+        
+        # Wait a moment for the service to be ready
+        sleep 30
+        
+        # Test health endpoint
+        curl -f $DEPLOYMENT_URL/health || exit 1
+        
+        # Test main page
+        curl -f $DEPLOYMENT_URL/ || exit 1
+        
+        echo "Deployment test successful! Service is running at: $DEPLOYMENT_URL"
+
+    - name: Update status
+      run: |
+        echo "✅ Deployment completed successfully!"
+        echo "🌐 Service URL: $DEPLOYMENT_URL"
+        echo "📊 Health check: $DEPLOYMENT_URL/health"
+        echo "📈 Stats API: $DEPLOYMENT_URL/api/stats"

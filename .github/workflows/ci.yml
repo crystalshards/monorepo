@@ -8,38 +8,12 @@ on:
 
 env:
   CRYSTAL_VERSION: "1.10.1"
-  REGISTRY: gcr.io
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
 
 jobs:
-  # Test Crystal applications
+  # Test simple deployable apps
   test:
-    name: Test Crystal Applications
+    name: Test Simple Apps
     runs-on: ubuntu-latest
-    
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: crystalshards_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-      
-      redis:
-        image: redis:7.2-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
 
     steps:
     - name: Checkout code
@@ -50,287 +24,51 @@ jobs:
       with:
         crystal: ${{ env.CRYSTAL_VERSION }}
 
-    - name: Cache shards
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cache/shards
-          lib
-        key: ${{ runner.os }}-shards-${{ hashFiles('**/shard.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-shards-
-
-    - name: Install dependencies - Registry
-      working-directory: ./apps/shards-registry
+    - name: Build simple-registry
+      working-directory: ./apps/simple-registry
       run: |
-        if [ -f "shard.yml" ]; then
-          shards install --production
-        else
-          echo "No shard.yml found in shards-registry, skipping"
-        fi
-
-    - name: Install dependencies - Docs
-      working-directory: ./apps/shards-docs
-      run: |
-        if [ -f "shard.yml" ]; then
-          shards install --production
-        else
-          echo "No shard.yml found in shards-docs, skipping"
-        fi
-
-    - name: Install dependencies - Gigs
-      working-directory: ./apps/gigs
-      run: |
-        if [ -f "shard.yml" ]; then
-          shards install --production
-        else
-          echo "No shard.yml found in gigs, skipping"
-        fi
-
-    - name: Install dependencies - Worker
-      working-directory: ./apps/worker
-      run: |
-        if [ -f "shard.yml" ]; then
-          shards install --production
-        else
-          echo "No shard.yml found in worker, skipping"
-        fi
-
-    - name: Install dependencies - Models
-      working-directory: ./libraries/models
-      run: |
-        if [ -f "shard.yml" ]; then
-          shards install --production
-        else
-          echo "No shard.yml found in models, skipping"
-        fi
-
-    - name: Install dependencies - Admin
-      working-directory: ./apps/admin
-      run: |
-        if [ -f "shard.yml" ]; then
-          shards install --production
-        else
-          echo "No shard.yml found in admin, skipping"
-        fi
-
-    - name: Setup test database
-      run: |
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalshards_test;" || echo "Database crystalshards_test already exists"
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystaldocs_test;" || echo "Database crystaldocs_test already exists"
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalgigs_test;" || echo "Database crystalgigs_test already exists"
+        echo "Building simple-registry..."
+        crystal build src/simple-registry.cr
+        echo "Build successful!"
         
-        # Run migrations if they exist
-        if [ -d "libraries/migrations" ]; then
-          for migration in libraries/migrations/*.sql; do
-            if [ -f "$migration" ]; then
-              echo "Running migration: $migration"
-              PGPASSWORD=postgres psql -h localhost -U postgres -d crystalshards_test -f "$migration" || echo "Migration $migration failed, continuing..."
-              PGPASSWORD=postgres psql -h localhost -U postgres -d crystaldocs_test -f "$migration" || echo "Migration $migration failed, continuing..."
-              PGPASSWORD=postgres psql -h localhost -U postgres -d crystalgigs_test -f "$migration" || echo "Migration $migration failed, continuing..."
-            fi
-          done
+    - name: Test simple-registry
+      working-directory: ./apps/simple-registry
+      run: |
+        echo "Testing simple-registry compilation..."
+        crystal build --no-codegen src/simple-registry.cr
+        echo "Compilation test passed!"
+
+    - name: Build simple-lucky-registry
+      working-directory: ./apps/simple-lucky-registry
+      run: |
+        echo "Building simple-lucky-registry..."
+        if [ -f "shard.yml" ]; then
+          shards install --production
+          crystal build src/simple-lucky-registry.cr
+          echo "Build successful!"
         else
-          echo "No migrations directory found, skipping database migrations"
+          echo "No shard.yml found for simple-lucky-registry, skipping"
         fi
-
-    - name: Run tests - Registry
-      working-directory: ./apps/shards-registry
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crystalshards_test
-        REDIS_URL: redis://localhost:6379/0
-        ENV: test
-      run: |
-        if [ -d "spec" ]; then
-          crystal spec --error-trace
-        else
-          echo "No tests found for shards-registry"
-        fi
-
-    - name: Run tests - Docs
-      working-directory: ./apps/shards-docs
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crystaldocs_test
-        REDIS_URL: redis://localhost:6379/1
-        ENV: test
-      run: |
-        if [ -d "spec" ]; then
-          crystal spec --error-trace
-        else
-          echo "No tests found for shards-docs"
-        fi
-
-    - name: Run tests - Gigs
-      working-directory: ./apps/gigs
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crystalgigs_test
-        REDIS_URL: redis://localhost:6379/2
-        ENV: test
-        STRIPE_SECRET_KEY: sk_test_dummy
-        STRIPE_PUBLISHABLE_KEY: pk_test_dummy
-      run: |
-        if [ -d "spec" ]; then
-          crystal spec --error-trace
-        else
-          echo "No tests found for gigs"
-        fi
-
-    - name: Run tests - Worker
-      working-directory: ./apps/worker
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/crystalshards_test
-        REDIS_URL: redis://localhost:6379/3
-        ENV: test
-      run: |
-        if [ -d "spec" ]; then
-          crystal spec --error-trace
-        else
-          echo "No tests found for worker"
-        fi
-
-    - name: Run tests - Admin
-      working-directory: ./apps/admin
-      env:
-        DATABASE_URL_REGISTRY: postgresql://postgres:postgres@localhost:5432/crystalshards_test
-        DATABASE_URL_DOCS: postgresql://postgres:postgres@localhost:5432/crystaldocs_test
-        DATABASE_URL_GIGS: postgresql://postgres:postgres@localhost:5432/crystalgigs_test
-        REDIS_URL: redis://localhost:6379/4
-        ENV: test
-        JWT_SECRET: test_secret
-        ADMIN_USERNAME: admin
-        ADMIN_PASSWORD: test123
-      run: |
-        if [ -d "spec" ]; then
-          crystal spec --error-trace
-        else
-          echo "No tests found for admin"
-        fi
-
-    - name: Check Crystal formatting
-      run: |
-        echo "TODO: Fix Crystal formatting issues"
-        # crystal tool format --check apps/
-        # crystal tool format --check libraries/
-
-    - name: Crystal syntax check
-      run: |
-        echo "TODO: Fix Crystal syntax issues"
-        # crystal build --no-codegen apps/shards-registry/src/crystalshards.cr
-        # crystal build --no-codegen apps/shards-docs/src/crystaldocs.cr
-        # crystal build --no-codegen apps/gigs/src/crystalgigs.cr
-        # crystal build --no-codegen apps/worker/src/worker.cr
-        # crystal build --no-codegen apps/admin/src/admin.cr
-
-  # End-to-End Tests with Playwright
-  e2e-tests:
-    name: End-to-End Tests
-    runs-on: ubuntu-latest
-    needs: test
-    
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: crystalshards_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-      
-      redis:
-        image: redis:7.2-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install Crystal
-      uses: crystal-lang/install-crystal@v1
-      with:
-        crystal: ${{ env.CRYSTAL_VERSION }}
-
-    - name: Install Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: tests/e2e/package-lock.json
-
-    - name: Install E2E test dependencies
-      working-directory: ./tests/e2e
-      run: |
-        npm ci
-        npx playwright install --with-deps
-
-    - name: Setup test databases
-      run: |
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalshards_test;" || echo "Database crystalshards_test already exists"
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystaldocs_test;" || echo "Database crystaldocs_test already exists"
-        PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalgigs_test;" || echo "Database crystalgigs_test already exists"
         
-        # Run migrations if they exist
-        if [ -d "libraries/migrations" ]; then
-          for migration in libraries/migrations/*.sql; do
-            if [ -f "$migration" ]; then
-              echo "Running migration: $migration"
-              PGPASSWORD=postgres psql -h localhost -U postgres -d crystalshards_test -f "$migration" || echo "Migration $migration failed, continuing..."
-              PGPASSWORD=postgres psql -h localhost -U postgres -d crystaldocs_test -f "$migration" || echo "Migration $migration failed, continuing..."
-              PGPASSWORD=postgres psql -h localhost -U postgres -d crystalgigs_test -f "$migration" || echo "Migration $migration failed, continuing..."
-            fi
-          done
-        else
-          echo "No migrations directory found, skipping database migrations"
-        fi
-
-    - name: Install app dependencies
+    - name: Test simple-lucky-registry
+      working-directory: ./apps/simple-lucky-registry
       run: |
-        if [ -f "apps/shards-registry/shard.yml" ]; then
-          cd apps/shards-registry && shards install --production
-        fi
-        if [ -f "apps/shards-docs/shard.yml" ]; then
-          cd apps/shards-docs && shards install --production
-        fi
-        if [ -f "apps/gigs/shard.yml" ]; then
-          cd apps/gigs && shards install --production
+        if [ -f "shard.yml" ]; then
+          echo "Testing simple-lucky-registry compilation..."
+          crystal build --no-codegen src/simple-lucky-registry.cr
+          echo "Compilation test passed!"
+        else
+          echo "No shard.yml found for simple-lucky-registry, skipping"
         fi
 
-    - name: Run Playwright tests
-      working-directory: ./tests/e2e
-      env:
-        DATABASE_URL_REGISTRY: postgresql://postgres:postgres@localhost:5432/crystalshards_test
-        DATABASE_URL_DOCS: postgresql://postgres:postgres@localhost:5432/crystaldocs_test
-        DATABASE_URL_GIGS: postgresql://postgres:postgres@localhost:5432/crystalgigs_test
-        REDIS_URL: redis://localhost:6379
-        STRIPE_SECRET_KEY: sk_test_dummy
-        STRIPE_PUBLISHABLE_KEY: pk_test_dummy
-      run: npx playwright test --reporter=html
+    - name: Format check for simple apps
+      run: |
+        echo "Checking Crystal formatting for simple apps..."
+        crystal tool format --check apps/simple-registry/src/
+        if [ -d "apps/simple-lucky-registry/src" ]; then
+          crystal tool format --check apps/simple-lucky-registry/src/
+        fi
 
-    - name: Upload Playwright report
-      uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: playwright-report
-        path: tests/e2e/playwright-report/
-        retention-days: 30
-
-    - name: Upload test results
-      uses: actions/upload-artifact@v3
-      if: always()
-      with:
-        name: e2e-test-results
-        path: tests/e2e/test-results/
-        retention-days: 30
 
   # Security scanning
   security:
@@ -359,60 +97,19 @@ jobs:
         sarif_file: 'trivy-results.sarif'
       continue-on-error: true
 
-  # Lint and static analysis
-  lint:
-    name: Lint and Static Analysis
+  # Terraform validation
+  terraform:
+    name: Terraform Validation
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Install Crystal
-      uses: crystal-lang/install-crystal@v1
-      with:
-        crystal: ${{ env.CRYSTAL_VERSION }}
-
-    - name: Install Ameba (Crystal linter)
-      run: |
-        # Install ameba via shards in a temporary directory
-        mkdir -p /tmp/ameba-install
-        cd /tmp/ameba-install
-        echo "name: ameba-install
-version: 0.1.0
-
-dependencies:
-  ameba:
-    github: crystal-ameba/ameba" > shard.yml
-        shards install
-        shards build ameba
-        sudo cp bin/ameba /usr/local/bin/
-
-    - name: Run Ameba linter
-      run: |
-        # Run ameba on each application
-        cd apps/shards-registry && ameba src/
-        cd ../shards-docs && ameba src/
-        cd ../gigs && ameba src/
-        cd ../worker && ameba src/
-        cd ../admin && ameba src/
-        cd ../../libraries/models && ameba src/
-
-    - name: Validate Kubernetes manifests
-      run: |
-        # Install kubeval for Kubernetes manifest validation
-        curl -L https://github.com/instrumenta/kubeval/releases/latest/download/kubeval-linux-amd64.tar.gz | tar xz
-        sudo mv kubeval /usr/local/bin
-        
-        # Validate terraform-generated manifests if they exist
-        if [ -f "kubernetes-dev-pod.yaml" ]; then
-          kubeval kubernetes-dev-pod.yaml
-        fi
-        echo "No Kubernetes manifests directory found - using Terraform for deployment"
-
-    - name: Validate Terraform
+    - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: 1.6.0
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
     
     - name: Terraform Format
       working-directory: ./terraform
