@@ -223,3 +223,53 @@ spec:
       granularity: 1s
       window: 1m
       targetValue: 20
+
+---
+# Admin Interface KEDA Autoscaling
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: admin-scaler
+  namespace: crystalshards
+  labels:
+    app.kubernetes.io/name: admin
+    app.kubernetes.io/part-of: crystalshards
+spec:
+  scaleTargetRef:
+    name: admin
+  minReplicaCount: 0  # Scale to zero when idle
+  maxReplicaCount: 3
+  pollingInterval: 30
+  cooldownPeriod: 600  # 10 minutes cooldown (admin interface used less frequently)
+  idleReplicaCount: 0
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-operator-prometheus.monitoring.svc.cluster.local:9090
+      metricName: admin_http_requests_per_second
+      threshold: "2"
+      query: 'rate(nginx_ingress_controller_requests{service="admin"}[1m])'
+
+---
+# Admin Interface HTTP-based scaling
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: admin-http-scaler
+  namespace: crystalshards
+spec:
+  hosts:
+  - admin.crystalshards.org
+  scaleTargetRef:
+    deployment: admin
+    service: admin
+    port: 4000
+  replicas:
+    min: 0
+    max: 3
+  scaledownPeriod: 600  # 10 minutes
+  scalingMetric:
+    requestRate:
+      granularity: 1s
+      window: 1m
+      targetValue: 10  # Lower threshold for admin interface

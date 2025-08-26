@@ -80,6 +80,10 @@ jobs:
       working-directory: ./libraries/models
       run: shards install --production
 
+    - name: Install dependencies - Admin
+      working-directory: ./apps/admin
+      run: shards install --production
+
     - name: Setup test database
       run: |
         PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE crystalshards_test;" || echo "Database crystalshards_test already exists"
@@ -148,6 +152,24 @@ jobs:
           echo "No tests found for worker"
         fi
 
+    - name: Run tests - Admin
+      working-directory: ./apps/admin
+      env:
+        DATABASE_URL_REGISTRY: postgresql://postgres:postgres@localhost:5432/crystalshards_test
+        DATABASE_URL_DOCS: postgresql://postgres:postgres@localhost:5432/crystaldocs_test
+        DATABASE_URL_GIGS: postgresql://postgres:postgres@localhost:5432/crystalgigs_test
+        REDIS_URL: redis://localhost:6379/4
+        ENV: test
+        JWT_SECRET: test_secret
+        ADMIN_USERNAME: admin
+        ADMIN_PASSWORD: test123
+      run: |
+        if [ -d "spec" ]; then
+          crystal spec --error-trace
+        else
+          echo "No tests found for admin"
+        fi
+
     - name: Check Crystal formatting
       run: |
         crystal tool format --check apps/
@@ -159,6 +181,7 @@ jobs:
         cd ../shards-docs && crystal tool hierarchy src/crystaldocs.cr
         cd ../gigs && crystal tool hierarchy src/crystalgigs.cr
         cd ../worker && crystal tool hierarchy src/worker.cr
+        cd ../admin && crystal tool hierarchy src/admin.cr
 
   # End-to-End Tests with Playwright
   e2e-tests:
@@ -313,6 +336,7 @@ jobs:
         cd ../shards-docs && ~/.local/bin/ameba src/
         cd ../gigs && ~/.local/bin/ameba src/
         cd ../worker && ~/.local/bin/ameba src/
+        cd ../admin && ~/.local/bin/ameba src/
         cd ../../libraries/models && ~/.local/bin/ameba src/
 
     - name: Validate Kubernetes manifests

@@ -29,7 +29,7 @@ jobs:
     
     strategy:
       matrix:
-        app: [shards-registry, shards-docs, crystalgigs, worker]
+        app: [shards-registry, shards-docs, crystalgigs, worker, admin]
         include:
           - app: shards-registry
             dockerfile: apps/shards-registry/Dockerfile
@@ -43,11 +43,15 @@ jobs:
           - app: worker
             dockerfile: apps/worker/Dockerfile
             context: .
+          - app: admin
+            dockerfile: apps/admin/Dockerfile
+            context: .
 
     outputs:
       shards-registry-image: ${{ steps.image-tags.outputs.shards-registry }}
       shards-docs-image: ${{ steps.image-tags.outputs.shards-docs }}
       crystalgigs-image: ${{ steps.image-tags.outputs.crystalgigs }}
+      admin-image: ${{ steps.image-tags.outputs.admin }}
       worker-image: ${{ steps.image-tags.outputs.worker }}
 
     steps:

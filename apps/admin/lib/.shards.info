@@ -1,0 +1,48 @@
+---
+version: 1.0
+shards:
+  radix:
+    git: https://github.com/luislavena/radix.git
+    version: 0.4.1
+  backtracer:
+    git: https://github.com/sija/backtracer.cr.git
+    version: 1.2.4
+  exception_page:
+    git: https://github.com/crystal-loot/exception_page.git
+    version: 0.4.1
+  kemal:
+    git: https://github.com/kemalcr/kemal.git
+    version: 1.5.0
+  db:
+    git: https://github.com/crystal-lang/crystal-db.git
+    version: 0.13.1
+  pg:
+    git: https://github.com/will/crystal-pg.git
+    version: 0.29.0
+  pool:
+    git: https://github.com/ysbaddaden/pool.git
+    version: 0.2.4
+  redis:
+    git: https://github.com/stefanwille/crystal-redis.git
+    version: 2.9.1
+  openssl_ext:
+    git: https://github.com/spider-gazelle/openssl_ext.git
+    version: 2.4.4
+  bindata:
+    git: https://github.com/spider-gazelle/bindata.git
+    version: 2.1.0
+  jwt:
+    git: https://github.com/crystal-community/jwt.git
+    version: 1.6.1
+  dotenv:
+    git: https://github.com/gdotdesign/cr-dotenv.git
+    version: 1.0.0
+  spec-kemal:
+    git: https://github.com/kemalcr/spec-kemal.git
+    version: 1.0.0
+  ameba:
+    git: https://github.com/crystal-ameba/ameba.git
+    version: 1.6.4
+  kemal-session:
+    git: https://github.com/kemalcr/kemal-session.git
+    version: 1.0.0

@@ -147,6 +147,31 @@ services:
       - ./apps/worker:/app
     command: ["crystal", "run", "src/worker.cr"]
 
+  # Admin Interface
+  admin:
+    build:
+      context: ./apps/admin
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL_REGISTRY: postgres://postgres:password@postgres/crystalshards_development
+      DATABASE_URL_DOCS: postgres://postgres:password@postgres/crystaldocs_development
+      DATABASE_URL_GIGS: postgres://postgres:password@postgres/crystalgigs_development
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: admin_super_secret_jwt_key_change_in_production
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+      PORT: 4000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/admin:/app
+    command: ["crystal", "run", "src/admin.cr"]
+
 volumes:
   postgres_data:
   redis_data:
