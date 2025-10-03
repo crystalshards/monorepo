@@ -118,12 +118,18 @@ jobs:
 
         # Initialize Terraform (GCS backend configured in main.tf)
         terraform init
-        
+
+        # Remove old GKE cluster and all K8s resources from state (for Autopilot migration)
+        # This allows Terraform to create a fresh Autopilot cluster
+        echo "Removing old cluster and Kubernetes resources from state..."
+        terraform state list | grep -E '(kubernetes_|helm_release|kubectl_manifest)' | xargs -r terraform state rm || true
+        terraform state rm 'google_container_cluster.primary' 2>/dev/null || echo "Cluster not in state, will create fresh"
+
         # Plan the deployment
         terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
                       -var="region=us-central1" \
                       -out=tfplan
-        
+
         # Apply the deployment
         terraform apply tfplan
         
