@@ -40,12 +40,12 @@ RUN adduser -D -s /bin/sh crystal && \
     chown crystal:crystal simple-registry
 USER crystal
 
-# Expose port
-EXPOSE 3000
+# Expose port (Cloud Run standard)
+EXPOSE 8080
 
-# Health check
+# Health check (Cloud Run uses PORT=8080 by default)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 
 # Run the application
 CMD ["./simple-registry"]

@@ -133,7 +133,11 @@ resource "kubernetes_network_policy" "allow_infrastructure_access" {
 
     # Allow DNS resolution
     egress {
-      to {}
+      to {
+        ip_block {
+          cidr = "0.0.0.0/0"
+        }
+      }
       ports {
         protocol = "UDP"
         port     = "53"
@@ -142,7 +146,11 @@ resource "kubernetes_network_policy" "allow_infrastructure_access" {
 
     # Allow external HTTPS traffic
     egress {
-      to {}
+      to {
+        ip_block {
+          cidr = "0.0.0.0/0"
+        }
+      }
       ports {
         protocol = "TCP"
         port     = "443"

@@ -12,7 +12,7 @@ resource "google_cloud_run_service" "simple_registry" {
         image = "us-central1-docker.pkg.dev/${var.project_id}/crystalshards/simple-registry:latest"
 
         ports {
-          container_port = 3000
+          container_port = 8080
         }
 
         env {

@@ -69,7 +69,7 @@ resource "helm_release" "redis_operator" {
   name       = "redis-operator"
   repository = "https://ot-container-kit.github.io/helm-charts"
   chart      = "redis-operator"
-  version    = "0.15.1"
+  version    = "0.15.0"  # Using stable version
   namespace  = kubernetes_namespace.infrastructure.metadata[0].name
 
   set {

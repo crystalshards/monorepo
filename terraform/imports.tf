@@ -35,3 +35,9 @@ import {
   to = google_compute_firewall.allow_webhooks
   id = "projects/waldrip-net/global/firewalls/crystalshards-cluster-allow-webhooks"
 }
+
+# Import existing Router NAT
+import {
+  to = google_compute_router_nat.nat
+  id = "waldrip-net/us-central1/crystalshards-cluster-router/crystalshards-cluster-nat"
+}
