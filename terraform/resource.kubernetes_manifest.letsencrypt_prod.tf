@@ -26,5 +26,8 @@ resource "kubernetes_manifest" "letsencrypt_prod" {
     }
   }
 
-  depends_on = [helm_release.cert_manager]
+  depends_on = [
+    helm_release.cert_manager,
+    time_sleep.wait_for_cert_manager
+  ]
 }
