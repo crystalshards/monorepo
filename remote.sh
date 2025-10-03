@@ -43,9 +43,12 @@ echo ""
 echo "✅ Pod is ready!"
 echo ""
 echo "Next steps:"
-echo "1. Run ./remote-login.sh to authenticate with Claude Code"
-echo "2. The agent will start automatically after successful login"
-echo ""
+
+./remote-login.sh
+
+echo "📜 Following logs"
+kubectl logs -f $POD_NAME -n $NAMESPACE -c agent
+
 echo "Useful commands:"
 echo "📜 kubectl logs -f $POD_NAME -n $NAMESPACE -c agent"
 echo "🔍 kubectl describe pod $POD_NAME -n $NAMESPACE"
