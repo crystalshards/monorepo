@@ -55,3 +55,13 @@ output "namespaces" {
     infrastructure = kubernetes_namespace.infrastructure.metadata[0].name
   }
 }
+
+output "simple_registry_url" {
+  value       = google_cloud_run_service.simple_registry.status[0].url
+  description = "URL of the deployed Crystal Shards Registry (minimal)"
+}
+
+output "simple_registry_service_name" {
+  value       = google_cloud_run_service.simple_registry.name
+  description = "Name of the Cloud Run service"
+}
