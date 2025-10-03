@@ -20,10 +20,8 @@ resource "google_cloud_run_service" "simple_registry" {
           value = "production"
         }
 
-        env {
-          name  = "PORT"
-          value = "3000"
-        }
+        # PORT is automatically set by Cloud Run (reserved)
+        # App should use $PORT environment variable
 
         resources {
           limits = {

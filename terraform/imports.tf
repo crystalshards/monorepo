@@ -12,3 +12,26 @@ import {
   to = google_bigquery_dataset.usage
   id = "projects/waldrip-net/datasets/gke_usage_metering"
 }
+
+# Import existing subnet
+import {
+  to = google_compute_subnetwork.subnet
+  id = "projects/waldrip-net/regions/us-central1/subnetworks/crystalshards-cluster-subnet"
+}
+
+# Import existing router
+import {
+  to = google_compute_router.router
+  id = "projects/waldrip-net/regions/us-central1/routers/crystalshards-cluster-router"
+}
+
+# Import existing firewall rules
+import {
+  to = google_compute_firewall.allow_internal
+  id = "projects/waldrip-net/global/firewalls/crystalshards-cluster-allow-internal"
+}
+
+import {
+  to = google_compute_firewall.allow_webhooks
+  id = "projects/waldrip-net/global/firewalls/crystalshards-cluster-allow-webhooks"
+}
