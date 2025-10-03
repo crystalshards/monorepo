@@ -43,20 +43,21 @@ jobs:
       run: |
         echo "Building simple-lucky-registry..."
         if [ -f "shard.yml" ]; then
-          echo "Simple-lucky-registry requires Lucky framework - skipping full build in CI"
-          echo "Performing syntax check instead..."
-          crystal build --no-codegen src/simple-lucky-registry.cr || echo "Syntax check failed but continuing"
+          echo "Installing dependencies..."
+          shards install
+          echo "Building application..."
+          crystal build --no-codegen src/simple-lucky-registry.cr
           echo "Build successful!"
         else
           echo "No shard.yml found for simple-lucky-registry, skipping"
         fi
-        
+
     - name: Test simple-lucky-registry
       working-directory: ./apps/simple-lucky-registry
       run: |
         if [ -f "shard.yml" ]; then
           echo "Testing simple-lucky-registry syntax..."
-          crystal build --no-codegen src/simple-lucky-registry.cr || echo "Syntax check completed"
+          crystal build --no-codegen src/simple-lucky-registry.cr
           echo "Compilation test passed!"
         else
           echo "No shard.yml found for simple-lucky-registry, skipping"
