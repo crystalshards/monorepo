@@ -115,8 +115,8 @@ jobs:
       working-directory: ./terraform
       run: |
         echo "Deploying ${{ steps.app_selector.outputs.app_name }} to Google Cloud Run..."
-        
-        # Initialize Terraform
+
+        # Initialize Terraform (GCS backend configured in main.tf)
         terraform init
         
         # Plan the deployment

@@ -1,7 +1,8 @@
 terraform {
   required_version = ">= 1.0"
 
-  # Use GCS backend for persistent state across GitHub Actions runs
+  # GCS backend for persistent state
+  # CI validation uses -backend=false flag
   backend "gcs" {
     bucket = "waldrip-net-terraform-state"
     prefix = "terraform/state"
