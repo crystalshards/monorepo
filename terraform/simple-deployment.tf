@@ -9,7 +9,7 @@ resource "google_cloud_run_service" "simple_registry" {
   template {
     spec {
       containers {
-        image = "gcr.io/${var.project_id}/simple-registry:latest"
+        image = "us-central1-docker.pkg.dev/${var.project_id}/crystalshards/simple-registry:latest"
 
         ports {
           container_port = 3000
@@ -78,25 +78,26 @@ resource "google_project_service" "cloud_run_api" {
   disable_dependent_services = true
 }
 
-resource "google_project_service" "container_registry_api" {
-  service = "containerregistry.googleapis.com"
+resource "google_project_service" "artifact_registry_api" {
+  service = "artifactregistry.googleapis.com"
 
   disable_dependent_services = true
 }
 
 # Build and push the container image
+# NOTE: This is typically done in CI/CD (GitHub Actions) but kept here for local development
 resource "null_resource" "build_and_push" {
   provisioner "local-exec" {
     working_dir = "../apps/simple-registry"
     command     = <<-EOT
       # Build the Docker image
-      docker build -t gcr.io/${var.project_id}/simple-registry:latest .
-      
-      # Configure Docker to use gcloud as a credential helper
-      gcloud auth configure-docker --quiet
-      
-      # Push the image to Google Container Registry
-      docker push gcr.io/${var.project_id}/simple-registry:latest
+      docker build -t us-central1-docker.pkg.dev/${var.project_id}/crystalshards/simple-registry:latest .
+
+      # Configure Docker to use gcloud as a credential helper for Artifact Registry
+      gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      # Push the image to Artifact Registry
+      docker push us-central1-docker.pkg.dev/${var.project_id}/crystalshards/simple-registry:latest
     EOT
   }
 
@@ -107,7 +108,7 @@ resource "null_resource" "build_and_push" {
     shard_hash      = filemd5("../apps/simple-registry/shard.yml")
   }
 
-  depends_on = [google_project_service.container_registry_api]
+  depends_on = [google_project_service.artifact_registry_api]
 }
 
 # Output the service URL

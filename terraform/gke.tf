@@ -6,22 +6,28 @@ resource "google_container_cluster" "primary" {
   # Autopilot mode for cost optimization and scale-to-zero
   enable_autopilot = var.enable_autopilot
 
-  # Remove default node pool for standard clusters
-  remove_default_node_pool = !var.enable_autopilot
+  # Remove default node pool for standard clusters (not compatible with autopilot)
+  remove_default_node_pool = var.enable_autopilot ? null : true
   initial_node_count       = var.enable_autopilot ? null : 1
 
   # Networking
   network    = google_compute_network.vpc.name
   subnetwork = google_compute_subnetwork.subnet.name
 
-  # Enable network policy for security
-  network_policy {
-    enabled = true
+  # Enable network policy for security (not compatible with autopilot - autopilot enables it automatically)
+  dynamic "network_policy" {
+    for_each = var.enable_autopilot ? [] : [1]
+    content {
+      enabled = true
+    }
   }
 
-  # Enable Workload Identity for secure pod-to-GCP service communication
-  workload_identity_config {
-    workload_pool = "${var.project_id}.svc.id.goog"
+  # Enable Workload Identity (not compatible with autopilot - autopilot enables it automatically)
+  dynamic "workload_identity_config" {
+    for_each = var.enable_autopilot ? [] : [1]
+    content {
+      workload_pool = "${var.project_id}.svc.id.goog"
+    }
   }
 
   # Resource usage export for cost monitoring
@@ -33,13 +39,16 @@ resource "google_container_cluster" "primary" {
     }
   }
 
-  # Addons
+  # Addons (network_policy_config not compatible with autopilot)
   addons_config {
     horizontal_pod_autoscaling {
       disabled = false
     }
-    network_policy_config {
-      disabled = false
+    dynamic "network_policy_config" {
+      for_each = var.enable_autopilot ? [] : [1]
+      content {
+        disabled = false
+      }
     }
   }
 
@@ -57,11 +66,14 @@ resource "google_container_cluster" "primary" {
     master_ipv4_cidr_block  = "172.16.0.0/28"
   }
 
-  # Enable shielded nodes
-  node_config {
-    shielded_instance_config {
-      enable_secure_boot          = true
-      enable_integrity_monitoring = true
+  # Enable shielded nodes (not compatible with autopilot - use in standard clusters only)
+  dynamic "node_config" {
+    for_each = var.enable_autopilot ? [] : [1]
+    content {
+      shielded_instance_config {
+        enable_secure_boot          = true
+        enable_integrity_monitoring = true
+      }
     }
   }
 
