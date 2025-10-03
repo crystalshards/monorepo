@@ -1,11 +1,11 @@
-# Ingress for crystaldocs.org
-resource "kubernetes_ingress_v1" "crystaldocs" {
+# Ingress for crystalshards.org
+resource "kubernetes_ingress_v1" "crystalshards" {
   metadata {
-    name      = "crystaldocs-ingress"
-    namespace = kubernetes_namespace.crystaldocs.metadata[0].name
+    name      = "crystalshards-ingress"
+    namespace = kubernetes_namespace.crystalshards.metadata[0].name
     annotations = {
-      "kubernetes.io/ingress.class"                = "nginx"
-      "external-dns.alpha.kubernetes.io/hostname" = "crystaldocs.org,www.crystaldocs.org"
+      "kubernetes.io/ingress.class"               = "nginx"
+      "external-dns.alpha.kubernetes.io/hostname" = "crystalshards.org,www.crystalshards.org"
       "cert-manager.io/cluster-issuer"            = "letsencrypt-prod"
     }
   }
@@ -13,21 +13,21 @@ resource "kubernetes_ingress_v1" "crystaldocs" {
   spec {
     tls {
       hosts = [
-        "crystaldocs.org",
-        "www.crystaldocs.org"
+        "crystalshards.org",
+        "www.crystalshards.org"
       ]
-      secret_name = "crystaldocs-tls"
+      secret_name = "crystalshards-tls"
     }
 
     rule {
-      host = "crystaldocs.org"
+      host = "crystalshards.org"
       http {
         path {
           path      = "/"
           path_type = "Prefix"
           backend {
             service {
-              name = "crystaldocs-service"
+              name = "crystalshards-service"
               port {
                 number = 80
               }
@@ -38,14 +38,14 @@ resource "kubernetes_ingress_v1" "crystaldocs" {
     }
 
     rule {
-      host = "www.crystaldocs.org"
+      host = "www.crystalshards.org"
       http {
         path {
-          path_type = "Prefix"
           path      = "/"
+          path_type = "Prefix"
           backend {
             service {
-              name = "crystaldocs-service"
+              name = "crystalshards-service"
               port {
                 number = 80
               }
@@ -59,6 +59,6 @@ resource "kubernetes_ingress_v1" "crystaldocs" {
   depends_on = [
     helm_release.nginx_ingress,
     helm_release.external_dns,
-    kubernetes_namespace.crystaldocs
+    kubernetes_namespace.crystalshards
   ]
 }

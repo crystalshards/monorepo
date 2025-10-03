@@ -1,11 +1,11 @@
-# Ingress for crystalbits.org
-resource "kubernetes_ingress_v1" "crystalbits" {
+# Ingress for crystalgigs.com
+resource "kubernetes_ingress_v1" "crystalgigs" {
   metadata {
-    name      = "crystalbits-ingress"
-    namespace = kubernetes_namespace.crystalbits.metadata[0].name
+    name      = "crystalgigs-ingress"
+    namespace = kubernetes_namespace.crystalgigs.metadata[0].name
     annotations = {
-      "kubernetes.io/ingress.class"                = "nginx"
-      "external-dns.alpha.kubernetes.io/hostname" = "crystalbits.org,www.crystalbits.org"
+      "kubernetes.io/ingress.class"               = "nginx"
+      "external-dns.alpha.kubernetes.io/hostname" = "crystalgigs.com,www.crystalgigs.com"
       "cert-manager.io/cluster-issuer"            = "letsencrypt-prod"
     }
   }
@@ -13,21 +13,21 @@ resource "kubernetes_ingress_v1" "crystalbits" {
   spec {
     tls {
       hosts = [
-        "crystalbits.org",
-        "www.crystalbits.org"
+        "crystalgigs.com",
+        "www.crystalgigs.com"
       ]
-      secret_name = "crystalbits-tls"
+      secret_name = "crystalgigs-tls"
     }
 
     rule {
-      host = "crystalbits.org"
+      host = "crystalgigs.com"
       http {
         path {
           path      = "/"
           path_type = "Prefix"
           backend {
             service {
-              name = "crystalbits-service"
+              name = "crystalgigs-service"
               port {
                 number = 80
               }
@@ -38,14 +38,14 @@ resource "kubernetes_ingress_v1" "crystalbits" {
     }
 
     rule {
-      host = "www.crystalbits.org"
+      host = "www.crystalgigs.com"
       http {
         path {
           path      = "/"
           path_type = "Prefix"
           backend {
             service {
-              name = "crystalbits-service"
+              name = "crystalgigs-service"
               port {
                 number = 80
               }
@@ -59,6 +59,6 @@ resource "kubernetes_ingress_v1" "crystalbits" {
   depends_on = [
     helm_release.nginx_ingress,
     helm_release.external_dns,
-    kubernetes_namespace.crystalbits
+    kubernetes_namespace.crystalgigs
   ]
 }
