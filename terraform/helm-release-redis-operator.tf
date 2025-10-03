@@ -11,6 +11,17 @@ resource "helm_release" "redis_operator" {
     value = "1"
   }
 
+  # Resource requests (must be less than or equal to limits)
+  set {
+    name  = "resources.requests.cpu"
+    value = "50m"
+  }
+
+  set {
+    name  = "resources.requests.memory"
+    value = "64Mi"
+  }
+
   # Resource limits
   set {
     name  = "resources.limits.cpu"
