@@ -61,8 +61,8 @@ jobs:
       with:
         project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-    - name: Configure Docker for GCR
-      run: gcloud auth configure-docker --quiet
+    - name: Configure Docker for Artifact Registry
+      run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
 
     - name: Install Crystal
       uses: crystal-lang/install-crystal@v1
@@ -101,8 +101,9 @@ jobs:
       working-directory: ./apps/${{ steps.app_selector.outputs.app_name }}
       run: |
         echo "Building Docker image for ${{ steps.app_selector.outputs.app_name }}..."
-        docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ steps.app_selector.outputs.app_name }}:latest .
-        docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ steps.app_selector.outputs.app_name }}:latest
+        IMAGE_URI="us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/crystalshards/${{ steps.app_selector.outputs.app_name }}:latest"
+        docker build -t $IMAGE_URI .
+        docker push $IMAGE_URI
 
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
