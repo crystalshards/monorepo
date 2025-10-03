@@ -24,7 +24,7 @@ class Home::IndexPage < MainLayout
   def content
     div class: "container mx-auto px-4 py-8" do
       h1 "Crystal Shards Registry", class: "text-4xl font-bold mb-8"
-      
+
       div class: "bg-blue-50 border border-blue-200 rounded-lg p-6 mb-8" do
         h2 "Welcome to CrystalShards.org", class: "text-2xl font-semibold mb-4"
         p "A modern package registry for Crystal language shards.", class: "text-gray-700"
@@ -39,10 +39,10 @@ class Home::IndexPage < MainLayout
         feature_card(
           title: "Submit Shards",
           description: "Share your Crystal packages",
-          icon: "🚀"  
+          icon: "🚀"
         )
         feature_card(
-          title: "API Access", 
+          title: "API Access",
           description: "Programmatic access to registry",
           icon: "🔗"
         )
