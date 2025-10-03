@@ -1,12 +1,13 @@
 name: Deploy to Production
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'apps/simple-registry/**'
-      - 'apps/simple-lucky-registry/**'
-      - 'terraform/simple-deployment.tf'
+  # Deploy after CI passes on main branch
+  workflow_run:
+    workflows: ["Continuous Integration"]
+    branches: [main]
+    types:
+      - completed
+  # Allow manual deployment with approval
   workflow_dispatch:
     inputs:
       app_name:
@@ -17,6 +18,11 @@ on:
         options:
         - simple-registry
         - simple-lucky-registry
+      skip_ci_check:
+        description: 'Skip CI check requirement (use with caution)'
+        required: false
+        default: false
+        type: boolean
 
 env:
   CRYSTAL_VERSION: "1.10.1"
@@ -26,8 +32,22 @@ jobs:
     name: Deploy Simple Apps
     runs-on: ubuntu-latest
     environment: production
-    
+    # Only run if CI passed or if manually triggered with skip_ci_check
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success')
+
     steps:
+    - name: Check CI Status
+      if: github.event_name == 'workflow_run'
+      run: |
+        echo "CI workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+        if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+          echo "❌ CI checks failed. Deployment blocked."
+          exit 1
+        fi
+        echo "✅ CI checks passed. Proceeding with deployment."
+
     - name: Checkout code
       uses: actions/checkout@v4
 
