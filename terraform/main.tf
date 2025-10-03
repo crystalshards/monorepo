@@ -1,11 +1,10 @@
 terraform {
   required_version = ">= 1.0"
 
-  # Use Terraform Cloud in production, local state in CI
-  # To use Terraform Cloud, set TF_CLOUD_ORGANIZATION and TF_WORKSPACE env vars
-  # and remove this backend block
-  backend "local" {
-    path = "terraform.tfstate"
+  # Use GCS backend for persistent state across GitHub Actions runs
+  backend "gcs" {
+    bucket = "waldrip-net-terraform-state"
+    prefix = "terraform/state"
   }
 
   required_providers {
