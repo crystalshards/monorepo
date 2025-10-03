@@ -55,37 +55,37 @@ def handle_request(context : HTTP::Server::Context)
   when "/health"
     context.response.content_type = "application/json"
     context.response.print({
-      status: "healthy",
-      service: "crystal-shards-registry",
-      version: "1.0.0-minimal",
-      timestamp: Time.utc.to_s,
+      status:      "healthy",
+      service:     "crystal-shards-registry",
+      version:     "1.0.0-minimal",
+      timestamp:   Time.utc.to_s,
       environment: ENV.fetch("ENV", "development"),
-      framework: "HTTP::Server"
+      framework:   "HTTP::Server",
     }.to_json)
   when "/api/stats"
     context.response.content_type = "application/json"
     context.response.print({
-      shards_count: 0,
-      users_count: 0,
+      shards_count:    0,
+      users_count:     0,
       total_downloads: 0,
-      status: "minimal_deployment",
-      message: "Statistics will be available once database is connected"
+      status:          "minimal_deployment",
+      message:         "Statistics will be available once database is connected",
     }.to_json)
   when "/api/shards"
     context.response.content_type = "application/json"
     context.response.print({
-      shards: [] of String,
-      total: 0,
-      message: "Shard data will be available once database is connected",
-      api_version: "1.0.0-minimal"
+      shards:      [] of String,
+      total:       0,
+      message:     "Shard data will be available once database is connected",
+      api_version: "1.0.0-minimal",
     }.to_json)
   else
     context.response.status_code = 404
     context.response.content_type = "application/json"
     context.response.print({
-      error: "Not Found",
-      path: path,
-      message: "Endpoint not available in minimal deployment"
+      error:   "Not Found",
+      path:    path,
+      message: "Endpoint not available in minimal deployment",
     }.to_json)
   end
 end
@@ -106,8 +106,8 @@ server = HTTP::Server.new do |context|
     context.response.status_code = 500
     context.response.content_type = "application/json"
     context.response.print({
-      error: "Internal Server Error",
-      message: ex.message
+      error:   "Internal Server Error",
+      message: ex.message,
     }.to_json)
     STDERR.puts "Error handling request #{context.request.path}: #{ex}"
   end
