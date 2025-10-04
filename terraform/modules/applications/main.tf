@@ -2,42 +2,28 @@
 
 # CrystalShards - Main package registry application
 module "crystalshards" {
-  source = "./crystalshards"
+  source = "${path.module}/../../../apps/simple-registry/terraform"
 
   cluster_name = var.cluster_name
 }
 
 # CrystalDocs - Documentation hosting application
 module "crystaldocs" {
-  source = "./crystaldocs"
+  source = "${path.module}/../../../apps/shards-docs/terraform"
 
   cluster_name = var.cluster_name
 }
 
 # CrystalGigs - Job board application
 module "crystalgigs" {
-  source = "./crystalgigs"
+  source = "${path.module}/../../../apps/gigs/terraform"
 
   cluster_name = var.cluster_name
 }
 
 # CrystalBits - Newsletter/blog application
 module "crystalbits" {
-  source = "./crystalbits"
-
-  cluster_name = var.cluster_name
-}
-
-# Claude - AI agent namespace
-module "claude" {
-  source = "./claude"
-
-  cluster_name = var.cluster_name
-}
-
-# Infrastructure - Shared infrastructure namespace
-module "infrastructure" {
-  source = "./infrastructure"
+  source = "${path.module}/../../../apps/crystalbits/terraform"
 
   cluster_name = var.cluster_name
 }
