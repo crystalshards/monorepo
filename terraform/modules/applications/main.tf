@@ -2,21 +2,21 @@
 
 # CrystalShards - Main package registry application
 module "crystalshards" {
-  source = "${path.module}/../../../apps/simple-registry/terraform"
+  source = "${path.module}/../../../apps/crystalshards/terraform"
 
   cluster_name = var.cluster_name
 }
 
 # CrystalDocs - Documentation hosting application
 module "crystaldocs" {
-  source = "${path.module}/../../../apps/shards-docs/terraform"
+  source = "${path.module}/../../../apps/crystaldocs/terraform"
 
   cluster_name = var.cluster_name
 }
 
 # CrystalGigs - Job board application
 module "crystalgigs" {
-  source = "${path.module}/../../../apps/gigs/terraform"
+  source = "${path.module}/../../../apps/crystalgigs/terraform"
 
   cluster_name = var.cluster_name
 }
