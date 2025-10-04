@@ -61,11 +61,11 @@ output "project_id" {
 output "operators_installed" {
   description = "Status of installed operators"
   value = {
-    cert_manager         = module.operators.cert_manager_installed
-    cnpg                 = module.operators.cnpg_installed
-    redis                = module.operators.redis_operator_installed
-    keda                 = module.operators.keda_installed
-    opentelemetry        = module.operators.opentelemetry_operator_installed
-    eck                  = module.operators.eck_operator_installed
+    cert_manager  = module.operators.cert_manager_installed
+    cnpg          = module.operators.cnpg_installed
+    redis         = module.operators.redis_operator_installed
+    keda          = module.operators.keda_installed
+    opentelemetry = module.operators.opentelemetry_operator_installed
+    eck           = module.operators.eck_operator_installed
   }
 }
