@@ -24,17 +24,17 @@ jobs:
       with:
         crystal: ${{ env.CRYSTAL_VERSION }}
 
-    - name: Build simple-registry
-      working-directory: ./apps/simple-registry
+    - name: Build crystalshards
+      working-directory: ./apps/crystalshards
       run: |
-        echo "Building simple-registry..."
+        echo "Building crystalshards..."
         crystal build src/simple-registry.cr
         echo "Build successful!"
-        
-    - name: Test simple-registry
-      working-directory: ./apps/simple-registry
+
+    - name: Test crystalshards
+      working-directory: ./apps/crystalshards
       run: |
-        echo "Testing simple-registry compilation..."
+        echo "Testing crystalshards compilation..."
         crystal build --no-codegen src/simple-registry.cr
         echo "Compilation test passed!"
 
@@ -67,10 +67,7 @@ jobs:
     - name: Format check for simple apps
       run: |
         echo "Checking Crystal formatting for simple apps..."
-        crystal tool format --check apps/simple-registry/src/
-        if [ -d "apps/simple-lucky-registry/src" ]; then
-          crystal tool format --check apps/simple-lucky-registry/src/
-        fi
+        crystal tool format --check apps/crystalshards/src/
 
 
   # Security scanning

@@ -67,6 +67,4 @@ resource "helm_release" "prometheus_operator" {
       }
     })
   ]
-
-  depends_on = [google_container_cluster.primary]
 }

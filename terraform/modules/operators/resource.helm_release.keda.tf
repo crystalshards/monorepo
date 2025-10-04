@@ -33,6 +33,4 @@ resource "helm_release" "keda" {
     name  = "resources.operator.limits.memory"
     value = "128Mi"
   }
-
-  depends_on = [google_container_cluster.primary]
 }
