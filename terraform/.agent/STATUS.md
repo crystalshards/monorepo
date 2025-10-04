@@ -1,8 +1,9 @@
 # CrystalShards Infrastructure Status
 
-Last Updated: 2025-10-04
+**Last Updated**: 2025-10-04 (Session: Infrastructure Deployment Readiness)
+**Current Focus**: Making infrastructure deployable - creating missing K8s resources
 
-## ✅ Completed
+## ✅ Completed (Infrastructure Layer)
 
 ### Infrastructure Foundation
 - [x] GKE Autopilot cluster configuration
@@ -35,12 +36,19 @@ Last Updated: 2025-10-04
 - [x] Network policies for infrastructure access
 
 ### CI/CD
-- [x] Terraform validation in CI
-- [x] Crystal apps build/test in CI (matrix strategy)
-- [x] Security scanning (Trivy, Checkov, TruffleHog)
-- [x] Format checking for all Crystal code
+- [x] Terraform validation in CI ✅ PASSING
+- [x] Crystal apps build/test in CI (matrix strategy) ✅ PASSING
+- [x] Security scanning (Trivy, Checkov, TruffleHog) ✅ PASSING
+- [x] Format checking for all Crystal code ✅ PASSING
+- [x] Multi-stage Dockerfile builds (api/worker targets)
 
-## 🚧 In Progress / Needs Implementation
+### Recent Completions (This Session)
+- [x] Fixed Terraform validation errors (project_id variable)
+- [x] Added JoobQ worker infrastructure to crystalshards
+- [x] Created comprehensive deployment roadmap
+- [x] All CI checks passing on main branch
+
+## 🚧 Critical Gaps - Cannot Deploy Without These
 
 ### Missing Kubernetes Resources
 
@@ -53,7 +61,11 @@ Need to create for each app (crystalshards, crystaldocs, crystalgigs, crystalbit
 - [ ] `resource.kubernetes_secret.<app>_secrets.tf` - Database/Redis credentials
 - [ ] `resource.kubernetes_configmap.<app>_config.tf` - App configuration
 
-**Current status**: Only crystalshards worker deployment exists. No API deployments.
+**Current status**:
+- ✅ crystalshards worker deployment exists
+- ❌ NO API deployments for any app (crystalshards, crystaldocs, crystalgigs, crystalbits)
+- ❌ NO services to expose deployments
+- This means: Infrastructure builds but apps cannot run
 
 #### 2. Database Resources
 **Priority: HIGH - Required for apps to function**
@@ -136,10 +148,66 @@ Worker implementation:
 2. crystalbits MVP
 3. Polish and hardening
 
-## 🔥 Immediate Blockers
+## 🔥 Deployment Blockers (Ordered by Priority)
 
-1. **No app deployments defined** - Apps can't run
-2. **No databases provisioned** - Apps need PostgreSQL
-3. **No Redis cluster** - Workers need Redis
-4. **No secrets created** - Need credentials
+### BLOCKER 1: No App Deployments
+**Impact**: Infrastructure exists but nothing runs
+**Files missing**:
+- `apps/crystalshards/terraform/resource.kubernetes_deployment.crystalshards_api.tf`
+- `apps/crystaldocs/terraform/resource.kubernetes_deployment.crystaldocs.tf`
+- `apps/crystalgigs/terraform/resource.kubernetes_deployment.crystalgigs.tf`
+- `apps/crystalbits/terraform/resource.kubernetes_deployment.crystalbits.tf`
+
+### BLOCKER 2: No Kubernetes Services
+**Impact**: Ingress has nothing to route traffic to
+**Files missing**:
+- `apps/*/terraform/resource.kubernetes_service.*.tf` (one per app)
+
+### BLOCKER 3: No Database Clusters
+**Impact**: Apps crash on startup (database connection fails)
+**Files missing**:
+- `apps/*/terraform/resource.kubectl_manifest.*_postgres.tf` (CNPG clusters)
+
+### BLOCKER 4: No Redis Instance
+**Impact**: JoobQ workers can't start, sessions don't work
+**Files missing**:
+- Shared Redis cluster manifest
+
+### BLOCKER 5: No Secrets
+**Impact**: Apps can't connect to databases/Redis
+**Files missing**:
+- `apps/*/terraform/resource.kubernetes_secret.*_secrets.tf`
+- Need: DATABASE_URL, REDIS_URL, SECRET_KEY_BASE per app
+
+## 📊 Completion Status
+
+**Infrastructure**: 85% complete
+**Deployable State**: 0% (cannot deploy - missing critical resources)
+**Application Code**: 10% (Lucky scaffolds only, no business logic)
+
+## 🎯 Current Session Goal
+
+Make the infrastructure **minimally deployable**:
+1. Create all deployment resources
+2. Create all service resources
+3. Create PostgreSQL clusters
+4. Create Redis cluster
+5. Create placeholder secrets
+6. Verify `terraform plan` succeeds
+7. Document deployment procedure
+
+**Success Criteria**: Can run `terraform apply` and get running pods (even if apps just return 404s)
+
+## 📝 Technical Debt / Future Work
+
+- MinIO tenant (needed for package/doc storage)
+- Monitoring dashboards
+- AlertManager rules
+- Database backup configuration
+- TLS certificate automation
+- Rate limiting
+- Application business logic (models, endpoints, workers)
+- Search infrastructure
+- Email integration
+- Payment integration (crystalgigs)
 
