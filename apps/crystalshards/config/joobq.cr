@@ -4,8 +4,8 @@
 require "joobq"
 
 # Configure JoobQ client for enqueueing jobs
-Joobq.configure do |c|
-  c.store = Joobq::RedisStore.new(
+JoobQ.configure do |c|
+  c.store = JoobQ::RedisStore.new(
     uri: Lucky::Server.settings.redis_url
   )
 end
