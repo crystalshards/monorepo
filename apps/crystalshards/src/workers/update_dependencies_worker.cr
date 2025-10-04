@@ -9,7 +9,7 @@ module CrystalShards::Workers
 
     @queue = "indexing"
     @retries = 3
-    @expires = 10.minutes.total_seconds.to_i
+    @expires = 10.minutes.total_seconds.to_i64
 
     def initialize(@shard_name : String, @version : String)
     end

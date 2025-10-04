@@ -50,19 +50,8 @@ kubectl exec -it "$POD_NAME" -n "$NAMESPACE" -c agent -- bash -c "
     fi
     
     # Perform login
-    claude-code login
-    
-    # Create ready file on successful login
-    if claude-code status &>/dev/null; then
-        touch /workspaces/.claude-ready
-        echo ''
-        echo '✅ Login successful! Ready file created.'
-        echo '   Config stored in: /workspaces/.claude-config'
-    else
-        echo ''
-        echo '❌ Login failed. Please try again.'
-        exit 1
-    fi
+    claude login
+    touch /workspaces/.claude-ready
 "
 
 if [ $? -eq 0 ]; then
