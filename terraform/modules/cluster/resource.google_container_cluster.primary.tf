@@ -7,8 +7,8 @@ resource "google_container_cluster" "primary" {
   enable_autopilot = true
 
   # Networking
-  network    = google_compute_network.vpc.name
-  subnetwork = google_compute_subnetwork.subnet.name
+  network    = var.network_name
+  subnetwork = var.subnet_name
 
   # IP allocation for pods and services
   ip_allocation_policy {
