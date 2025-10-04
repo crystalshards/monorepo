@@ -9,27 +9,10 @@ on:
       - completed
   # Allow manual deployment with approval
   workflow_dispatch:
-    inputs:
-      app_name:
-        description: 'App to deploy (simple-registry or simple-lucky-registry)'
-        required: true
-        default: 'simple-registry'
-        type: choice
-        options:
-        - simple-registry
-        - simple-lucky-registry
-      skip_ci_check:
-        description: 'Skip CI check requirement (use with caution)'
-        required: false
-        default: false
-        type: boolean
-
-env:
-  CRYSTAL_VERSION: "1.10.1"
 
 jobs:
   deploy:
-    name: Deploy Simple Apps
+    name: Deploy GKE Infrastructure
     runs-on: ubuntu-latest
     environment: production
     # Only run if CI passed or if manually triggered with skip_ci_check
@@ -56,55 +39,6 @@ jobs:
       with:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v2
-      with:
-        project_id: ${{ secrets.GCP_PROJECT_ID }}
-
-    - name: Configure Docker for Artifact Registry
-      run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
-
-    - name: Install Crystal
-      uses: crystal-lang/install-crystal@v1
-      with:
-        crystal: ${{ env.CRYSTAL_VERSION }}
-
-    - name: Determine app to deploy
-      id: app_selector
-      run: |
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "app_name=${{ github.event.inputs.app_name }}" >> $GITHUB_OUTPUT
-        else
-          # Default to simple-registry for push events
-          echo "app_name=simple-registry" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Build and test app
-      working-directory: ./apps/${{ steps.app_selector.outputs.app_name }}
-      run: |
-        echo "Building ${{ steps.app_selector.outputs.app_name }}..."
-        
-        # Install dependencies if shard.yml exists
-        if [ -f "shard.yml" ]; then
-          shards install --production
-        fi
-        
-        # Build the app
-        crystal build src/${{ steps.app_selector.outputs.app_name }}.cr
-        
-        # Test compilation
-        crystal build --no-codegen src/${{ steps.app_selector.outputs.app_name }}.cr
-        
-        echo "Build successful!"
-
-    - name: Build Docker image
-      working-directory: ./apps/${{ steps.app_selector.outputs.app_name }}
-      run: |
-        echo "Building Docker image for ${{ steps.app_selector.outputs.app_name }}..."
-        IMAGE_URI="us-central1-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/crystalshards/${{ steps.app_selector.outputs.app_name }}:latest"
-        docker build -t $IMAGE_URI .
-        docker push $IMAGE_URI
-
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v2
       with:
@@ -114,7 +48,7 @@ jobs:
     - name: Deploy with Terraform
       working-directory: ./terraform
       run: |
-        echo "Deploying ${{ steps.app_selector.outputs.app_name }} to Google Cloud Run..."
+        echo "Deploying GKE Autopilot cluster and infrastructure..."
 
         # Initialize Terraform (GCS backend configured in main.tf)
         terraform init
@@ -152,34 +86,20 @@ jobs:
 
         echo "Deployment completed!"
 
-    - name: Get deployment URL
+    - name: Get cluster info
       working-directory: ./terraform
       run: |
-        echo "Getting deployment URL..."
-        terraform output simple_registry_url
-        
-        # Save URL to environment for later steps
-        URL=$(terraform output -raw simple_registry_url)
-        echo "DEPLOYMENT_URL=$URL" >> $GITHUB_ENV
+        echo "Getting cluster information..."
+        terraform output cluster_name
+        terraform output kubectl_config
 
-    - name: Test deployment
-      run: |
-        echo "Testing deployed service..."
-        
-        # Wait a moment for the service to be ready
-        sleep 30
-        
-        # Test health endpoint
-        curl -f $DEPLOYMENT_URL/health || exit 1
-        
-        # Test main page
-        curl -f $DEPLOYMENT_URL/ || exit 1
-        
-        echo "Deployment test successful! Service is running at: $DEPLOYMENT_URL"
+        # Get ingress load balancer IP (may not be ready yet)
+        echo "Ingress LoadBalancer IP:"
+        terraform output load_balancer_ip
 
     - name: Update status
       run: |
-        echo "✅ Deployment completed successfully!"
-        echo "🌐 Service URL: $DEPLOYMENT_URL"
-        echo "📊 Health check: $DEPLOYMENT_URL/health"
-        echo "📈 Stats API: $DEPLOYMENT_URL/api/stats"
+        echo "✅ Infrastructure deployment completed successfully!"
+        echo "📦 GKE Autopilot cluster is ready"
+        echo "🔧 Operators installed: cert-manager, nginx-ingress, keda, redis, postgresql (CNPG)"
+        echo "📝 Note: App deployments should be done separately via kubectl/helm"

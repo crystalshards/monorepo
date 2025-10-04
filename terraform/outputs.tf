@@ -45,24 +45,7 @@ output "load_balancer_ip" {
   value       = "Use: kubectl get service -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
 }
 
-output "namespaces" {
-  description = "Created Kubernetes namespaces"
-  value = {
-    claude         = kubernetes_namespace.claude.metadata[0].name
-    crystalshards  = kubernetes_namespace.crystalshards.metadata[0].name
-    crystaldocs    = kubernetes_namespace.crystaldocs.metadata[0].name
-    crystalgigs    = kubernetes_namespace.crystalgigs.metadata[0].name
-    crystalbits    = kubernetes_namespace.crystalbits.metadata[0].name
-    infrastructure = kubernetes_namespace.infrastructure.metadata[0].name
-  }
-}
-
-output "simple_registry_url" {
-  value       = google_cloud_run_service.simple_registry.status[0].url
-  description = "URL of the deployed Crystal Shards Registry (minimal)"
-}
-
-output "simple_registry_service_name" {
-  value       = google_cloud_run_service.simple_registry.name
-  description = "Name of the Cloud Run service"
+output "ingress_ip" {
+  description = "IP address of the ingress load balancer"
+  value       = "Check with: kubectl get service -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
 }
