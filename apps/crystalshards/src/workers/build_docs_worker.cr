@@ -3,17 +3,19 @@ require "./base_worker"
 module CrystalShards::Workers
   # Worker to build documentation for a shard version
   # This runs crystal docs in a sandboxed environment
-  class BuildDocsWorker < BaseWorker
-    def self.queue : String
-      "docs"
+  struct BuildDocsWorker
+    include JoobQ::Job
+    include BaseJob
+
+    @queue = "docs"
+    @retries = 3
+    @expires = 30.minutes.total_seconds.to_i
+
+    def initialize(@shard_name : String, @version : String)
     end
 
-    def self.timeout : Time::Span
-      10.minutes
-    end
-
-    def perform(shard_name : String, version : String)
-      log_info "Building docs for: #{shard_name}@#{version}"
+    def perform
+      log_info "Building docs for: #{@shard_name}@#{@version}"
 
       # TODO: Implement documentation building
       # 1. Clone/fetch shard repository
@@ -25,8 +27,8 @@ module CrystalShards::Workers
 
       # Example flow:
       # result = Operations::BuildDocs.run(
-      #   shard_name: shard_name,
-      #   version: version
+      #   shard_name: @shard_name,
+      #   version: @version
       # )
       #
       # if result.succeeded?
@@ -35,9 +37,9 @@ module CrystalShards::Workers
       #   log_error "Failed to build docs: #{result.errors}"
       # end
 
-      log_info "Successfully built docs for #{shard_name}@#{version}"
+      log_info "Successfully built docs for #{@shard_name}@#{@version}"
     rescue ex : Exception
-      log_error "Failed to build docs for #{shard_name}@#{version}", ex
+      log_error "Failed to build docs for #{@shard_name}@#{@version}", ex
       raise ex
     end
   end

@@ -3,13 +3,19 @@ require "./base_worker"
 module CrystalShards::Workers
   # Worker to update dependency graph for a shard
   # This analyzes dependencies and updates reverse dependencies
-  class UpdateDependenciesWorker < BaseWorker
-    def self.queue : String
-      "indexing"
+  struct UpdateDependenciesWorker
+    include JoobQ::Job
+    include BaseJob
+
+    @queue = "indexing"
+    @retries = 3
+    @expires = 10.minutes.total_seconds.to_i
+
+    def initialize(@shard_name : String, @version : String)
     end
 
-    def perform(shard_name : String, version : String)
-      log_info "Updating dependencies for: #{shard_name}@#{version}"
+    def perform
+      log_info "Updating dependencies for: #{@shard_name}@#{@version}"
 
       # TODO: Implement dependency graph updates
       # 1. Parse shard.yml dependencies
@@ -21,17 +27,17 @@ module CrystalShards::Workers
 
       # Example flow:
       # shard_version = ShardVersionQuery.new
-      #   .shard_name(shard_name)
-      #   .version(version)
+      #   .shard_name(@shard_name)
+      #   .version(@version)
       #   .first
       #
       # Operations::UpdateDependencies.run(
       #   shard_version: shard_version
       # )
 
-      log_info "Successfully updated dependencies for #{shard_name}@#{version}"
+      log_info "Successfully updated dependencies for #{@shard_name}@#{@version}"
     rescue ex : Exception
-      log_error "Failed to update dependencies for #{shard_name}@#{version}", ex
+      log_error "Failed to update dependencies for #{@shard_name}@#{@version}", ex
       raise ex
     end
   end
