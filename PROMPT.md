@@ -1,199 +1,163 @@
-# CrystalShards Development Agent
+# CrystalShards Development
 
-Your job is to build:
+Build the Crystal language ecosystem infrastructure:
 
-1. **CrystalShards.org** - Crystal package registry (like hex.pm)
-2. **CrystalDocs.org** - Documentation platform (like <https://hexdocs.pm/>)
-3. **CrystalGigs.com** - Paid job board for Crystal jobs (like <https://www.elixirdevs.com/>)
+1. **crystalshards.org** - Package registry (like hex.pm / rubygems.org)
+2. **crystaldocs.org** - Documentation hosting (like hexdocs.pm)
+3. **crystalgigs.com** - Job board (like elixirdevs.com)
+4. **crystalbits.org** - Newsletter/blog
 
-**Commit related changes together, push frequently.**
+## Current State
 
-## Critical Requirements
+See `terraform/.agent/STATUS.md` for complete status.
 
-- Everything runs in Kubernetes (NO external cloud services)
-- Use operators for PostgreSQL, Redis, etc (CloudNativePG, Redis Operator, Minio)
-- Implement KEDA autoscaling (scale to zero when idle)
-- Deploy agent in `claude` namespace, apps in their own namespaces
-- Full CI/CD with GitHub Actions
-- Cost optimization is crucial (Heroku-style scale on request)
+**TL;DR**: Infrastructure 85% done, but 0% deployable (missing Deployments, Services, Databases, Secrets).
 
-## Current Progress
+## Architecture
 
-Check `.agent/STATUS.md` for what's been done.
+### Monorepo Structure
+```
+apps/
+  crystalshards/      # Package registry (Lucky app + JoobQ workers)
+  crystaldocs/        # Documentation hosting (Lucky app)
+  crystalgigs/        # Job board (Lucky app)
+  crystalbits/        # Newsletter/blog (Lucky app)
+  */terraform/        # App-specific K8s resources (namespace, ingress, deployment, etc)
+terraform/
+  modules/
+    networking/       # VPC, subnets, NAT
+    cluster/          # GKE Autopilot
+    operators/        # cert-manager, CNPG, Redis, MinIO, Prometheus
+    ingress/          # Traefik + external-dns
+    applications/     # Orchestrates apps/*/terraform modules
+.github/workflows/    # CI/CD
+```
 
-## Next Steps
-
-**IMPORTANT**:
-1. Before you continue your current task, check on the CI/CD pipeline of your previous push. If there are failures fix them.
-
-**IMPORTANT**: If no tasks are currently in progress or all tasks are blocked:
-1. Check GitHub issues with `gh issue list --repo crystalshards/crystalshards-claude`
-2. Look for issues labeled `ready`, `good-first-issue`, or `help-wanted`
-3. Self-assign an issue with `gh issue edit <number> --add-assignee @me`
-4. Start working on the issue
-
-Otherwise, continue with:
-1. Create monorepo structure with all three apps
-2. Configure tools for best quality (linting, testing, etc)
-3. Set up Terraform for GKE with proper namespaces
-4. Configure in-cluster PostgreSQL operator
-5. Configure in-cluster Redis operator
-6. Configure in-cluster Minio operator
-7. Implement KEDA for autoscaling
-8. Create GitHub Actions workflows (CI + Deploy)
-9. Build Lucky apps with scale-to-zero capability
-10. Integrate Stripe for CrystalGigs payments
-
-## ARCHITECTURE
-
-**Monorepo Structure:**
-
-- `/apps/shards-registry` - Main shards registry (Lucky app)
-- `/apps/shards-docs` - Documentation platform (Lucky app)
-- `/apps/gigs` - Job board with Stripe payments (Lucky app)
-- `/apps/worker` - Background job processor
-- `/terraform` - GKE cluster + operators
-- `/libraries` - Shared Crystal code/models
-- `/.github/workflows` - CI/CD pipelines
-
-## TECHNOLOGY STACK
-
+### Technology Stack
 - **Framework**: Lucky (Crystal web framework)
-- **Database**: CloudNativePG operator (in-cluster PostgreSQL)
-- **Cache**: Redis operator (in-cluster Redis)
-- **Queue**: Sidekiq.cr for background jobs
-- **Storage**: In-cluster MinIO for object storage
-- **Autoscaling**: KEDA (scale to zero when idle)
-- **CSS**: Tailwind CSS (no JS frameworks)
-- **Payments**: Stripe for CrystalGigs
-- **CI/CD**: GitHub Actions → GKE (via terraform)
+- **Database**: CloudNativePG (in-cluster PostgreSQL operator)
+- **Cache/Queue**: Redis operator (in-cluster)
+- **Storage**: MinIO operator (for packages & docs)
+- **Jobs**: JoobQ (background workers in crystalshards)
+- **Ingress**: Traefik
+- **Platform**: GKE Autopilot
+- **IaC**: Terraform (one resource per file)
 
-## IMPORTANT TO REMEMBER
-- Do not provision any kubernetes resources with plan YAML, Everything should be configured and deployed with terrform resources.
-
-## KUBERNETES NAMESPACES
-
-- `claude` - Development agent (this pod)
-- `crystalshards` - Shards registry app
+### Kubernetes Namespaces
+- `crystalshards` - Package registry app
 - `crystaldocs` - Documentation app
 - `crystalgigs` - Job board app
-- `infrastructure` - Operators (PostgreSQL, Redis, MinIO)
-- `keda-system` - KEDA autoscaler
+- `crystalbits` - Newsletter app
+- `infrastructure` - Shared operators (cert-manager, CNPG, Redis, MinIO, Prometheus)
+- `traefik-system` - Ingress controller
 
-## TASK QUEUE
+## Critical Deployment Blockers
 
-### Priority 1 - Foundation
+**Cannot deploy until these exist:**
 
-- [ ] Set up monorepo directory structure
-- [ ] Initialize Lucky framework for crystalshards app
-- [ ] Initialize Lucky framework for crystaldocs app
-- [ ] Create shared directory with common models
-- [ ] Set up development environment configuration
-- [ ] Create PostgreSQL database schema
-- [ ] Set up Redis configuration
-- [ ] Initialize Terraform infrastructure
+Each app needs:
+- [ ] `resource.kubernetes_deployment.<app>_api.tf` - API server pods
+- [ ] `resource.kubernetes_service.<app>.tf` - Service to expose pods
+- [ ] `resource.kubectl_manifest.<app>_postgres.tf` - PostgreSQL cluster (CNPG)
+- [ ] `resource.kubernetes_secret.<app>_secrets.tf` - DATABASE_URL, REDIS_URL, SECRET_KEY_BASE
 
-### Priority 2 - Core Features
+Shared:
+- [ ] Redis cluster in infrastructure namespace
+- [ ] MinIO tenant for package/doc storage
 
-- [ ] Implement shard model and migrations
-- [ ] Create shard submission endpoint
-- [ ] Build GitHub webhook receiver
-- [ ] Implement shard indexing system
-- [ ] Create search functionality
-- [ ] Build shard detail pages
-- [ ] Implement version management
-- [ ] Create RESTful API
+**Reference existing patterns:**
+- `apps/crystalshards/terraform/resource.kubernetes_deployment.crystalshards_worker.tf` - Worker deployment example
+- `apps/crystalshards/terraform/resource.kubernetes_ingress_v1.crystalshards.tf` - Ingress example
+- `terraform/modules/operators/` - Operator examples
 
-### Priority 3 - Documentation Platform
+## Background Workers (crystalshards only)
 
-- [ ] Set up Kubernetes job templates
-- [ ] Implement sandboxed build system
-- [ ] Create documentation storage system
-- [ ] Build cross-linking parser
-- [ ] Create documentation UI
-- [ ] Implement version switching
+JoobQ workers in `apps/crystalshards/src/workers/`:
+- **IndexShardWorker** - Parse shard.yml, extract metadata, update search index
+- **BuildDocsWorker** - Run `crystal docs` in sandbox, upload to MinIO
+- **UpdateDependenciesWorker** - Update dependency graph
 
-### Priority 4 - Infrastructure & Deployment
+Worker deployment separate from API deployment (scales independently).
 
-- [ ] Complete Terraform GKE configuration
-- [ ] Set up GitHub Actions CI/CD
-- [ ] Configure monitoring
-- [ ] Implement rate limiting
-- [ ] Add security headers
-- [ ] Performance optimization
+## Next Tasks
 
-## ERROR HANDLING
+**Phase 1: Make Deployable** (current focus)
+1. Create deployments for all 4 apps
+2. Create services for all 4 apps
+3. Create PostgreSQL clusters for all 4 apps
+4. Create shared Redis cluster
+5. Create secrets for all 4 apps
+6. Test `terraform plan` succeeds
 
-**NEVER GET BLOCKED - Always find a way forward:**
+**Phase 2: Implement crystalshards**
+1. Models: Shard, ShardVersion, Dependency, Download, Owner
+2. Migrations for database schema
+3. API endpoints: GET /shards, POST /shards, GET /shards/:name
+4. Worker implementation (actual indexing logic)
+5. MinIO integration for package storage
 
-If an error occurs:
+**Phase 3: Implement crystaldocs**
+1. Fetch/serve docs from MinIO
+2. Version switcher UI
+3. Search within docs
 
-1. Log the error with timestamp in `.agent/errors.log`
-2. Try alternative approaches:
-   - If a command fails, try different syntax or tools
-   - If a file is locked, wait 5 seconds and retry (max 3 times)
-   - If permissions denied, try with sudo or different path
-   - If network fails, retry with exponential backoff
-   - If GitHub API fails, use git directly
-   - If tool is missing, install it or use alternatives
-3. Document the error and workaround in `.agent/STATUS.md`
-4. Continue with next task - NEVER stop progress
-5. If truly stuck after 3 attempts, skip task and document why
+**Phase 4: Other Apps**
+1. crystalgigs MVP (post jobs, browse jobs)
+2. crystalbits MVP (blog posts, newsletter)
 
-**Common Recovery Strategies:**
-- Command not found: Install with mise, apt-get, or compile from source
-- Permission denied: Use sudo, change permissions, or work in /tmp
-- File not found: Create it, or check for typos in path
-- Network timeout: Retry 3x with increasing delays
-- Git conflicts: Stash changes, pull, then reapply
-- Out of disk space: Clean up /tmp and old logs
-- Process killed: Reduce memory usage or split into smaller tasks
-- Tool blocked by user/hook: Try alternative approach:
-  - If git blocked, use file operations and commit later
-  - If network blocked, work offline and sync later
-  - If file edit blocked, log the intended change and continue
-  - Always document what was blocked and why in `.agent/STATUS.md`
+## Important Conventions
 
-## COMPLETION CRITERIA
+### Terraform
+- One resource per file: `resource.<type>.<name>.tf`
+- Module files: `module.<name>.tf`
+- All apps reference their namespace: `kubernetes_namespace.<app>.metadata[0].name`
 
-Project is complete when:
+### GKE Autopilot Requirements
+All pods MUST have resource requests/limits:
+```hcl
+resources {
+  requests = {
+    cpu    = "250m"
+    memory = "512Mi"
+  }
+  limits = {
+    cpu    = "1000m"
+    memory = "2Gi"
+  }
+}
+```
 
-1. All tasks marked as [x]
-2. All tests passing
-3. Infrastructure deployed
-4. Documentation generated
-5. Monitoring active
+### Environment Variables (Lucky apps)
+Required:
+- `LUCKY_ENV=production`
+- `PORT=3000`
+- `DATABASE_URL=postgresql://...`
+- `SECRET_KEY_BASE=...`
 
-## NOTES FOR NEXT ITERATION
+crystalshards also needs:
+- `REDIS_URL=redis://...` (for JoobQ workers)
 
-- Always check for existing files before creating
-- Ensure Lucky dependencies are installed
-- Verify Crystal version compatibility
-- Test each component in isolation
-- Commit working code frequently
+## Workflow
 
-## AUTONOMOUS EXECUTION RULES
+1. **Before continuing**: Check CI status with `gh run list`, fix any failures
+2. **Find work**: Check `.agent/STATUS.md` or `gh issue list`
+3. **Make changes**: Follow conventions above
+4. **Validate**: `terraform validate` must pass
+5. **Commit**: Descriptive message, push frequently
+6. **Watch CI**: Fix any failures immediately
 
-1. **One Task Per Loop**: Execute exactly ONE task from the queue
-2. **Update State**: Always update this file with results
-3. **Error Recovery**: Document all errors and recovery attempts
-4. **Dependency Check**: Verify prerequisites before each task
-5. **Progress Tracking**: Mark tasks complete with [x]
-6. **No Assumptions**: Test and verify everything
-7. **Incremental Progress**: Small, working commits over large changes
-8. **Commit Early & Often**: Commit working code every 30 minutes minimum
-9. **Feature Branches**: Create branches for each major task
-10. **Push Regularly**: Push to remote after 2-3 commits
+## Error Handling
 
-## GIT COMMIT CHECKLIST
+Never get blocked:
+1. Log errors to `.agent/errors.log`
+2. Try alternative approaches (3 attempts)
+3. Document in STATUS.md
+4. Continue with next task
 
-Before moving to next task, ensure:
-
-- [ ] All changes are staged with `git add -A`
-- [ ] Changes are committed with descriptive message
-- [ ] Commits follow format: `type(scope): description`
-- [ ] Changes are pushed to remote repository
-- [ ] Branch is ready for PR if feature complete
+Common fixes:
+- Terraform errors: Check variable passing between modules
+- CI failures: Read logs, fix root cause
+- Missing files: Check paths, create if needed
 
 ---
-END OF PROMPT - READY FOR AUTONOMOUS EXECUTION
+**Current Focus**: Create missing Kubernetes resources to make infrastructure deployable.
