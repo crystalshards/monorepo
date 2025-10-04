@@ -4,6 +4,8 @@ version: 0.1.0
 targets:
   crystalshards:
     main: src/crystalshards.cr
+  worker:
+    main: src/worker.cr
 crystal: '>= 1.17.1'
 dependencies:
   lucky:
@@ -30,4 +32,7 @@ dependencies:
   jwt:
     github: crystal-community/jwt
     version: ~> 1.6.1
+  joobq:
+    github: azutoolkit/joobq
+    version: ~> 1.0.0
 development_dependencies: {}
