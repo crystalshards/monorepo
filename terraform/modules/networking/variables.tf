@@ -6,11 +6,9 @@ variable "project_id" {
 variable "region" {
   description = "The GCP region"
   type        = string
-  default     = "us-central1"
 }
 
 variable "cluster_name" {
-  description = "The name of the GKE cluster"
+  description = "The name of the GKE cluster (used for resource naming)"
   type        = string
-  default     = "crystalshards-cluster"
 }

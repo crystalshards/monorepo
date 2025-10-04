@@ -6,11 +6,19 @@ variable "project_id" {
 variable "region" {
   description = "The GCP region"
   type        = string
-  default     = "us-central1"
 }
 
 variable "cluster_name" {
   description = "The name of the GKE cluster"
   type        = string
-  default     = "crystalshards-cluster"
+}
+
+variable "network_name" {
+  description = "The name of the VPC network"
+  type        = string
+}
+
+variable "subnet_name" {
+  description = "The name of the subnet"
+  type        = string
 }

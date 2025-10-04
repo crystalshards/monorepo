@@ -7,5 +7,4 @@ resource "kubernetes_namespace" "claude" {
       "app.kubernetes.io/part-of" = "crystalshards"
     }
   }
-  depends_on = [google_container_cluster.primary]
 }

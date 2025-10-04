@@ -1,30 +1,52 @@
+# Root outputs - aggregates outputs from all modules
+
+# Cluster outputs
 output "cluster_name" {
   description = "GKE cluster name"
-  value       = google_container_cluster.primary.name
+  value       = module.cluster.cluster_name
 }
 
 output "cluster_endpoint" {
   description = "GKE cluster endpoint"
-  value       = google_container_cluster.primary.endpoint
+  value       = module.cluster.cluster_endpoint
   sensitive   = true
 }
 
 output "cluster_ca_certificate" {
   description = "GKE cluster CA certificate"
-  value       = google_container_cluster.primary.master_auth[0].cluster_ca_certificate
+  value       = module.cluster.cluster_ca_certificate
   sensitive   = true
 }
 
+output "kubectl_config" {
+  description = "kubectl configuration command"
+  value       = module.cluster.kubectl_config_command
+}
+
+# Networking outputs
 output "vpc_network" {
   description = "VPC network name"
-  value       = google_compute_network.vpc.name
+  value       = module.networking.network_name
 }
 
 output "subnet_name" {
   description = "Subnet name"
-  value       = google_compute_subnetwork.subnet.name
+  value       = module.networking.subnet_name
 }
 
+# Ingress outputs
+output "load_balancer_ip_command" {
+  description = "Command to get the load balancer IP"
+  value       = module.ingress.load_balancer_ip_command
+}
+
+# Application outputs
+output "namespaces" {
+  description = "Created Kubernetes namespaces"
+  value       = module.applications.namespaces
+}
+
+# General outputs
 output "region" {
   description = "GCP region"
   value       = var.region
@@ -35,17 +57,13 @@ output "project_id" {
   value       = var.project_id
 }
 
-output "kubectl_config" {
-  description = "kubectl configuration command"
-  value       = "gcloud container clusters get-credentials ${google_container_cluster.primary.name} --region ${var.region} --project ${var.project_id}"
-}
-
-output "load_balancer_ip" {
-  description = "External IP address of the load balancer - check manually with kubectl"
-  value       = "Use: kubectl get service -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
-}
-
-output "ingress_ip" {
-  description = "IP address of the ingress load balancer"
-  value       = "Check with: kubectl get service -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
+# Operator status
+output "operators_installed" {
+  description = "Status of installed operators"
+  value = {
+    cert_manager = module.operators.cert_manager_installed
+    cnpg         = module.operators.cnpg_installed
+    redis        = module.operators.redis_operator_installed
+    keda         = module.operators.keda_installed
+  }
 }
