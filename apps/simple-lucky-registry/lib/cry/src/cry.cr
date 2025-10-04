@@ -1,3 +1,0 @@
-require "colorize"
-
-require "./cry/*"
