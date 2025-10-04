@@ -8,11 +8,14 @@ module CrystalShards
     def self.run
       Log.info { "Starting CrystalShards worker process..." }
 
+      # Parse REDIS_URL to extract host and port
+      redis_url = URI.parse(ENV.fetch("REDIS_URL", "redis://localhost:6379"))
+      redis_host = redis_url.host || "localhost"
+      redis_port = redis_url.port || 6379
+
       # Configure JoobQ
       JoobQ.configure do |c|
-        c.store = JoobQ::RedisStore.new(
-          uri: ENV.fetch("REDIS_URL", "redis://localhost:6379/0")
-        )
+        c.store = JoobQ::RedisStore.new(host: redis_host, port: redis_port)
 
         # Configure queues with priorities
         c.queues = {
@@ -22,7 +25,7 @@ module CrystalShards
         }
       end
 
-      Log.info { "JoobQ configured with Redis store" }
+      Log.info { "JoobQ configured with Redis: #{redis_host}:#{redis_port}" }
 
       # Start processing jobs
       JoobQ.start
