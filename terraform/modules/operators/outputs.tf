@@ -13,11 +13,6 @@ output "redis_operator_installed" {
   value       = helm_release.redis_operator.status == "deployed"
 }
 
-output "keda_installed" {
-  description = "Whether KEDA is installed"
-  value       = helm_release.keda.status == "deployed"
-}
-
 output "opentelemetry_operator_installed" {
   description = "Whether OpenTelemetry operator is installed"
   value       = helm_release.opentelemetry_operator.status == "deployed"
