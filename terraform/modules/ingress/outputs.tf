@@ -1,6 +1,6 @@
-output "nginx_ingress_installed" {
-  description = "Whether nginx-ingress is installed"
-  value       = helm_release.nginx_ingress.status == "deployed"
+output "traefik_installed" {
+  description = "Whether Traefik ingress is installed"
+  value       = helm_release.traefik.status == "deployed"
 }
 
 output "external_dns_installed" {
@@ -10,5 +10,5 @@ output "external_dns_installed" {
 
 output "load_balancer_ip_command" {
   description = "Command to get the load balancer IP"
-  value       = "kubectl get service -n ingress-nginx ingress-nginx-controller -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
+  value       = "kubectl get service -n traefik-system traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}'"
 }
