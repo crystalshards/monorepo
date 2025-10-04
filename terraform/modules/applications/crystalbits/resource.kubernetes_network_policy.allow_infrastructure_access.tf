@@ -1,10 +1,8 @@
-# Network policy to allow application namespaces to access infrastructure namespace
+# Network policy to allow crystalbits namespace to access infrastructure namespace
 resource "kubernetes_network_policy" "allow_infrastructure_access" {
-  for_each = toset(["crystalshards", "crystaldocs", "crystalgigs"])
-
   metadata {
     name      = "allow-infrastructure-access"
-    namespace = each.key
+    namespace = kubernetes_namespace.crystalbits.metadata[0].name
   }
 
   spec {
@@ -47,11 +45,4 @@ resource "kubernetes_network_policy" "allow_infrastructure_access" {
       }
     }
   }
-
-  depends_on = [
-    kubernetes_namespace.crystalshards,
-    kubernetes_namespace.crystaldocs,
-    kubernetes_namespace.crystalgigs,
-    kubernetes_namespace.infrastructure
-  ]
 }
