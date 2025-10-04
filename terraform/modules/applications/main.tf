@@ -5,6 +5,7 @@ module "crystalshards" {
   source = "../../../apps/crystalshards/terraform"
 
   cluster_name = var.cluster_name
+  project_id   = var.project_id
 }
 
 # CrystalDocs - Documentation hosting application
