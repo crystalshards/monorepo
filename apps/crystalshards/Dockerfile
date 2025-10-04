@@ -1,51 +1,30 @@
-# Minimal Dockerfile for Crystal Shards Registry (stdlib only)
-FROM crystallang/crystal:1.17.0-alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache --update \
-  yaml-static \
-  openssl-dev \
-  openssl-libs-static \
-  pcre-dev \
-  libevent-dev \
-  libevent-static
+# Build stage
+FROM crystallang/crystal:1.17.1-alpine AS builder
 
 WORKDIR /app
 
-# Copy shard files
-COPY shard.yml ./
+# Copy dependency files
+COPY shard.yml shard.lock ./
 
-# No external dependencies to install since we're using stdlib only
-RUN crystal deps || echo "No dependencies to install"
+# Install dependencies
+RUN shards install --production
 
 # Copy source code
-COPY src/ ./src/
+COPY . .
 
 # Build the application
-RUN crystal build --release --static --no-debug src/simple-registry.cr -o simple-registry
+RUN crystal build src/crystalshards.cr --release --static --no-debug
 
-# Runtime stage - minimal Alpine image
-FROM alpine:3.20
-
-# Install minimal runtime dependencies
-RUN apk add --no-cache ca-certificates wget
+# Runtime stage
+FROM alpine:latest
 
 WORKDIR /app
 
-# Copy the built binary
-COPY --from=builder /app/simple-registry .
+# Copy the compiled binary
+COPY --from=builder /app/crystalshards .
 
-# Create non-root user
-RUN adduser -D -s /bin/sh crystal && \
-    chown crystal:crystal simple-registry
-USER crystal
+# Expose port
+EXPOSE 3000
 
-# Expose port (Cloud Run standard)
-EXPOSE 8080
-
-# Health check (Cloud Run uses PORT=8080 by default)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
-
-# Run the application
-CMD ["./simple-registry"]
+# Run the app
+CMD ["./crystalshards"]

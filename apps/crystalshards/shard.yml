@@ -1,21 +1,33 @@
-name: simple-registry
-version: 1.0.0
-
-authors:
-  - CrystalShards Team
-
-description: |
-  Minimal Crystal Shards Registry for initial deployment.
-  Focus on getting basic functionality deployed first.
-  Uses only Crystal standard library for maximum compatibility.
-
-crystal: 1.17.0
-
-license: MIT
-
-# No external dependencies - using Crystal standard library only
-# This ensures maximum compatibility and eliminates dependency issues
-
+---
+name: crystalshards
+version: 0.1.0
 targets:
-  simple-registry:
-    main: src/simple-registry.cr
+  crystalshards:
+    main: src/crystalshards.cr
+crystal: '>= 1.17.1'
+dependencies:
+  lucky:
+    github: luckyframework/lucky
+    version: ~> 1.4.0
+  avram:
+    github: luckyframework/avram
+    version: ~> 1.4.0
+  carbon:
+    github: luckyframework/carbon
+    version: ~> 0.6.0
+  carbon_sendgrid_adapter:
+    github: luckyframework/carbon_sendgrid_adapter
+    version: ~> 0.6.0
+  lucky_env:
+    github: luckyframework/lucky_env
+    version: ~> 0.3.0
+  lucky_task:
+    github: luckyframework/lucky_task
+    version: ~> 0.3.0
+  authentic:
+    github: luckyframework/authentic
+    version: '>= 1.0.2, < 2.0.0'
+  jwt:
+    github: crystal-community/jwt
+    version: ~> 1.6.1
+development_dependencies: {}

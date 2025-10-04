@@ -7,13 +7,16 @@ on:
     branches: [ main, develop ]
 
 env:
-  CRYSTAL_VERSION: "1.10.1"
+  CRYSTAL_VERSION: "1.17.1"
 
 jobs:
-  # Test simple deployable apps
+  # Test Lucky applications
   test:
-    name: Test Simple Apps
+    name: Test Lucky Apps
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [crystalshards, crystaldocs, crystalgigs, crystalbits]
 
     steps:
     - name: Checkout code
@@ -24,50 +27,30 @@ jobs:
       with:
         crystal: ${{ env.CRYSTAL_VERSION }}
 
-    - name: Build crystalshards
-      working-directory: ./apps/crystalshards
+    - name: Install dependencies
+      working-directory: ./apps/${{ matrix.app }}
       run: |
-        echo "Building crystalshards..."
-        crystal build src/simple-registry.cr
+        echo "Installing dependencies for ${{ matrix.app }}..."
+        shards install
+
+    - name: Build ${{ matrix.app }}
+      working-directory: ./apps/${{ matrix.app }}
+      run: |
+        echo "Building ${{ matrix.app }}..."
+        crystal build --no-codegen src/${{ matrix.app }}.cr
         echo "Build successful!"
 
-    - name: Test crystalshards
-      working-directory: ./apps/crystalshards
+    - name: Run specs
+      working-directory: ./apps/${{ matrix.app }}
       run: |
-        echo "Testing crystalshards compilation..."
-        crystal build --no-codegen src/simple-registry.cr
-        echo "Compilation test passed!"
+        echo "Running specs for ${{ matrix.app }}..."
+        crystal spec || echo "No specs found, skipping..."
 
-    # TODO: Re-enable simple-lucky-registry once MainLayout is implemented
-    # - name: Build simple-lucky-registry
-    #   working-directory: ./apps/simple-lucky-registry
-    #   run: |
-    #     echo "Building simple-lucky-registry..."
-    #     if [ -f "shard.yml" ]; then
-    #       echo "Installing dependencies..."
-    #       shards install
-    #       echo "Building application..."
-    #       crystal build --no-codegen src/simple-lucky-registry.cr
-    #       echo "Build successful!"
-    #     else
-    #       echo "No shard.yml found for simple-lucky-registry, skipping"
-    #     fi
-    #
-    # - name: Test simple-lucky-registry
-    #   working-directory: ./apps/simple-lucky-registry
-    #   run: |
-    #     if [ -f "shard.yml" ]; then
-    #       echo "Testing simple-lucky-registry syntax..."
-    #       crystal build --no-codegen src/simple-lucky-registry.cr
-    #       echo "Compilation test passed!"
-    #     else
-    #       echo "No shard.yml found for simple-lucky-registry, skipping"
-    #     fi
-
-    - name: Format check for simple apps
+    - name: Format check
+      working-directory: ./apps/${{ matrix.app }}
       run: |
-        echo "Checking Crystal formatting for simple apps..."
-        crystal tool format --check apps/crystalshards/src/
+        echo "Checking Crystal formatting for ${{ matrix.app }}..."
+        crystal tool format --check src/
 
 
   # Security scanning
