@@ -56,9 +56,4 @@ resource "kubernetes_ingress_v1" "crystaldocs" {
     }
   }
 
-  depends_on = [
-    helm_release.nginx_ingress,
-    helm_release.external_dns,
-    kubernetes_namespace.crystaldocs
-  ]
 }
