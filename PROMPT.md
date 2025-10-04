@@ -143,8 +143,10 @@ crystalshards also needs:
 2. **Find work**: Check `.agent/STATUS.md` or `gh issue list`
 3. **Make changes**: Follow conventions above
 4. **Validate**: `terraform validate` must pass
-5. **Commit**: Descriptive message, push frequently
-6. **Watch CI**: Fix any failures immediately
+5. **Verify deployment**: Ensure resources can actually deploy (run `terraform plan`)
+6. **Commit**: Descriptive message, push frequently
+7. **Watch CI**: Fix any failures immediately - CI MUST be passing
+8. **Confirm deployment**: After merge, verify resources are deployed and healthy
 
 ## Error Handling
 

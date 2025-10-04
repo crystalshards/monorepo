@@ -90,9 +90,6 @@ rm -rf /tmp/* && docker system prune -f
 
 ### 8. Performance & Cost Optimization
 
-- Implement KEDA autoscaling on ALL apps
-- Configure scale-to-zero with 5 minute idle timeout
-- Use HTTP-based scaling (requests trigger scale-up)
 - Implement aggressive caching with Redis
 - Use database connection pooling
 - Optimize queries with EXPLAIN ANALYZE
@@ -100,6 +97,7 @@ rm -rf /tmp/* && docker system prune -f
 - Use background jobs for heavy operations
 - Set resource limits on all pods
 - Use spot instances for workers
+- Configure GKE Autopilot autoscaling policies
 
 ### 9. Infrastructure (All In-Cluster)
 
