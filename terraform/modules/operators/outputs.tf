@@ -12,13 +12,3 @@ output "redis_operator_installed" {
   description = "Whether Redis operator is installed"
   value       = helm_release.redis_operator.status == "deployed"
 }
-
-output "opentelemetry_operator_installed" {
-  description = "Whether OpenTelemetry operator is installed"
-  value       = helm_release.opentelemetry_operator.status == "deployed"
-}
-
-output "eck_operator_installed" {
-  description = "Whether ECK operator is installed"
-  value       = helm_release.eck_operator.status == "deployed"
-}

@@ -41,22 +41,10 @@ resource "helm_release" "traefik" {
       }
     }
 
-    # OpenTelemetry configuration
+    # Access logs
     additionalArguments = [
-      "--metrics.openTelemetry=true",
-      "--metrics.openTelemetry.addEntryPointsLabels=true",
-      "--metrics.openTelemetry.addRoutersLabels=true",
-      "--metrics.openTelemetry.addServicesLabels=true",
-      # OpenTelemetry exporter endpoint (will be set to otel-collector service)
-      "--metrics.openTelemetry.grpc.endpoint=otel-collector.observability:4317",
-      "--metrics.openTelemetry.grpc.insecure=true",
-      # Access logs with OpenTelemetry
       "--accesslog=true",
-      "--accesslog.format=json",
-      # Enable tracing
-      "--tracing.openTelemetry=true",
-      "--tracing.openTelemetry.grpc.endpoint=otel-collector.observability:4317",
-      "--tracing.openTelemetry.grpc.insecure=true"
+      "--accesslog.format=json"
     ]
 
     # Resource limits for Autopilot
