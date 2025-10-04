@@ -16,14 +16,8 @@ resource "google_container_cluster" "primary" {
     services_secondary_range_name = "services"
   }
 
-  # Resource usage export for cost monitoring
-  resource_usage_export_config {
-    enable_network_egress_metering       = true
-    enable_resource_consumption_metering = true
-    bigquery_destination {
-      dataset_id = google_bigquery_dataset.usage.dataset_id
-    }
-  }
+  # Note: resource_usage_export_config is not supported for Autopilot clusters
+  # GCP automatically provides cost monitoring for Autopilot
 
   # Security configurations
   master_auth {

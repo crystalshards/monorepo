@@ -53,13 +53,22 @@ jobs:
         # Initialize Terraform (GCS backend configured in main.tf)
         terraform init
 
-        # Remove old GKE cluster and all K8s resources from state (for Autopilot migration)
+        # Remove old GKE cluster, K8s resources, and Cloud Run resources from state
         # This allows Terraform to create a fresh Autopilot cluster
-        echo "Removing old cluster and Kubernetes resources from state..."
+        echo "Removing old resources from state..."
+
+        # Remove K8s resources
         terraform state list | grep -E '(kubernetes_|helm_release|kubectl_manifest)' | while read -r resource; do
           echo "Removing $resource from state..."
           terraform state rm "$resource" 2>/dev/null || true
         done
+
+        # Remove Cloud Run resources (no longer used)
+        terraform state rm 'google_cloud_run_service.simple_registry' 2>/dev/null || echo "Cloud Run service not in state"
+        terraform state rm 'google_cloud_run_service_iam_member.public' 2>/dev/null || echo "Cloud Run IAM not in state"
+        terraform state rm 'google_project_service.cloud_run_api' 2>/dev/null || echo "Cloud Run API not in state"
+
+        # Remove old cluster
         terraform state rm 'google_container_cluster.primary' 2>/dev/null || echo "Cluster not in state"
 
         # Delete orphaned GKE cluster from GCP if it exists
