@@ -4,7 +4,7 @@ resource "helm_release" "external_dns" {
   repository = "https://kubernetes-sigs.github.io/external-dns/"
   chart      = "external-dns"
   version    = "1.14.3"
-  namespace  = kubernetes_namespace.infrastructure.metadata[0].name
+  namespace  = "infrastructure"
 
   set {
     name  = "provider"
@@ -71,6 +71,4 @@ resource "helm_release" "external_dns" {
     name  = "resources.limits.memory"
     value = "128Mi"
   }
-
-  depends_on = [kubernetes_namespace.infrastructure]
 }
