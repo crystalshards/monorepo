@@ -122,7 +122,9 @@ jobs:
         # Remove old GKE cluster and all K8s resources from state (for Autopilot migration)
         # This allows Terraform to create a fresh Autopilot cluster
         echo "Removing old cluster and Kubernetes resources from state..."
-        terraform state list | grep -E '(kubernetes_|helm_release|kubectl_manifest)' | xargs -r terraform state rm || true
+        terraform state list | grep -E '(kubernetes_|helm_release|kubectl_manifest)' | while read resource; do
+          terraform state rm "$resource" 2>/dev/null || true
+        done
         terraform state rm 'google_container_cluster.primary' 2>/dev/null || echo "Cluster not in state, will create fresh"
 
         # Plan the deployment
