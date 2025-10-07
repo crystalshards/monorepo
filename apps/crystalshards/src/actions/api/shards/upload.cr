@@ -99,12 +99,12 @@ class Api::Shards::Upload < ApiAction
           ) do |version_operation, shard_version|
             if shard_version
               json({
-                message:  "Shard uploaded successfully",
-                shard:    {
+                message: "Shard uploaded successfully",
+                shard:   {
                   id:   shard.id,
                   name: shard.name,
                 },
-                version:  {
+                version: {
                   id:       shard_version.id,
                   version:  shard_version.version,
                   checksum: shard_version.checksum,
