@@ -21,8 +21,8 @@ mkdir -p "$CLAUDE_CONFIG_DIR" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 
 eval "$(mise activate bash)"
 
-# Ensure mise is set up
-export PATH="/root/.local/share/mise/shims:/root/.local/bin:${PATH}"
+# Ensure mise is set up (use ACTUAL_HOME instead of hardcoded /root)
+export PATH="$ACTUAL_HOME/.local/share/mise/shims:$ACTUAL_HOME/.local/bin:${PATH}"
 mise trust .mise.toml || true
 mise install
 
@@ -54,6 +54,12 @@ fi
 while true; do
     echo "🤖 Starting next loop..."
     echo "==========================="
+    # Ensure environment variables are still set (they should persist from above)
+    export CLAUDE_CONFIG_DIR="$ACTUAL_HOME/.config/claude"
+    export XDG_CONFIG_HOME="$ACTUAL_HOME/.config"
+    export XDG_DATA_HOME="$ACTUAL_HOME/.local/share"
+    export XDG_CACHE_HOME="$ACTUAL_HOME/.cache"
+
     cat PROMPT.md | claude --verbose -p --dangerously-skip-permissions
     sleep 5
 done
