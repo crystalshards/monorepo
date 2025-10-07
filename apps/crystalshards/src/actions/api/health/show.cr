@@ -3,12 +3,12 @@ class Api::Health::Show < ApiAction
 
   get "/api/health" do
     json({
-      status: "ok",
-      version: "0.1.0",
+      status:    "ok",
+      version:   "0.1.0",
       timestamp: Time.utc.to_rfc3339,
-      services: {
+      services:  {
         database: check_database,
-        redis: check_redis,
+        redis:    check_redis,
       },
     })
   end
