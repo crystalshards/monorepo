@@ -82,10 +82,9 @@ jobs:
           BUILD_ARG="--build-arg BUILD_TARGET=worker"
         fi
 
-        # Use buildx with caching for faster builds
+        # Use buildx for faster builds
+        # Skip cache for now (images don't exist yet in registry)
         docker buildx build $BUILD_ARG \
-          --cache-from type=registry,ref=${{ steps.tags.outputs.latest_image }} \
-          --cache-to type=inline \
           --load \
           -t ${{ steps.tags.outputs.full_image }} \
           -t ${{ steps.tags.outputs.latest_image }} \
