@@ -1,6 +1,6 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (08:06 UTC)
+**Last Updated**: 2025-10-07 (08:31 UTC)
 **Current Phase**: Infrastructure Deployment In Progress
 
 ## ✅ Done
@@ -17,7 +17,7 @@
 - [x] Shared Redis cluster
 - [x] Shared MinIO tenant
 - [x] Application secrets (DATABASE_URL, SECRET_KEY_BASE, REDIS_URL)
-- [x] Terraform validation passing ✅
+- [x] Terraform validation passing ✅ (fixed null_resource reference)
 - [x] CI builds passing ✅
 
 ### Applications
@@ -36,9 +36,10 @@
 
 ## 🚀 Current Deployment
 
-**Deployment Run**: https://github.com/crystalshards/monorepo/actions/runs/18305833997
-**Status**: In Progress (15+ minutes - GKE Autopilot cluster creation)
+**Deployment Run**: https://github.com/crystalshards/monorepo/actions/runs/18306500291
+**Status**: In Progress (12+ minutes - GKE Autopilot cluster creation)
 **Recent Fixes**:
+- Fixed dangling reference to null_resource.wait_for_cert_manager_crds (commit 336723a)
 - Fixed Terraform state migration (removed old resources from state)
 - Removed import blocks for non-existent GCP resources
 - Fixed GKE Autopilot compatibility issues:
