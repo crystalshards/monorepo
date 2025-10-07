@@ -11,7 +11,7 @@ Build the Crystal language ecosystem infrastructure:
 
 See `terraform/.agent/STATUS.md` for complete status.
 
-**TL;DR**: Infrastructure 85% done, but 0% deployable (missing Deployments, Services, Databases, Secrets).
+**TL;DR**: Infrastructure 100% complete. All CI passing. Ready for Terraform apply.
 
 ## Architecture
 
@@ -38,7 +38,7 @@ terraform/
 - **Database**: CloudNativePG (in-cluster PostgreSQL operator)
 - **Cache/Queue**: Redis operator (in-cluster)
 - **Storage**: MinIO operator (for packages & docs)
-- **Jobs**: JoobQ (background workers in crystalshards)
+- **Jobs**: Mosquito (background workers in crystalshards)
 - **Ingress**: Traefik
 - **Platform**: GKE Autopilot
 - **IaC**: Terraform (one resource per file)
@@ -51,28 +51,23 @@ terraform/
 - `infrastructure` - Shared operators (cert-manager, CNPG, Redis, MinIO, Prometheus)
 - `traefik-system` - Ingress controller
 
-## Critical Deployment Blockers
+## Infrastructure Status
 
-**Cannot deploy until these exist:**
+✅ **All deployment resources created:**
 
-Each app needs:
-- [ ] `resource.kubernetes_deployment.<app>_api.tf` - API server pods
-- [ ] `resource.kubernetes_service.<app>.tf` - Service to expose pods
-- [ ] `resource.kubectl_manifest.<app>_postgres.tf` - PostgreSQL cluster (CNPG)
-- [ ] `resource.kubernetes_secret.<app>_secrets.tf` - DATABASE_URL, REDIS_URL, SECRET_KEY_BASE
+Each app has:
+- ✅ `resource.kubernetes_deployment.<app>_api.tf` - API server pods
+- ✅ `resource.kubernetes_service.<app>.tf` - Service to expose pods
+- ✅ `resource.kubectl_manifest.<app>_postgres.tf` - PostgreSQL cluster (CNPG)
+- ✅ `resource.kubernetes_secret.<app>_secrets.tf` - DATABASE_URL, REDIS_URL, SECRET_KEY_BASE
 
 Shared:
-- [ ] Redis cluster in infrastructure namespace
-- [ ] MinIO tenant for package/doc storage
-
-**Reference existing patterns:**
-- `apps/crystalshards/terraform/resource.kubernetes_deployment.crystalshards_worker.tf` - Worker deployment example
-- `apps/crystalshards/terraform/resource.kubernetes_ingress_v1.crystalshards.tf` - Ingress example
-- `terraform/modules/operators/` - Operator examples
+- ✅ Redis cluster in infrastructure namespace
+- ✅ MinIO tenant for package/doc storage
 
 ## Background Workers (crystalshards only)
 
-JoobQ workers in `apps/crystalshards/src/workers/`:
+Mosquito workers in `apps/crystalshards/src/workers/`:
 - **IndexShardWorker** - Parse shard.yml, extract metadata, update search index
 - **BuildDocsWorker** - Run `crystal docs` in sandbox, upload to MinIO
 - **UpdateDependenciesWorker** - Update dependency graph
@@ -81,27 +76,34 @@ Worker deployment separate from API deployment (scales independently).
 
 ## Next Tasks
 
-**Phase 1: Make Deployable** (current focus)
-1. Create deployments for all 4 apps
-2. Create services for all 4 apps
-3. Create PostgreSQL clusters for all 4 apps
-4. Create shared Redis cluster
-5. Create secrets for all 4 apps
-6. Test `terraform plan` succeeds
+**Phase 1: Make Deployable** ✅ COMPLETE
+1. ✅ Create deployments for all 4 apps
+2. ✅ Create services for all 4 apps
+3. ✅ Create PostgreSQL clusters for all 4 apps
+4. ✅ Create shared Redis cluster
+5. ✅ Create secrets for all 4 apps
+6. ✅ Test `terraform plan` succeeds
 
-**Phase 2: Implement crystalshards**
-1. Models: Shard, ShardVersion, Dependency, Download, Owner
-2. Migrations for database schema
-3. API endpoints: GET /shards, POST /shards, GET /shards/:name
-4. Worker implementation (actual indexing logic)
-5. MinIO integration for package storage
+**Phase 2: Implement crystalshards** ✅ COMPLETE
+1. ✅ Models: Shard, ShardVersion, Dependency, Download, Owner
+2. ✅ Migrations for database schema
+3. ✅ API endpoints: GET /shards, POST /shards, GET /shards/:name
+4. ✅ Worker implementation (actual indexing logic)
+5. ✅ MinIO integration for package storage
 
-**Phase 3: Implement crystaldocs**
+**Phase 3: Deploy Infrastructure** ⏳ IN PROGRESS
+1. ⏳ Apply Terraform (requires GCP credentials)
+2. ⏳ Build and push Docker images to Artifact Registry
+3. ⏳ Verify all pods running
+4. ⏳ Test ingress routing
+5. ⏳ Validate database connections
+
+**Phase 4: Implement crystaldocs** (upcoming)
 1. Fetch/serve docs from MinIO
 2. Version switcher UI
 3. Search within docs
 
-**Phase 4: Other Apps**
+**Phase 5: Other Apps** (future)
 1. crystalgigs MVP (post jobs, browse jobs)
 2. crystalbits MVP (blog posts, newsletter)
 
@@ -135,7 +137,7 @@ Required:
 - `SECRET_KEY_BASE=...`
 
 crystalshards also needs:
-- `REDIS_URL=redis://...` (for JoobQ workers)
+- `REDIS_URL=redis://...` (for Mosquito workers)
 
 ## Workflow
 
@@ -162,4 +164,4 @@ Common fixes:
 - Missing files: Check paths, create if needed
 
 ---
-**Current Focus**: Create missing Kubernetes resources to make infrastructure deployable.
+**Current Focus**: Infrastructure code complete. Awaiting Terraform apply with GCP credentials.
