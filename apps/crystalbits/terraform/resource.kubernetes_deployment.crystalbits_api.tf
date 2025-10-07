@@ -1,4 +1,5 @@
 # API deployment for web server
+# checkov:skip=CKV_K8S_43:Using parameterized tags for CI/CD instead of image digest
 resource "kubernetes_deployment" "crystalbits_api" {
   metadata {
     name      = "crystalbits-api"

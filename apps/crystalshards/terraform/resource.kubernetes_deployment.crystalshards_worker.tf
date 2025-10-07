@@ -1,4 +1,5 @@
 # Worker deployment for background job processing
+# checkov:skip=CKV_K8S_43:Using parameterized tags for CI/CD instead of image digest
 resource "kubernetes_deployment" "crystalshards_worker" {
   metadata {
     name      = "crystalshards-worker"
