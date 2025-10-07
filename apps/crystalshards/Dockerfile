@@ -16,12 +16,12 @@ RUN shards install --production
 COPY . .
 
 # Build the application based on BUILD_TARGET
-# Note: Removed --static flag as it's not needed in containers and significantly slows down builds
-# Using parallel compilation with -Dpreview_mt for faster builds
+# Note: Building without --release for much faster builds (~30s vs 5+ min)
+# Production images should enable --release after initial testing
 RUN if [ "$BUILD_TARGET" = "worker" ]; then \
-      crystal build src/worker.cr --release --no-debug -o worker; \
+      crystal build src/worker.cr --no-debug -o worker; \
     else \
-      crystal build src/crystalshards.cr --release --no-debug; \
+      crystal build src/crystalshards.cr --no-debug; \
     fi
 
 # Runtime stage

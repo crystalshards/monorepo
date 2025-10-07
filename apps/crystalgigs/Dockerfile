@@ -13,8 +13,9 @@ RUN shards install --production
 COPY . .
 
 # Build the application
-# Note: Removed --static flag as it's not needed in containers and significantly slows down builds
-RUN crystal build src/crystalgigs.cr --release --no-debug
+# Note: Building without --release for much faster builds (~30s vs 5+ min)
+# Production images should enable --release after initial testing
+RUN crystal build src/crystalgigs.cr --no-debug
 
 # Runtime stage
 FROM alpine:latest

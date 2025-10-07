@@ -48,6 +48,12 @@ jobs:
     - name: Configure Docker for GCR
       run: gcloud auth configure-docker gcr.io
 
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: |
+          image=moby/buildkit:latest
+
     - name: Set image tags
       id: tags
       run: |
@@ -76,7 +82,11 @@ jobs:
           BUILD_ARG="--build-arg BUILD_TARGET=worker"
         fi
 
-        docker build $BUILD_ARG \
+        # Use buildx with caching for faster builds
+        docker buildx build $BUILD_ARG \
+          --cache-from type=registry,ref=${{ steps.tags.outputs.latest_image }} \
+          --cache-to type=inline \
+          --load \
           -t ${{ steps.tags.outputs.full_image }} \
           -t ${{ steps.tags.outputs.latest_image }} \
           .
