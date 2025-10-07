@@ -63,13 +63,17 @@ jobs:
           terraform state rm "$resource" 2>/dev/null || true
         done
 
-        # Remove Cloud Run resources (no longer used)
-        terraform state rm 'google_cloud_run_service.simple_registry' 2>/dev/null || echo "Cloud Run service not in state"
-        terraform state rm 'google_cloud_run_service_iam_member.public' 2>/dev/null || echo "Cloud Run IAM not in state"
-        terraform state rm 'google_project_service.cloud_run_api' 2>/dev/null || echo "Cloud Run API not in state"
+        # Remove Cloud Run resources (no longer used) - use || true to prevent failure
+        terraform state rm 'google_cloud_run_service.simple_registry' || true
+        terraform state rm 'google_cloud_run_service_iam_member.public' || true
+        terraform state rm 'google_project_service.cloud_run_api' || true
 
         # Remove old cluster
-        terraform state rm 'google_container_cluster.primary' 2>/dev/null || echo "Cluster not in state"
+        terraform state rm 'google_container_cluster.primary' || true
+
+        # Remove resources that were moved from root to modules
+        terraform state rm 'google_compute_network.vpc' || true
+        terraform state rm 'google_bigquery_dataset.usage' || true
 
         # Delete orphaned GKE cluster from GCP if it exists
         # This is necessary because we're migrating from standard to Autopilot
