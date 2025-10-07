@@ -215,7 +215,7 @@ paths:
                 package:
                   type: string
                   format: binary
-                  description: Package archive file (.tar.gz)
+                  description: Package archive file (.tar.gz, max 50 MB)
                 checksum:
                   type: string
                   description: Optional SHA256 checksum for verification (computed if not provided)
@@ -268,6 +268,23 @@ paths:
                   actual_checksum:
                     type: string
                     description: Present when checksum validation fails
+        '413':
+          description: Payload too large (package exceeds 50 MB)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: Package size exceeds maximum allowed size
+                  max_size_mb:
+                    type: integer
+                    example: 50
+                  actual_size_mb:
+                    type: number
+                    format: float
+                    example: 51.23
         '422':
           description: Validation error
           content:

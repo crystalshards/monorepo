@@ -279,4 +279,32 @@ describe Api::Shards::Upload do
     response2.should send_json(422)
     response2.body.should contain("errors")
   end
+
+  it "rejects packages exceeding size limit" do
+    # Create a package content larger than 50 MB
+    large_content = "x" * (51 * 1024 * 1024)
+
+    io = IO::Memory.new
+    builder = HTTP::FormData::Builder.new(io, "boundary123")
+    builder.field("name", "large-package-shard")
+    builder.field("version", "1.0.0")
+    builder.field("repository_url", "https://github.com/user/large-package-shard")
+    builder.file(
+      "package",
+      IO::Memory.new(large_content),
+      HTTP::FormData::FileMetadata.new(filename: "package.tar.gz")
+    )
+    builder.finish
+
+    response = ApiClient.exec(
+      Api::Shards::Upload,
+      headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
+      body: io.to_s
+    )
+
+    response.should send_json(413)
+    json = JSON.parse(response.body)
+    json["error"].should eq("Package size exceeds maximum allowed size")
+    json["max_size_mb"].should eq(50)
+  end
 end

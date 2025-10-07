@@ -5,6 +5,8 @@ class Api::Shards::Upload < ApiAction
   include Lucky::RateLimit
   rate_limit to: 10, within: 1.hour
 
+  MAX_PACKAGE_SIZE = 50 * 1024 * 1024 # 50 MB in bytes
+
   post "/api/shards/upload" do
     # Parse multipart form data
     if request.headers["Content-Type"]?.try(&.starts_with?("multipart/form-data"))
@@ -63,6 +65,15 @@ class Api::Shards::Upload < ApiAction
     end
 
     package_content = package_file.body.gets_to_end
+
+    if package_content.bytesize > MAX_PACKAGE_SIZE
+      return json({
+        error:       "Package size exceeds maximum allowed size",
+        max_size_mb: MAX_PACKAGE_SIZE / (1024 * 1024),
+        actual_size_mb: (package_content.bytesize / (1024.0 * 1024.0)).round(2),
+      }, status: 413)
+    end
+
     computed_checksum = Digest::SHA256.hexdigest(package_content)
 
     if checksum && checksum != computed_checksum
