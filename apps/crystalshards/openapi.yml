@@ -167,8 +167,13 @@ paths:
         Upload a Crystal shard package via multipart form data.
         This endpoint accepts a .tar.gz file along with shard metadata.
         The package is uploaded directly to MinIO storage and a ShardVersion is created.
+
+        **Authentication required:** Include auth_token in Authorization header or as query parameter.
+        **Size limit:** Maximum 50 MB per package.
       tags:
         - shards
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -285,6 +290,19 @@ paths:
                     type: number
                     format: float
                     example: 51.23
+        '401':
+          description: Unauthorized (authentication required)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Not authenticated.
+                  details:
+                    type: string
+                    example: An authentication token is required. Please include a token in an 'auth_token' param or 'Authorization' header.
         '422':
           description: Validation error
           content:
