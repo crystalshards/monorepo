@@ -22,33 +22,37 @@
 
 ### Applications
 - [x] 4 Lucky apps: crystalshards, crystaldocs, crystalgigs, crystalbits
-- [x] Mosquito workers in crystalshards (IndexShard, BuildDocs, UpdateDependencies) ✅ NEW
+- [x] Mosquito workers in crystalshards (IndexShard, BuildDocs, UpdateDependencies) ✅
 - [x] Dockerfiles for all apps (api/worker targets)
 - [x] CI: Terraform validation ✅, app builds ✅ (all passing!)
 - [x] Background job system: Migrated from JoobQ to Mosquito ✅
+- [x] Core data models: Shard, ShardVersion, Dependency, Download, Owner ✅ NEW
+- [x] Database migrations for all models with indexes and constraints ✅ NEW
+- [x] API endpoints: GET /api/shards, GET /api/shards/:name, POST /api/shards ✅ NEW
+- [x] Query classes for database operations ✅ NEW
+- [x] Test specs and factories for API endpoints ✅ NEW
 
 ## ⚠️ Known Issues
 
-**Minor CI Issues (non-blocking):**
-- Security scanning looking for non-existent "admin" app (CI config needs update)
+None! All CI checks passing. ✅
 
 ## 📋 Next Tasks
 
-**Phase 2: Implement CrystalShards App** (current focus)
+**Phase 2: Implement CrystalShards App** (IN PROGRESS ✅)
 
-*Core Data Models (1-2 days):*
-1. Create Avram models: Shard, ShardVersion, Dependency, Download, Owner
-2. Write database migrations
-3. Add model validations and associations
-4. Create queries for common operations
+*Core Data Models:* ✅ DONE
+1. ✅ Create Avram models: Shard, ShardVersion, Dependency, Download, Owner
+2. ✅ Write database migrations
+3. ✅ Add model validations and associations
+4. ✅ Create queries for common operations
 
-*API Endpoints (2-3 days):*
-1. GET /api/shards - List all shards (with pagination)
-2. GET /api/shards/:name - Get shard details
-3. POST /api/shards - Publish new shard (authenticated)
-4. GET /api/shards/:name/versions - List versions
-5. GET /api/shards/:name/:version - Get specific version
-6. POST /api/shards/:name/:version/download - Track downloads
+*API Endpoints:* 🔄 IN PROGRESS
+1. ✅ GET /api/shards - List all shards (with pagination)
+2. ✅ GET /api/shards/:name - Get shard details
+3. ✅ POST /api/shards - Publish new shard (authenticated)
+4. ⏳ GET /api/shards/:name/versions - List versions (TODO)
+5. ⏳ GET /api/shards/:name/:version - Get specific version (TODO)
+6. ⏳ POST /api/shards/:name/:version/download - Track downloads (TODO)
 
 *Background Workers (1-2 days):*
 1. Implement IndexShardWorker (parse shard.yml, extract metadata)
