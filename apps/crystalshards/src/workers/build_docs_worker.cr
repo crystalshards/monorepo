@@ -7,10 +7,6 @@ module CrystalShards::Workers
     include JoobQ::Job
     include BaseJob
 
-    @queue = "docs"
-    @retries = 3
-    @expires = 30.minutes.total_seconds.to_i64
-
     def initialize(@shard_name : String, @version : String)
     end
 

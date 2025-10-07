@@ -8,27 +8,18 @@ module CrystalShards
     def self.run
       Log.info { "Starting CrystalShards worker process..." }
 
-      # Parse REDIS_URL to extract host and port
-      redis_url = URI.parse(ENV.fetch("REDIS_URL", "redis://localhost:6379"))
-      redis_host = redis_url.host || "localhost"
-      redis_port = redis_url.port || 6379
-
-      # Configure JoobQ
-      JoobQ.configure do |c|
-        c.store = JoobQ::RedisStore.new(host: redis_host, port: redis_port)
-
-        # Configure queues with priorities
-        c.queues = {
-          "indexing" => 5,  # Higher priority for indexing
-          "docs"     => 3,  # Medium priority for docs
-          "default"  => 1   # Lower priority for misc tasks
-        }
+      # Configure JoobQ (v0.3.x)
+      JoobQ.configure do
+        # Define queues: name, workers, job types
+        queue "indexing", 5, Workers::IndexShardWorker
+        queue "docs", 3, Workers::BuildDocsWorker
+        queue "default", 2, Workers::UpdateDependenciesWorker
       end
 
-      Log.info { "JoobQ configured with Redis: #{redis_host}:#{redis_port}" }
+      Log.info { "JoobQ configured with #{ENV.fetch("REDIS_URL", "redis://localhost:6379")}" }
 
       # Start processing jobs
-      JoobQ.start
+      JoobQ.forge
 
       Log.info { "Worker process started and ready to process jobs" }
 
