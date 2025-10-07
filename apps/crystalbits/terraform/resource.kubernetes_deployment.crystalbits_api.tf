@@ -38,8 +38,9 @@ resource "kubernetes_deployment" "crystalbits_api" {
         }
 
         container {
-          name  = "api"
-          image = "us-docker.pkg.dev/${var.project_id}/crystalshards/crystalbits:${var.image_tag}"
+          name              = "api"
+          image             = "us-docker.pkg.dev/${var.project_id}/crystalshards/crystalbits:${var.image_tag}"
+          image_pull_policy = "Always"
 
           security_context {
             allow_privilege_escalation = false

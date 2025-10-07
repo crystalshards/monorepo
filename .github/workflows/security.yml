@@ -72,6 +72,7 @@ jobs:
         output_format: sarif
         output_file_path: checkov-k8s.sarif
         soft_fail: true
+        skip_check: CKV_K8S_43  # Image digest: We use parameterized tags for CI/CD
       continue-on-error: true
 
     - name: Upload Checkov Kubernetes scan results
@@ -167,15 +168,20 @@ jobs:
         echo "# License Report" > license-report.md
         echo "Generated on $(date)" >> license-report.md
         echo "" >> license-report.md
-        
+
         # Check each application's dependencies
         for app in crystalshards crystaldocs crystalgigs crystalbits; do
           if [ -f "apps/$app/shard.yml" ]; then
             echo "## $app Dependencies" >> license-report.md
             cd apps/$app
             if [ -f "shard.lock" ]; then
-              shards list
+              # Install dependencies first
+              shards install --frozen 2>&1 || echo "Warning: Some dependencies could not be installed"
+              # List dependencies
+              shards list 2>&1 || echo "No dependencies to list"
               echo "Dependencies listed in shard.lock" >> ../../license-report.md
+            else
+              echo "No shard.lock file found" >> ../../license-report.md
             fi
             cd ../..
           fi

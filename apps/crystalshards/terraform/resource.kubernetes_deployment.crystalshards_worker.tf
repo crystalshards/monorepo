@@ -38,8 +38,9 @@ resource "kubernetes_deployment" "crystalshards_worker" {
         }
 
         container {
-          name  = "worker"
-          image = "us-docker.pkg.dev/${var.project_id}/crystalshards/crystalshards-worker:${var.image_tag}"
+          name              = "worker"
+          image             = "us-docker.pkg.dev/${var.project_id}/crystalshards/crystalshards-worker:${var.image_tag}"
+          image_pull_policy = "Always"
 
           security_context {
             allow_privilege_escalation = false
