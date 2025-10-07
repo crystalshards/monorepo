@@ -44,17 +44,17 @@ spec:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
         - name: ENVBUILDER_GIT_URL
-          value: https://github.com/crystalshards/crystalshards-claude.git
+          value: https://github.com/crystalshards/monorepo.git
         - name: ENVBUILDER_GIT_BRANCH
           value: main
         - name: ENVBUILDER_DEVCONTAINER_DIR
-          value: /workspaces/crystalshards-claude/.devcontainer
+          value: /workspaces/monorepo/.devcontainer
         - name: ENVBUILDER_INIT_SCRIPT
-          value: "/workspaces/crystalshards-claude/develop.sh"
+          value: "/workspaces/monorepo/develop.sh"
         - name: ENVBUILDER_CACHE_REPO
           value: "" # Optional: Add cache repository for faster builds
         - name: ENVBUILDER_WORKSPACE_FOLDER
-          value: /workspaces/crystalshards-claude
+          value: /workspaces/monorepo
         - name: ENVBUILDER_VERBOSE
           value: "true"
         - name: ENVBUILDER_GIT_CLONE_SINGLE_BRANCH
