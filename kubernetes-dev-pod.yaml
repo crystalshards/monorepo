@@ -10,20 +10,9 @@ metadata:
   namespace: claude
 spec:
   restartPolicy: Always
-  initContainers:
-    - name: fix-permissions
-      image: busybox:1.35
-      command:
-        [
-          "sh",
-          "-c",
-          "chown -R 1000:1000 /workspaces && chmod -R 755 /workspaces",
-        ]
-      volumeMounts:
-        - name: workspaces
-          mountPath: /workspaces
-      securityContext:
-        runAsUser: 0
+  securityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: "OnRootMismatch"
   containers:
     - name: dind
       image: docker:24-dind
@@ -47,6 +36,10 @@ spec:
     - name: agent
       image: ghcr.io/coder/envbuilder:latest
       imagePullPolicy: Always
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        runAsNonRoot: false
       env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
@@ -55,13 +48,13 @@ spec:
         - name: ENVBUILDER_GIT_BRANCH
           value: main
         - name: ENVBUILDER_DEVCONTAINER_DIR
-          value: /workspaces/monorepo/.devcontainer
+          value: /workspaces/crystalshards-claude/.devcontainer
         - name: ENVBUILDER_INIT_SCRIPT
-          value: "/workspaces/monorepo/develop.sh"
+          value: "/workspaces/crystalshards-claude/develop.sh"
         - name: ENVBUILDER_CACHE_REPO
           value: "" # Optional: Add cache repository for faster builds
         - name: ENVBUILDER_WORKSPACE_FOLDER
-          value: /workspaces/monorepo
+          value: /workspaces/crystalshards-claude
         - name: ENVBUILDER_VERBOSE
           value: "true"
         - name: ENVBUILDER_GIT_CLONE_SINGLE_BRANCH
