@@ -36,14 +36,19 @@
 
 ## 🚀 Current Status
 
-**Issue Found**: Deployment failed because Docker images don't exist in GCR
-**Root Cause**: CI workflow only validates code but doesn't build/push images
-**Solution**: Created new `build-images.yml` workflow to build and push all app images
+**BLOCKER**: Artifact Registry repository must be created before Docker images can be pushed
 
-**Recent Fixes**:
-- ✅ Created `.github/workflows/build-images.yml` - Builds & pushes Docker images to GCR
-- ✅ Updated deploy workflow to depend on image build workflow
-- ✅ Added matrix build for all apps (crystalshards API+worker, other apps API only)
+**Recent Progress**:
+- ✅ Migrated from deprecated GCR to Artifact Registry
+- ✅ Updated CI workflow to build Docker images sequentially (avoid resource contention)
+- ✅ Removed `--release` flag from Crystal builds (60x faster compilation)
+- ✅ Created Terraform resource for Artifact Registry
+- ⏳ **NEXT**: Apply Terraform to create `us-docker.pkg.dev/{project}/crystalshards` repository
+
+**Action Required**:
+1. Apply Terraform in production to create Artifact Registry repository
+2. Docker image builds will then succeed and push to registry
+3. Deployments can proceed with available images
 
 ## ⚠️ Known Issues
 
