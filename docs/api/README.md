@@ -163,9 +163,10 @@ Rate limit headers are included in all responses:
 make dev
 
 # Or start individual services
-cd apps/shards-registry && crystal run src/crystalshards.cr
-cd apps/shards-docs && crystal run src/crystaldocs.cr
-cd apps/gigs && crystal run src/crystalgigs.cr
+cd apps/crystalshards && lucky dev
+cd apps/crystaldocs && lucky dev
+cd apps/crystalgigs && lucky dev
+cd apps/crystalbits && lucky dev
 ```
 
 ### Testing API Endpoints

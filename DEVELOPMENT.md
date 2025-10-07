@@ -2,12 +2,12 @@
 
 ## Overview
 
-This monorepo contains three Crystal applications:
+This monorepo contains four Lucky framework applications:
 
-1. **CrystalShards Registry** (`apps/shards-registry`) - Package registry at `:3000`
-2. **CrystalDocs** (`apps/shards-docs`) - Documentation platform at `:3001`  
-3. **CrystalGigs** (`apps/gigs`) - Job board at `:3002`
-4. **Worker** (`apps/worker`) - Background job processor
+1. **CrystalShards** (`apps/crystalshards`) - Package registry with background workers
+2. **CrystalDocs** (`apps/crystaldocs`) - Documentation hosting platform
+3. **CrystalGigs** (`apps/crystalgigs`) - Job board for Crystal developers
+4. **CrystalBits** (`apps/crystalbits`) - Newsletter/blog platform
 
 ## Quick Start
 
@@ -85,10 +85,10 @@ The worker processes background jobs including:
 
 Each app has its own test suite:
 ```bash
-cd apps/shards-registry && crystal spec
-cd apps/shards-docs && crystal spec  
-cd apps/gigs && crystal spec
-cd apps/worker && crystal spec
+cd apps/crystalshards && crystal spec
+cd apps/crystaldocs && crystal spec
+cd apps/crystalgigs && crystal spec
+cd apps/crystalbits && crystal spec
 ```
 
 ## Deployment

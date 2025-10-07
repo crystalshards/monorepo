@@ -158,14 +158,14 @@ Key metrics monitored:
 kubectl get pods -A -l app.kubernetes.io/part-of=crystalshards
 
 # View logs
-kubectl logs -f deployment/shards-registry -n crystalshards
+kubectl logs -f deployment/crystalshards-api -n crystalshards
 
 # Check resource usage
 kubectl top pods -A
 
 # Test service connectivity
 kubectl run debug --image=curlimages/curl --rm -i --restart=Never \
-  -- curl -f http://shards-registry.crystalshards.svc.cluster.local/health
+  -- curl -f http://crystalshards.crystalshards.svc.cluster.local/api/health
 ```
 
 ## Cost Optimization
