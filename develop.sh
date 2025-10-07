@@ -20,10 +20,8 @@ export PATH="/root/.local/share/mise/shims:/root/.local/bin:${PATH}"
 mise trust .mise.toml || true
 mise install
 
-# Install Claude CLI if needed
-if ! command -v claude &> /dev/null; then
-    mise exec -- npm install -g @anthropic-ai/claude-code
-fi
+# Run setup task to install additional tools
+mise run setup
 
 # Configure git
 git config --global user.name "${GIT_AUTHOR_NAME:-CrystalShards Agent}"

@@ -2,14 +2,11 @@
 experimental = true
 
 [tools]
-"aqua:twistedpair/google-cloud-sdk" = "latest"
-"npm:@anthropic-ai/claude-code" = "latest"
-"npm:@devcontainers/cli" = "latest"
-"npm:markdownlint-cli2" = "latest"
+# Core development tools
 crystal = "latest"
-helm = "latest"
-kubectl = "latest"
 node = "latest"
+kubectl = "latest"
+helm = "latest"
 terraform = "latest"
 
 [env]
@@ -21,6 +18,18 @@ description = "Setup development environment"
 run = """
 #!/bin/bash
 echo "🔧 Setting up development environment..."
+
+# Install Claude Code CLI globally
+if ! command -v claude &> /dev/null; then
+    echo "📦 Installing Claude Code CLI..."
+    npm install -g @anthropic-ai/claude-code || true
+fi
+
+# Install devcontainer CLI
+if ! command -v devcontainer &> /dev/null; then
+    echo "📦 Installing DevContainer CLI..."
+    npm install -g @devcontainers/cli || true
+fi
 
 # Install Lucky CLI if not present
 if ! command -v lucky &> /dev/null; then
