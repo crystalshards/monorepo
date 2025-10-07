@@ -44,20 +44,22 @@ kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -
 
     # Activate mise environment
     eval \"\$(mise activate bash)\"
-    export PATH=\"/root/.local/share/mise/shims:/root/.local/bin:\${PATH}\"
+    export PATH=\"\$HOME/.local/share/mise/shims:\$HOME/.local/bin:\${PATH}\"
 
-    # Ensure Claude CLI is installed
+    # Trust mise config
+    mise trust /workspaces/monorepo/.mise.toml || true
+    mise install
+
+    # Ensure Claude CLI is installed (already installed by mise setup task)
+    # Just verify it's available
     if ! command -v claude &> /dev/null; then
-        echo 'Installing Claude CLI...'
-        npm install -g @anthropic-ai/claude-code
+        echo 'Claude CLI not found, installing...'
+        npm install -g @anthropic-ai/claude-code || exit 1
     fi
 
     # Perform login
-    claude login
-    touch /workspaces/.claude-ready
-
-    # Verify login and create ready file
-    if [ -f /workspaces/.claude-ready ]; then
+    if claude login; then
+        touch /workspaces/.claude-ready
         echo ''
         echo '✅ Login successful! Ready file created.'
         echo '   Config stored in: \$CLAUDE_CONFIG_DIR'
