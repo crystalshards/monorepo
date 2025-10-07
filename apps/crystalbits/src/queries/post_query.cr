@@ -4,7 +4,7 @@ class PostQuery < Post::BaseQuery
   end
 
   def featured
-    featured(true)
+    where("featured = ?", true)
   end
 
   def by_tag(tag : String)

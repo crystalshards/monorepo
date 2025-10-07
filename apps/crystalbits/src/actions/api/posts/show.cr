@@ -1,4 +1,6 @@
 class Api::Posts::Show < ApiAction
+  include Api::Auth::SkipRequireAuthToken
+
   get "/api/posts/:slug" do
     post = PostQuery.new.slug(slug).first?
 

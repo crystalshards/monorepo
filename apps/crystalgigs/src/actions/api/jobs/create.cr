@@ -1,4 +1,5 @@
 class Api::Jobs::Create < ApiAction
+  include Api::Auth::SkipRequireAuthToken
   include Lucky::RateLimit
   rate_limit to: 5, within: 1.hour
 

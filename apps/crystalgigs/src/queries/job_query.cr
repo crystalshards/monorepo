@@ -1,6 +1,6 @@
 class JobQuery < Job::BaseQuery
   def active
-    active(true)
+    where("active = ?", true)
   end
 
   def published
@@ -12,11 +12,11 @@ class JobQuery < Job::BaseQuery
   end
 
   def featured
-    featured(true)
+    where("featured = ?", true)
   end
 
   def remote
-    remote(true)
+    where("remote = ?", true)
   end
 
   def by_job_type(type : String)

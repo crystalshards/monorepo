@@ -1,4 +1,6 @@
 class Api::Jobs::Show < ApiAction
+  include Api::Auth::SkipRequireAuthToken
+
   get "/api/jobs/:id" do
     job = JobQuery.new.find(id)
 

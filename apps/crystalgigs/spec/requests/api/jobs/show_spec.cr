@@ -4,7 +4,7 @@ describe Api::Jobs::Show do
   it "returns a job by id" do
     job = JobFactory.create &.title("Crystal Developer")
 
-    response = ApiClient.exec(Api::Jobs::Show, id: job.id)
+    response = ApiClient.exec(Api::Jobs::Show.with(id: job.id))
 
     response.status_code.should eq(200)
     body = JSON.parse(response.body)
@@ -15,7 +15,7 @@ describe Api::Jobs::Show do
   end
 
   it "returns 404 for non-existent job" do
-    response = ApiClient.exec(Api::Jobs::Show, id: 99999)
+    response = ApiClient.exec(Api::Jobs::Show.with(id: 99999))
 
     response.status_code.should eq(404)
     body = JSON.parse(response.body)

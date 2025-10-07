@@ -1,4 +1,6 @@
 class Api::Posts::Index < ApiAction
+  include Api::Auth::SkipRequireAuthToken
+
   get "/api/posts" do
     page = params.get?(:page).try(&.to_i) || 1
     per_page = params.get?(:per_page).try(&.to_i) || 20

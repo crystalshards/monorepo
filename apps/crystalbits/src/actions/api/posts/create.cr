@@ -1,4 +1,5 @@
 class Api::Posts::Create < ApiAction
+  include Api::Auth::SkipRequireAuthToken
   include Lucky::RateLimit
   rate_limit to: 10, within: 1.hour
 
