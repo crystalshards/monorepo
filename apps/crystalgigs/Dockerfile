@@ -13,12 +13,24 @@ RUN shards install --production
 COPY . .
 
 # Build the application
-RUN crystal build src/crystalgigs.cr --release --static --no-debug
+# Note: Removed --static flag as it's not needed in containers and significantly slows down builds
+RUN crystal build src/crystalgigs.cr --release --no-debug
 
 # Runtime stage
 FROM alpine:latest
 
 WORKDIR /app
+
+# Install runtime dependencies for non-static builds
+RUN apk add --no-cache \
+    libgcc \
+    libstdc++ \
+    libc6-compat \
+    pcre \
+    gc \
+    libevent \
+    yaml \
+    openssl
 
 # Copy the compiled binary
 COPY --from=builder /app/crystalgigs .

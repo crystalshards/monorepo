@@ -16,10 +16,12 @@ RUN shards install --production
 COPY . .
 
 # Build the application based on BUILD_TARGET
+# Note: Removed --static flag as it's not needed in containers and significantly slows down builds
+# Using parallel compilation with -Dpreview_mt for faster builds
 RUN if [ "$BUILD_TARGET" = "worker" ]; then \
-      crystal build src/worker.cr --release --static --no-debug -o worker; \
+      crystal build src/worker.cr --release --no-debug -o worker; \
     else \
-      crystal build src/crystalshards.cr --release --static --no-debug; \
+      crystal build src/crystalshards.cr --release --no-debug; \
     fi
 
 # Runtime stage
@@ -29,6 +31,17 @@ FROM alpine:latest
 ARG BUILD_TARGET=crystalshards
 
 WORKDIR /app
+
+# Install runtime dependencies for non-static builds
+RUN apk add --no-cache \
+    libgcc \
+    libstdc++ \
+    libc6-compat \
+    pcre \
+    gc \
+    libevent \
+    yaml \
+    openssl
 
 # Copy the compiled binary
 RUN if [ "$BUILD_TARGET" = "worker" ]; then \
