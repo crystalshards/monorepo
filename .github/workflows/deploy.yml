@@ -9,15 +9,11 @@ on:
       - completed
   # Allow manual deployment with approval
   workflow_dispatch:
-    inputs:
-      target:
-        description: 'Terraform target (e.g., module.cluster for cluster only)'
-        required: false
-        type: string
 
 jobs:
-  deploy:
-    name: Deploy GKE Infrastructure
+  # Step 1: Deploy cluster module to create Artifact Registry
+  deploy-cluster:
+    name: Deploy Cluster & Artifact Registry
     runs-on: ubuntu-latest
     environment: production
     # Only deploy if CI passed or manual trigger
@@ -50,48 +46,144 @@ jobs:
         terraform_version: 1.6.0
         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
 
-    - name: Deploy with Terraform
+    - name: Deploy Cluster Module
       working-directory: ./terraform
       run: |
-        echo "Deploying GKE Autopilot cluster and infrastructure..."
-
-        # Initialize Terraform (GCS backend configured in main.tf)
+        echo "Step 1/3: Deploying cluster module (creates Artifact Registry)..."
         terraform init
-
-        # Build terraform command with optional target
-        TARGET_FLAG=""
-        if [ -n "${{ inputs.target }}" ]; then
-          TARGET_FLAG="-target=${{ inputs.target }}"
-          echo "Using targeted apply: ${{ inputs.target }}"
-        fi
-
-        # Plan the deployment
         terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
                       -var="region=us-central1" \
-                      $TARGET_FLAG \
+                      -target=module.cluster \
                       -out=tfplan
-
-        # Apply the deployment
         terraform apply tfplan
+        echo "✅ Cluster and Artifact Registry deployed"
 
-        echo "Deployment completed!"
+  # Step 2: Build and push Docker images
+  build-images:
+    name: Build and Push Docker Images
+    needs: deploy-cluster
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      matrix:
+        app: [crystalshards, crystaldocs, crystalgigs, crystalbits]
+        target: [api, worker]
+        exclude:
+          - app: crystaldocs
+            target: worker
+          - app: crystalgigs
+            target: worker
+          - app: crystalbits
+            target: worker
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker for Artifact Registry
+      run: gcloud auth configure-docker us-docker.pkg.dev
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Set image tags
+      id: tags
+      run: |
+        APP="${{ matrix.app }}"
+        TARGET="${{ matrix.target }}"
+        PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+        SHA="${GITHUB_SHA::8}"
+
+        if [ "$TARGET" = "worker" ]; then
+          IMAGE_NAME="${APP}-worker"
+        else
+          IMAGE_NAME="${APP}"
+        fi
+
+        echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+        echo "full_image=us-docker.pkg.dev/$PROJECT_ID/crystalshards/$IMAGE_NAME:$SHA" >> $GITHUB_OUTPUT
+        echo "latest_image=us-docker.pkg.dev/$PROJECT_ID/crystalshards/$IMAGE_NAME:latest" >> $GITHUB_OUTPUT
+
+    - name: Build Docker image
+      working-directory: ./apps/${{ matrix.app }}
+      run: |
+        echo "Building ${{ steps.tags.outputs.image_name }}..."
+
+        BUILD_ARG=""
+        if [ "${{ matrix.target }}" = "worker" ]; then
+          BUILD_ARG="--build-arg BUILD_TARGET=worker"
+        fi
+
+        docker buildx build $BUILD_ARG \
+          --load \
+          -t ${{ steps.tags.outputs.full_image }} \
+          -t ${{ steps.tags.outputs.latest_image }} \
+          .
+
+    - name: Push Docker image
+      run: |
+        echo "Pushing ${{ steps.tags.outputs.image_name }}..."
+        docker push ${{ steps.tags.outputs.full_image }}
+        docker push ${{ steps.tags.outputs.latest_image }}
+        echo "✅ Image pushed: ${{ steps.tags.outputs.latest_image }}"
+
+  # Step 3: Deploy full infrastructure
+  deploy-full:
+    name: Deploy Full Infrastructure
+    needs: build-images
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.6.0
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    - name: Deploy Full Infrastructure
+      working-directory: ./terraform
+      run: |
+        echo "Step 3/3: Deploying full infrastructure..."
+        terraform init
+        terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+                      -var="region=us-central1" \
+                      -out=tfplan
+        terraform apply tfplan
+        echo "✅ Full infrastructure deployed"
 
     - name: Get cluster info
       working-directory: ./terraform
       run: |
         echo "Getting cluster information..."
-        terraform output cluster_name
-        terraform output kubectl_config
+        terraform output cluster_name || true
+        terraform output kubectl_config || true
+        terraform output load_balancer_ip || true
 
-        # Get ingress load balancer IP (may not be ready yet)
-        echo "Ingress LoadBalancer IP:"
-        terraform output load_balancer_ip
-
-    - name: Update status
+    - name: Deployment summary
       run: |
-        echo "✅ Infrastructure deployment completed successfully!"
-        echo "📦 GKE Autopilot cluster is ready"
-        echo "🔧 Operators installed: cert-manager, Traefik, Redis, PostgreSQL (CNPG), MinIO"
-        echo "📝 Artifact Registry is ready for Docker images"
+        echo "✅ Deployment completed successfully!"
         echo ""
-        echo "Docker images will be built automatically when apps/** changes are pushed"
+        echo "📦 Step 1: Cluster & Artifact Registry created"
+        echo "🐳 Step 2: Docker images built and pushed"
+        echo "🚀 Step 3: Full infrastructure deployed"
