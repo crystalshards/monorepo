@@ -30,7 +30,7 @@ resource "kubernetes_deployment" "crystalshards_worker" {
       spec {
         container {
           name  = "worker"
-          image = "gcr.io/${var.project_id}/crystalshards-worker:latest"
+          image = "us-docker.pkg.dev/${var.project_id}/crystalshards/crystalshards-worker:latest"
 
           env {
             name  = "LUCKY_ENV"

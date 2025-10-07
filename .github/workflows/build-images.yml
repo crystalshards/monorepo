@@ -9,7 +9,8 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: gcr.io
+  REGISTRY: us-docker.pkg.dev
+  REPOSITORY: crystalshards  # Artifact Registry repository name
 
 jobs:
   build-and-push:
@@ -46,8 +47,8 @@ jobs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
 
-    - name: Configure Docker for GCR
-      run: gcloud auth configure-docker gcr.io
+    - name: Configure Docker for Artifact Registry
+      run: gcloud auth configure-docker us-docker.pkg.dev
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -70,8 +71,8 @@ jobs:
         fi
 
         echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-        echo "full_image=$REGISTRY/$PROJECT_ID/$IMAGE_NAME:$SHA" >> $GITHUB_OUTPUT
-        echo "latest_image=$REGISTRY/$PROJECT_ID/$IMAGE_NAME:latest" >> $GITHUB_OUTPUT
+        echo "full_image=$REGISTRY/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:$SHA" >> $GITHUB_OUTPUT
+        echo "latest_image=$REGISTRY/$PROJECT_ID/$REPOSITORY/$IMAGE_NAME:latest" >> $GITHUB_OUTPUT
 
     - name: Build Docker image
       working-directory: ./apps/${{ matrix.app }}

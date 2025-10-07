@@ -30,7 +30,7 @@ resource "kubernetes_deployment" "crystaldocs_api" {
       spec {
         container {
           name  = "api"
-          image = "gcr.io/${var.project_id}/crystaldocs:latest"
+          image = "us-docker.pkg.dev/${var.project_id}/crystalshards/crystaldocs:latest"
 
           port {
             container_port = 3000
