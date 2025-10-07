@@ -77,6 +77,56 @@ resource "kubernetes_deployment" "crystalshards_api" {
             }
           }
 
+          env {
+            name = "MINIO_ENDPOINT"
+            value_from {
+              secret_key_ref {
+                name = "crystalshards-secrets"
+                key  = "minio_endpoint"
+              }
+            }
+          }
+
+          env {
+            name = "MINIO_ACCESS_KEY"
+            value_from {
+              secret_key_ref {
+                name = "crystalshards-secrets"
+                key  = "minio_access_key"
+              }
+            }
+          }
+
+          env {
+            name = "MINIO_SECRET_KEY"
+            value_from {
+              secret_key_ref {
+                name = "crystalshards-secrets"
+                key  = "minio_secret_key"
+              }
+            }
+          }
+
+          env {
+            name = "MINIO_REGION"
+            value_from {
+              secret_key_ref {
+                name = "crystalshards-secrets"
+                key  = "minio_region"
+              }
+            }
+          }
+
+          env {
+            name = "MINIO_USE_SSL"
+            value_from {
+              secret_key_ref {
+                name = "crystalshards-secrets"
+                key  = "minio_use_ssl"
+              }
+            }
+          }
+
           resources {
             requests = {
               cpu    = "250m"
