@@ -1,7 +1,7 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (10:30 UTC)
-**Current Phase**: Infrastructure Deployment Ready - CI Fixed
+**Last Updated**: 2025-10-07 (10:35 UTC)
+**Current Phase**: Infrastructure Deployment Required - Terraform Apply Needed
 
 ## ✅ Done
 
@@ -36,22 +36,30 @@
 
 ## 🚀 Current Status
 
-**BLOCKER RESOLVED**: Artifact Registry auto-created in CI workflow ✅
+**ACTION REQUIRED**: Terraform must be applied to create Artifact Registry before Docker images can be built
 
 **Recent Progress**:
 - ✅ Migrated from deprecated GCR to Artifact Registry
 - ✅ Updated CI workflow to build Docker images sequentially (avoid resource contention)
 - ✅ Removed `--release` flag from Crystal builds (60x faster compilation)
 - ✅ Fixed Terraform validation error (removed unsupported cleanup_policies block)
-- ✅ Added workflow step to auto-create Artifact Registry if it doesn't exist
 - ✅ Updated registry location from `var.region` to `us` multi-region
-- ⏳ **NEXT**: Wait for CI to pass, then Docker images will build and push
+- ✅ Terraform validation passing
+- ⏳ **NEXT**: Apply Terraform to create infrastructure (including Artifact Registry)
 
-**What's Happening Now**:
-1. CI workflow will create Artifact Registry repository automatically on first run
-2. Docker images will build and push to `us-docker.pkg.dev/{project}/crystalshards`
-3. Deploy workflow will trigger after successful image build
-4. Infrastructure will be fully deployed and operational
+**Deployment Order** (Critical):
+1. **Apply Terraform** to create GKE cluster + Artifact Registry repository
+   ```bash
+   cd terraform
+   terraform apply -var="project_id=<project>" -var="region=us-central1"
+   ```
+2. **Build & Push Docker images** (workflow will trigger automatically after Terraform)
+3. **Deploy applications** (workflow will trigger after images are available)
+
+**Why This Order**:
+- Artifact Registry repository must exist before Docker images can be pushed
+- Service account has `roles/artifactregistry.writer` (push/pull) but not `roles/artifactregistry.repoAdmin` (create repos)
+- Terraform has proper permissions to create all infrastructure resources
 
 ## ⚠️ Known Issues
 
