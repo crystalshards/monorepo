@@ -34,21 +34,15 @@ git config --global user.name "${GIT_AUTHOR_NAME:-CrystalShards Agent}"
 git config --global user.email "${GIT_AUTHOR_EMAIL:-agent@crystalshards.org}"
 
 # Wait for ready signal (authentication)
-READY_FILE="/workspaces/.claude-ready"
-if [ ! -f "$READY_FILE" ]; then
+until claude -p "say hello" > /dev/null 2>&1; do
     echo "⏳ Waiting for authentication..."
     echo "   Run: ./remote-login.sh from your local machine"
-    echo ""
-    
-    while [ ! -f "$READY_FILE" ]; do
-        sleep 5
-        echo -n "."
-    done
-    
-    echo ""
-    echo "✅ Authentication detected! Starting agent loop..."
-    echo ""
-fi
+    echo ""    
+done
+
+echo ""
+echo "✅ Authentication detected! Starting agent loop..."
+echo ""
 
 # Simple loop
 while true; do

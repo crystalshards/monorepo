@@ -59,16 +59,7 @@ kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -
     fi
 
     # Perform login
-    if (claude -p 'say hello' || claude /login) && [ -f /workspaces/.claude-ready ]; then
-        sudo touch /workspaces/.claude-ready
-        echo ''
-        echo '✅ Login successful! Ready file created.'
-        echo '   Config stored in: \$CLAUDE_CONFIG_DIR'
-    else
-        echo ''
-        echo '❌ Login failed. Please try again.'
-        exit 1
-    fi
+    claude 'Say: You are now logged in, you may quit this claude session.'
 "
 
 if [ $? -eq 0 ]; then
