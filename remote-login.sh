@@ -30,7 +30,8 @@ echo "⚠️  IMPORTANT: Use your Claude Max account if available!"
 echo ""
 
 # Execute login in the container
-kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -n "$NAMESPACE" -c agent -- bash -c "
+kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -n "$NAMESPACE" -c agent -- su - claude -s /bin/bash -c "
+
     cd /workspaces/monorepo
 
     # Set up cache directories in user home
@@ -58,8 +59,8 @@ kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -
     fi
 
     # Perform login
-    if (claude -p 'say hello' || claude /login); then
-        touch /workspaces/.claude-ready
+    if (claude -p 'say hello' || claude /login) && [ -f /workspaces/.claude-ready ]; then
+        sudo touch /workspaces/.claude-ready
         echo ''
         echo '✅ Login successful! Ready file created.'
         echo '   Config stored in: \$CLAUDE_CONFIG_DIR'
