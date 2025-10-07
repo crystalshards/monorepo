@@ -18,7 +18,7 @@ class Api::Shards::Versions::Index < ApiAction
             released_at: version.released_at,
             yanked:      version.yanked,
             commit_sha:  version.commit_sha,
-            downloads:   ShardVersionQuery.new.id(version.id).preload_downloads.first!.downloads.size,
+            downloads:   DownloadQuery.new.shard_version_id(version.id).select_count,
           }
         end,
       })
