@@ -1,7 +1,7 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (10:35 UTC)
-**Current Phase**: Infrastructure Deployment Required - Terraform Apply Needed
+**Last Updated**: 2025-10-07 (10:45 UTC)
+**Current Phase**: Infrastructure Ready - Awaiting Terraform Apply
 
 ## ✅ Done
 
@@ -16,8 +16,11 @@
 - [x] PostgreSQL clusters (CNPG) for all 4 apps
 - [x] Shared Redis cluster
 - [x] Shared MinIO tenant
-- [x] Application secrets (DATABASE_URL, SECRET_KEY_BASE, REDIS_URL)
-- [x] Terraform validation passing ✅ (fixed null_resource reference)
+- [x] Application secrets with secure generation ✅ NEW
+  - Cryptographically secure SECRET_KEY_BASE (128 chars, random provider)
+  - Dynamic DATABASE_URL fetched from CNPG-generated secrets
+  - No hardcoded credentials
+- [x] Terraform validation passing ✅
 - [x] CI builds passing ✅
 
 ### Applications
@@ -38,17 +41,22 @@
 
 **ACTION REQUIRED**: Terraform must be applied to create Artifact Registry before Docker images can be built
 
-**Recent Progress**:
+**Recent Progress** (Today):
 - ✅ Migrated from deprecated GCR to Artifact Registry
 - ✅ Updated CI workflow to build Docker images sequentially (avoid resource contention)
 - ✅ Removed `--release` flag from Crystal builds (60x faster compilation)
 - ✅ Fixed Terraform validation error (removed unsupported cleanup_policies block)
 - ✅ Updated registry location from `var.region` to `us` multi-region
+- ✅ **NEW**: Added secure secret generation using Terraform random provider
+- ✅ **NEW**: Created comprehensive deployment runbook (terraform/DEPLOYMENT_RUNBOOK.md)
 - ✅ Terraform validation passing
 - ⏳ **NEXT**: Apply Terraform to create infrastructure (including Artifact Registry)
 
 **Deployment Order** (Critical):
 1. **Apply Terraform** to create GKE cluster + Artifact Registry repository
+   - See **terraform/DEPLOYMENT_RUNBOOK.md** for complete step-by-step instructions
+   - Includes prerequisites, GCP setup, service account creation, DNS configuration
+   - Estimated time: 20-30 minutes (GKE cluster creation is slow)
    ```bash
    cd terraform
    terraform apply -var="project_id=<project>" -var="region=us-central1"
@@ -60,6 +68,8 @@
 - Artifact Registry repository must exist before Docker images can be pushed
 - Service account has `roles/artifactregistry.writer` (push/pull) but not `roles/artifactregistry.repoAdmin` (create repos)
 - Terraform has proper permissions to create all infrastructure resources
+
+**📖 Documentation**: See `terraform/DEPLOYMENT_RUNBOOK.md` for complete deployment guide
 
 ## ⚠️ Known Issues
 
