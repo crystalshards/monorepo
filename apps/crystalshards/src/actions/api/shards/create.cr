@@ -17,16 +17,18 @@ class Api::Shards::Create < ApiAction
       license: params.get?("license")
     ) do |operation, shard|
       if shard
-        version_string = params.get("version")
+        version_string = params.get?("version")
 
-        # Enqueue worker to index the shard (parse shard.yml, create version, upload package)
-        IndexShardWorker.new(
-          shard_name: shard.name,
-          version: version_string
-        ).enqueue
+        if version_string
+          # Enqueue worker to index the shard (parse shard.yml, create version, upload package)
+          IndexShardWorker.new(
+            shard_name: shard.name,
+            version: version_string
+          ).enqueue
+        end
 
         json({
-          message: "Shard created successfully, indexing started",
+          message: "Shard created successfully" + (version_string ? ", indexing started" : ""),
           shard:   {
             id:   shard.id,
             name: shard.name,
