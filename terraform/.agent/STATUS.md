@@ -1,7 +1,7 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (12:10 UTC)
-**Current Phase**: Phase 5 - All Apps MVP Complete ✅
+**Last Updated**: 2025-10-07 (12:55 UTC)
+**Current Phase**: Phase 6 - Production Hardening ✅
 
 ## ✅ Done
 
@@ -40,11 +40,33 @@
 - [x] Test specs and factories for API endpoints ✅
 - [x] shard.lock files generated for all apps ✅
 
+### Production Hardening (Phase 6 - COMPLETE ✅)
+- [x] OpenAPI 3.0 specifications for all 4 apps ✅
+  - Comprehensive endpoint documentation with schemas
+  - Request/response examples and validation rules
+  - Authentication requirements documented
+  - Ready for Swagger UI integration
+- [x] Rate limiting on all POST endpoints ✅
+  - CrystalShards: 10 req/hr for shard creation, 100 req/hr for downloads
+  - CrystalGigs: 5 req/hr for job postings
+  - CrystalBits: 10 req/hr for blog posts
+  - Redis-backed distributed rate limiting
+  - Returns HTTP 429 with Retry-After header
+- [x] Comprehensive rate limiting documentation (docs/RATE_LIMITING.md) ✅
+  - Usage examples and monitoring tips
+  - Troubleshooting guide
+  - Best practices for API users and developers
+
 ## 🚀 Current Status
 
 **ACTION REQUIRED**: Terraform must be applied to create Artifact Registry before Docker images can be built
 
 **Recent Progress** (Today):
+- ✅ **Phase 6 Complete - Production Hardening**:
+  - Added OpenAPI 3.0 specs for all 4 apps (1447 lines of comprehensive API documentation)
+  - Implemented rate limiting on all POST endpoints using Lucky::RateLimit
+  - Created rate limiting documentation with examples and best practices
+  - All CI tests passing ✅
 - ✅ **Fixed test compilation errors**: Resolved all Crystal spec compilation issues
   - Created missing DownloadFactory and DependencyFactory for test data
   - Fixed Avram query methods: select_count (not count), first? (not first!)
