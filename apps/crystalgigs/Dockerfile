@@ -38,8 +38,8 @@ RUN addgroup -g 1000 appuser && \
     adduser -D -u 1000 -G appuser appuser && \
     chown -R appuser:appuser /app
 
-# Copy the compiled binary
-COPY --from=builder /app/crystalgigs .
+# Copy the compiled binary with proper ownership
+COPY --from=builder --chown=1000:1000 /app/crystalgigs .
 
 # Ensure binary is executable
 RUN chmod +x ./crystalgigs
