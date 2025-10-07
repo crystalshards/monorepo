@@ -1,9 +1,9 @@
 # Import blocks for existing resources
 # These will import existing GCP resources into Terraform state
-#
-# NOTE: GKE cluster is intentionally NOT imported here.
-# The existing cluster will be destroyed and recreated as Autopilot.
-# All Kubernetes resources (namespaces, helm releases) will be recreated.
-#
-# IMPORTANT: Import blocks commented out because resources were cleaned up.
-# Terraform will create fresh resources on next apply.
+
+# Import existing Artifact Registry repository
+# Created manually before Terraform was configured
+import {
+  to = module.cluster.google_artifact_registry_repository.docker_images
+  id = "projects/crystalshards-org/locations/us/repositories/crystalshards"
+}

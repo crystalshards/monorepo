@@ -1,35 +1,21 @@
 name: Deploy to Production
 
 on:
-  # Deploy after CI passes and images are built
-  workflow_run:
-    workflows: ["Build and Push Docker Images"]
-    branches: [main]
-    types:
-      - completed
   # Allow manual deployment with approval
   workflow_dispatch:
+    inputs:
+      target:
+        description: 'Terraform target (e.g., module.cluster for cluster only)'
+        required: false
+        type: string
 
 jobs:
   deploy:
     name: Deploy GKE Infrastructure
     runs-on: ubuntu-latest
     environment: production
-    # Only run if image build passed or if manually triggered
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success')
 
     steps:
-    - name: Check Image Build Status
-      if: github.event_name == 'workflow_run'
-      run: |
-        echo "Image build workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
-        if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-          echo "❌ Image build failed. Deployment blocked."
-          exit 1
-        fi
-        echo "✅ Docker images built and pushed. Proceeding with deployment."
 
     - name: Checkout code
       uses: actions/checkout@v4
@@ -53,9 +39,17 @@ jobs:
         # Initialize Terraform (GCS backend configured in main.tf)
         terraform init
 
+        # Build terraform command with optional target
+        TARGET_FLAG=""
+        if [ -n "${{ inputs.target }}" ]; then
+          TARGET_FLAG="-target=${{ inputs.target }}"
+          echo "Using targeted apply: ${{ inputs.target }}"
+        fi
+
         # Plan the deployment
         terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
                       -var="region=us-central1" \
+                      $TARGET_FLAG \
                       -out=tfplan
 
         # Apply the deployment
@@ -78,5 +72,13 @@ jobs:
       run: |
         echo "✅ Infrastructure deployment completed successfully!"
         echo "📦 GKE Autopilot cluster is ready"
-        echo "🔧 Operators installed: cert-manager, nginx-ingress, keda, redis, postgresql (CNPG)"
-        echo "📝 Note: App deployments should be done separately via kubectl/helm"
+        echo "🔧 Operators installed: cert-manager, Traefik, Redis, PostgreSQL (CNPG), MinIO"
+        echo "📝 Artifact Registry is ready for Docker images"
+
+    - name: Trigger image build
+      if: success() && inputs.target == ''
+      run: |
+        echo "Triggering Docker image build workflow..."
+        gh workflow run build-images.yml
+      env:
+        GH_TOKEN: ${{ github.token }}
