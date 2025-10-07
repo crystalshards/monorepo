@@ -1,7 +1,7 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (11:31 UTC)
-**Current Phase**: Infrastructure Ready - Security Hardened ✅
+**Last Updated**: 2025-10-07 (12:15 UTC)
+**Current Phase**: Phase 4 - CrystalDocs Core Features Implemented ✅
 
 ## ✅ Done
 
@@ -72,6 +72,12 @@
   - Properly skip CKV_K8S_43 check with inline annotations and workflow config
   - Fixed license compliance check to install shards before listing dependencies
 - ✅ **All Security Scans Passing** - Infrastructure hardened and ready for deployment
+- ✅ **Phase 4 - CrystalDocs Core Features**:
+  - Created Doc and DocVersion models with migrations
+  - Implemented all API endpoints (list, show, version details)
+  - Added MinIO integration via DocsStorageService
+  - Wrote comprehensive specs and factories
+  - Added awscr-s3 dependency
 - ⏳ **NEXT**: Apply Terraform to create infrastructure (requires GCP credentials)
 
 **Deployment Order** (Critical):
@@ -144,10 +150,33 @@
 5. ⏳ Test ingress routing
 6. ⏳ Validate database connections
 
-**Phase 4: Implement CrystalDocs** (1-2 weeks)
-1. Fetch/serve docs from MinIO
-2. Version switcher UI
-3. Search within docs
+**Phase 4: Implement CrystalDocs** (IN PROGRESS ✅)
+
+*Core Data Models:* ✅ DONE
+1. ✅ Create Avram models: Doc, DocVersion
+2. ✅ Write database migrations
+3. ✅ Add model validations and associations
+4. ✅ Create queries for common operations
+
+*API Endpoints:* ✅ COMPLETE
+1. ✅ GET /api/docs - List all documentation packages (with pagination)
+2. ✅ GET /api/docs/:package_name - Get package details with versions
+3. ✅ GET /api/docs/:package_name/:version - Get specific version details
+
+*Storage Integration:* ✅ COMPLETE
+1. ✅ MinIO client setup (awscr-s3 library)
+2. ✅ DocsStorageService implementation
+3. ✅ Presigned URL generation for secure access
+4. ✅ File listing and fetching from MinIO
+
+*Testing:* ✅ COMPLETE
+1. ✅ Specs for all API endpoints
+2. ✅ Factory definitions for test data
+
+*UI Features:* (upcoming)
+1. Version switcher UI
+2. Search within docs
+3. Syntax highlighting
 
 **Phase 5: Other Apps** (ongoing)
 1. crystalgigs MVP
