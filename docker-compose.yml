@@ -58,15 +58,17 @@ services:
       - "8025:8025"  # Web UI
 
   # CrystalShards Registry App
-  shards-registry:
+  crystalshards:
     build:
-      context: ./apps/shards-registry
+      context: ./apps/crystalshards
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
     environment:
+      LUCKY_ENV: development
       DATABASE_URL: postgres://postgres:password@postgres/crystalshards_development
       REDIS_URL: redis://redis:6379
+      SECRET_KEY_BASE: development_secret_key_base_change_in_production
       PORT: 3000
     depends_on:
       postgres:
@@ -74,103 +76,70 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./apps/shards-registry:/app
-    command: ["crystal", "run", "src/crystalshards.cr"]
+      - ./apps/crystalshards:/app
+    command: ["lucky", "dev"]
 
   # CrystalDocs Documentation App
-  shards-docs:
+  crystaldocs:
     build:
-      context: ./apps/shards-docs
+      context: ./apps/crystaldocs
       dockerfile: Dockerfile
     ports:
       - "3001:3001"
     environment:
+      LUCKY_ENV: development
       DATABASE_URL: postgres://postgres:password@postgres/crystaldocs_development
-      REDIS_URL: redis://redis:6379
-      MINIO_ENDPOINT: minio:9000
+      SECRET_KEY_BASE: development_secret_key_base_change_in_production
+      MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       PORT: 3001
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
       minio:
         condition: service_healthy
     volumes:
-      - ./apps/shards-docs:/app
-    command: ["crystal", "run", "src/crystaldocs.cr"]
+      - ./apps/crystaldocs:/app
+    command: ["lucky", "dev"]
 
   # CrystalGigs Job Board App
-  gigs:
+  crystalgigs:
     build:
-      context: ./apps/gigs
+      context: ./apps/crystalgigs
       dockerfile: Dockerfile
     ports:
       - "3002:3002"
     environment:
+      LUCKY_ENV: development
       DATABASE_URL: postgres://postgres:password@postgres/crystalgigs_development
-      REDIS_URL: redis://redis:6379
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
-      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      SECRET_KEY_BASE: development_secret_key_base_change_in_production
       PORT: 3002
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     volumes:
-      - ./apps/gigs:/app
-    command: ["crystal", "run", "src/crystalgigs.cr"]
+      - ./apps/crystalgigs:/app
+    command: ["lucky", "dev"]
 
-  # Background Worker
-  worker:
+  # CrystalBits Blog/Newsletter App
+  crystalbits:
     build:
-      context: ./apps/worker
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgres://postgres:password@postgres/crystalshards_development
-      REDIS_URL: redis://redis:6379
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
-    volumes:
-      - ./apps/worker:/app
-    command: ["crystal", "run", "src/worker.cr"]
-
-  # Admin Interface
-  admin:
-    build:
-      context: ./apps/admin
+      context: ./apps/crystalbits
       dockerfile: Dockerfile
     ports:
-      - "4000:4000"
+      - "3003:3003"
     environment:
-      DATABASE_URL_REGISTRY: postgres://postgres:password@postgres/crystalshards_development
-      DATABASE_URL_DOCS: postgres://postgres:password@postgres/crystaldocs_development
-      DATABASE_URL_GIGS: postgres://postgres:password@postgres/crystalgigs_development
-      REDIS_URL: redis://redis:6379
-      JWT_SECRET: admin_super_secret_jwt_key_change_in_production
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: admin123
-      PORT: 4000
+      LUCKY_ENV: development
+      DATABASE_URL: postgres://postgres:password@postgres/crystalbits_development
+      SECRET_KEY_BASE: development_secret_key_base_change_in_production
+      PORT: 3003
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     volumes:
-      - ./apps/admin:/app
-    command: ["crystal", "run", "src/admin.cr"]
+      - ./apps/crystalbits:/app
+    command: ["lucky", "dev"]
 
 volumes:
   postgres_data:
