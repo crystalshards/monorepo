@@ -8,7 +8,7 @@ describe Api::Shards::Index do
   end
 
   it "returns list of shards" do
-    shard = ShardBox.create &.name("test-shard")
+    shard = ShardFactory.create &.name("test-shard")
       .description("A test shard")
       .repository_url("https://github.com/user/test-shard")
 
@@ -21,7 +21,7 @@ describe Api::Shards::Index do
 
   it "supports pagination" do
     25.times do |i|
-      ShardBox.create &.name("shard-#{i}")
+      ShardFactory.create &.name("shard-#{i}")
         .repository_url("https://github.com/user/shard-#{i}")
     end
 
@@ -34,8 +34,8 @@ describe Api::Shards::Index do
   end
 
   it "supports search by name" do
-    ShardBox.create &.name("awesome-lib").repository_url("https://github.com/user/awesome-lib")
-    ShardBox.create &.name("cool-tool").repository_url("https://github.com/user/cool-tool")
+    ShardFactory.create &.name("awesome-lib").repository_url("https://github.com/user/awesome-lib")
+    ShardFactory.create &.name("cool-tool").repository_url("https://github.com/user/cool-tool")
 
     response = ApiClient.exec(Api::Shards::Index.with(query: "awesome"))
 

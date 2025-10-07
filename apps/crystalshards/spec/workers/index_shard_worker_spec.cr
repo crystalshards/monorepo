@@ -2,11 +2,11 @@ require "../spec_helper"
 
 describe IndexShardWorker do
   it "successfully indexes a shard from repository" do
-    shard = ShardBox.create &.name("kemal")
+    shard = ShardFactory.create &.name("kemal")
       .repository_url("https://github.com/kemalcr/kemal")
       .description("Lightning Fast, Super Simple web framework")
 
-    shard_version = ShardVersionBox.create &.shard_id(shard.id)
+    shard_version = ShardVersionFactory.create &.shard_id(shard.id)
       .version("1.0.0")
       .released_at(Time.utc)
 
@@ -35,10 +35,10 @@ describe IndexShardWorker do
   end
 
   it "extracts GitHub metadata when repository is on GitHub" do
-    shard = ShardBox.create &.name("ameba")
+    shard = ShardFactory.create &.name("ameba")
       .repository_url("https://github.com/crystal-ameba/ameba")
 
-    shard_version = ShardVersionBox.create &.shard_id(shard.id)
+    shard_version = ShardVersionFactory.create &.shard_id(shard.id)
       .version("1.0.0")
       .released_at(Time.utc)
 

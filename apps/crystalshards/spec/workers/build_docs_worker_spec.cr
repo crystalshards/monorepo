@@ -2,10 +2,10 @@ require "../spec_helper"
 
 describe BuildDocsWorker do
   it "updates documentation_url after successful build" do
-    shard = ShardBox.create &.name("kemal")
+    shard = ShardFactory.create &.name("kemal")
       .repository_url("https://github.com/kemalcr/kemal")
 
-    shard_version = ShardVersionBox.create &.shard_id(shard.id)
+    shard_version = ShardVersionFactory.create &.shard_id(shard.id)
       .version("1.0.0")
       .released_at(Time.utc)
 
@@ -33,10 +33,10 @@ describe BuildDocsWorker do
   end
 
   it "handles repositories without buildable docs" do
-    shard = ShardBox.create &.name("test-shard")
+    shard = ShardFactory.create &.name("test-shard")
       .repository_url("https://github.com/user/empty-repo")
 
-    shard_version = ShardVersionBox.create &.shard_id(shard.id)
+    shard_version = ShardVersionFactory.create &.shard_id(shard.id)
       .version("1.0.0")
       .released_at(Time.utc)
 

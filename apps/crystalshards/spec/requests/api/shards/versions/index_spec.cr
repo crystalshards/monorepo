@@ -8,16 +8,16 @@ describe Api::Shards::Versions::Index do
   end
 
   it "returns list of versions for a shard" do
-    shard = ShardBox.create &.name("test-shard")
+    shard = ShardFactory.create &.name("test-shard")
       .description("A test shard")
       .repository_url("https://github.com/user/test-shard")
       .license("MIT")
 
-    version1 = ShardVersionBox.create &.shard_id(shard.id)
+    version1 = ShardVersionFactory.create &.shard_id(shard.id)
       .version("0.1.0")
       .released_at(Time.utc(2024, 1, 1))
 
-    version2 = ShardVersionBox.create &.shard_id(shard.id)
+    version2 = ShardVersionFactory.create &.shard_id(shard.id)
       .version("0.2.0")
       .released_at(Time.utc(2024, 2, 1))
 
@@ -32,8 +32,8 @@ describe Api::Shards::Versions::Index do
   end
 
   it "includes download counts for each version" do
-    shard = ShardBox.create &.name("test-shard")
-    version = ShardVersionBox.create &.shard_id(shard.id).version("0.1.0")
+    shard = ShardFactory.create &.name("test-shard")
+    version = ShardVersionFactory.create &.shard_id(shard.id).version("0.1.0")
 
     DownloadBox.create &.shard_version_id(version.id)
       .ip_address("192.168.1.1")

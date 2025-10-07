@@ -11,7 +11,7 @@ describe Api::Shards::Versions::Show do
   end
 
   it "returns 404 when version not found" do
-    shard = ShardBox.create &.name("test-shard")
+    shard = ShardFactory.create &.name("test-shard")
 
     response = ApiClient.exec(Api::Shards::Versions::Show.with(
       shard_name: "test-shard",
@@ -22,12 +22,12 @@ describe Api::Shards::Versions::Show do
   end
 
   it "returns version details with dependencies" do
-    shard = ShardBox.create &.name("test-shard")
+    shard = ShardFactory.create &.name("test-shard")
       .description("A test shard")
       .repository_url("https://github.com/user/test-shard")
       .license("MIT")
 
-    version = ShardVersionBox.create &.shard_id(shard.id)
+    version = ShardVersionFactory.create &.shard_id(shard.id)
       .version("0.1.0")
       .released_at(Time.utc(2024, 1, 1))
       .commit_sha("abc123")
@@ -54,8 +54,8 @@ describe Api::Shards::Versions::Show do
   end
 
   it "includes download count" do
-    shard = ShardBox.create &.name("test-shard")
-    version = ShardVersionBox.create &.shard_id(shard.id).version("0.1.0")
+    shard = ShardFactory.create &.name("test-shard")
+    version = ShardVersionFactory.create &.shard_id(shard.id).version("0.1.0")
 
     3.times do
       DownloadBox.create &.shard_version_id(version.id)

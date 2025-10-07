@@ -2,7 +2,7 @@ require "../spec_helper"
 
 describe UpdateDependenciesWorker do
   it "parses and stores dependencies from shard.yml metadata" do
-    shard = ShardBox.create &.name("test-shard")
+    shard = ShardFactory.create &.name("test-shard")
       .repository_url("https://github.com/user/test-shard")
 
     metadata = JSON.parse(%(
@@ -18,7 +18,7 @@ describe UpdateDependenciesWorker do
       }
     ))
 
-    shard_version = ShardVersionBox.create &.shard_id(shard.id)
+    shard_version = ShardVersionFactory.create &.shard_id(shard.id)
       .version("1.0.0")
       .released_at(Time.utc)
       .metadata(metadata)
@@ -46,12 +46,12 @@ describe UpdateDependenciesWorker do
   end
 
   it "handles shards with no dependencies" do
-    shard = ShardBox.create &.name("simple-shard")
+    shard = ShardFactory.create &.name("simple-shard")
       .repository_url("https://github.com/user/simple-shard")
 
     metadata = JSON.parse(%({"name": "simple-shard"}))
 
-    shard_version = ShardVersionBox.create &.shard_id(shard.id)
+    shard_version = ShardVersionFactory.create &.shard_id(shard.id)
       .version("1.0.0")
       .released_at(Time.utc)
       .metadata(metadata)
@@ -68,10 +68,10 @@ describe UpdateDependenciesWorker do
   end
 
   it "links dependencies to dependent shards when they exist" do
-    kemal = ShardBox.create &.name("kemal")
+    kemal = ShardFactory.create &.name("kemal")
       .repository_url("https://github.com/kemalcr/kemal")
 
-    test_shard = ShardBox.create &.name("test-shard")
+    test_shard = ShardFactory.create &.name("test-shard")
       .repository_url("https://github.com/user/test-shard")
 
     metadata = JSON.parse(%(
@@ -83,7 +83,7 @@ describe UpdateDependenciesWorker do
       }
     ))
 
-    shard_version = ShardVersionBox.create &.shard_id(test_shard.id)
+    shard_version = ShardVersionFactory.create &.shard_id(test_shard.id)
       .version("1.0.0")
       .released_at(Time.utc)
       .metadata(metadata)

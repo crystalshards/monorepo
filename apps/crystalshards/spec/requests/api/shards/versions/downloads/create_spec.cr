@@ -11,7 +11,7 @@ describe Api::Shards::Versions::Downloads::Create do
   end
 
   it "returns 404 when version not found" do
-    shard = ShardBox.create &.name("test-shard")
+    shard = ShardFactory.create &.name("test-shard")
 
     response = ApiClient.exec(Api::Shards::Versions::Downloads::Create.with(
       shard_name: "test-shard",
@@ -22,8 +22,8 @@ describe Api::Shards::Versions::Downloads::Create do
   end
 
   it "returns 410 when version is yanked" do
-    shard = ShardBox.create &.name("test-shard")
-    version = ShardVersionBox.create &.shard_id(shard.id)
+    shard = ShardFactory.create &.name("test-shard")
+    version = ShardVersionFactory.create &.shard_id(shard.id)
       .version("0.1.0")
       .yanked(true)
 
@@ -38,8 +38,8 @@ describe Api::Shards::Versions::Downloads::Create do
   end
 
   it "tracks download and increments counters" do
-    shard = ShardBox.create &.name("test-shard").total_downloads(0)
-    version = ShardVersionBox.create &.shard_id(shard.id).version("0.1.0")
+    shard = ShardFactory.create &.name("test-shard").total_downloads(0)
+    version = ShardVersionFactory.create &.shard_id(shard.id).version("0.1.0")
 
     initial_download_count = DownloadQuery.new.shard_version_id(version.id).count
 
@@ -59,8 +59,8 @@ describe Api::Shards::Versions::Downloads::Create do
   end
 
   it "captures request metadata" do
-    shard = ShardBox.create &.name("test-shard")
-    version = ShardVersionBox.create &.shard_id(shard.id).version("0.1.0")
+    shard = ShardFactory.create &.name("test-shard")
+    version = ShardVersionFactory.create &.shard_id(shard.id).version("0.1.0")
 
     response = ApiClient.exec(Api::Shards::Versions::Downloads::Create.with(
       shard_name: "test-shard",

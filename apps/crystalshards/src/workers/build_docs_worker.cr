@@ -168,14 +168,14 @@ class BuildDocsWorker < BaseJob
 
   private def guess_content_type(file_path : String) : String
     case File.extname(file_path)
-    when ".html" then "text/html"
-    when ".css"  then "text/css"
-    when ".js"   then "application/javascript"
-    when ".json" then "application/json"
-    when ".png"  then "image/png"
+    when ".html"         then "text/html"
+    when ".css"          then "text/css"
+    when ".js"           then "application/javascript"
+    when ".json"         then "application/json"
+    when ".png"          then "image/png"
     when ".jpg", ".jpeg" then "image/jpeg"
-    when ".svg"  then "image/svg+xml"
-    else "application/octet-stream"
+    when ".svg"          then "image/svg+xml"
+    else                      "application/octet-stream"
     end
   end
 end

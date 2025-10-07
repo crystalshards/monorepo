@@ -1,4 +1,4 @@
-class ShardBox < Avram::Box
+class ShardFactory < Avram::Factory
   def initialize
     name "sample-shard"
     repository_url "https://github.com/crystal-lang/sample-shard"

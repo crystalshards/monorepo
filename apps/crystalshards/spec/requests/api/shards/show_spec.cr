@@ -8,12 +8,12 @@ describe Api::Shards::Show do
   end
 
   it "returns shard details with versions" do
-    shard = ShardBox.create &.name("test-shard")
+    shard = ShardFactory.create &.name("test-shard")
       .description("A test shard")
       .repository_url("https://github.com/user/test-shard")
       .license("MIT")
 
-    version = ShardVersionBox.create &.shard_id(shard.id)
+    version = ShardVersionFactory.create &.shard_id(shard.id)
       .version("0.1.0")
       .released_at(Time.utc)
 
