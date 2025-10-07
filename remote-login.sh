@@ -58,7 +58,7 @@ kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -
     fi
 
     # Perform login
-    if claude login; then
+    if (claude -p 'say hello' || claude /login); then
         touch /workspaces/.claude-ready
         echo ''
         echo '✅ Login successful! Ready file created.'

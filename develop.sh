@@ -3,11 +3,18 @@
 
 cd /workspaces/monorepo
 
+# Determine actual home directory (envbuilder may set HOME=/root even for non-root users)
+if [ "$USER" = "claude" ] || [ "$(whoami)" = "claude" ]; then
+    ACTUAL_HOME="/home/claude"
+else
+    ACTUAL_HOME="$HOME"
+fi
+
 # Set up cache directories in user home (writable by claude user)
-export CLAUDE_CONFIG_DIR="$HOME/.config/claude"
-export XDG_CONFIG_HOME="$HOME/.config"
-export XDG_DATA_HOME="$HOME/.local/share"
-export XDG_CACHE_HOME="$HOME/.cache"
+export CLAUDE_CONFIG_DIR="$ACTUAL_HOME/.config/claude"
+export XDG_CONFIG_HOME="$ACTUAL_HOME/.config"
+export XDG_DATA_HOME="$ACTUAL_HOME/.local/share"
+export XDG_CACHE_HOME="$ACTUAL_HOME/.cache"
 
 # Ensure directories exist
 mkdir -p "$CLAUDE_CONFIG_DIR" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
