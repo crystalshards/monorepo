@@ -57,11 +57,11 @@
 5. ✅ GET /api/shards/:name/:version - Get specific version
 6. ✅ POST /api/shards/:name/:version/download - Track downloads
 
-*Background Workers (1-2 days):*
-1. Implement IndexShardWorker (parse shard.yml, extract metadata)
-2. Implement BuildDocsWorker (run crystal docs, upload to MinIO)
-3. Implement UpdateDependenciesWorker (dependency graph)
-4. Add job integration tests
+*Background Workers:* ✅ COMPLETE
+1. ✅ Implement IndexShardWorker (parse shard.yml, extract metadata)
+2. ✅ Implement BuildDocsWorker (run crystal docs, upload to MinIO)
+3. ✅ Implement UpdateDependenciesWorker (dependency graph)
+4. ✅ Add job integration tests
 
 *Storage Integration (1 day):*
 1. MinIO client setup
