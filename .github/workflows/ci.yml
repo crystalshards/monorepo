@@ -59,6 +59,10 @@ jobs:
       working-directory: ./apps/${{ matrix.app }}
       env:
         DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ matrix.app }}_test
+        MINIO_ENDPOINT: http://localhost:9000
+        MINIO_ACCESS_KEY: minioadmin
+        MINIO_SECRET_KEY: minioadmin
+        MINIO_BUCKET: test-bucket
       run: |
         echo "Running specs for ${{ matrix.app }}..."
         crystal spec || echo "No specs found, skipping..."

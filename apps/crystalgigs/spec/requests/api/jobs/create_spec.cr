@@ -30,7 +30,7 @@ describe Api::Jobs::Create do
 
     response.status_code.should eq(422)
     body = JSON.parse(response.body)
-    body["errors"].should be_a(Array)
+    body["errors"].should be_a(Array(JSON::Any))
   end
 
   it "validates job_type is valid" do
