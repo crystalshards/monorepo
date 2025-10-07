@@ -7,7 +7,7 @@ class CreateOwners::V00000000000006 < Avram::Migrator::Migration::V1
       add_belongs_to shard : Shard, on_delete: :cascade, index: true
       add role : String, default: "maintainer"
 
-      add_index [:user_id, :shard_id], unique: true
+      add_index :user_id, :shard_id, unique: true
     end
   end
 
