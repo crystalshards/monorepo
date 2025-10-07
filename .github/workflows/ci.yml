@@ -2,9 +2,9 @@ name: Continuous Integration
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, develop]
 
 env:
   CRYSTAL_VERSION: "1.17.1"
@@ -34,45 +34,44 @@ jobs:
           - 5432:5432
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Install Crystal
-      uses: crystal-lang/install-crystal@v1
-      with:
-        crystal: ${{ env.CRYSTAL_VERSION }}
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{ env.CRYSTAL_VERSION }}
 
-    - name: Install dependencies
-      working-directory: ./apps/${{ matrix.app }}
-      run: |
-        echo "Installing dependencies for ${{ matrix.app }}..."
-        shards install
+      - name: Install dependencies
+        working-directory: ./apps/${{ matrix.app }}
+        run: |
+          echo "Installing dependencies for ${{ matrix.app }}..."
+          shards install
 
-    - name: Build ${{ matrix.app }}
-      working-directory: ./apps/${{ matrix.app }}
-      run: |
-        echo "Building ${{ matrix.app }}..."
-        crystal build --no-codegen src/${{ matrix.app }}.cr
-        echo "Build successful!"
+      - name: Build ${{ matrix.app }}
+        working-directory: ./apps/${{ matrix.app }}
+        run: |
+          echo "Building ${{ matrix.app }}..."
+          crystal build --no-codegen src/${{ matrix.app }}.cr
+          echo "Build successful!"
 
-    - name: Run specs
-      working-directory: ./apps/${{ matrix.app }}
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ matrix.app }}_test
-        MINIO_ENDPOINT: http://localhost:9000
-        MINIO_ACCESS_KEY: minioadmin
-        MINIO_SECRET_KEY: minioadmin
-        MINIO_BUCKET: test-bucket
-      run: |
-        echo "Running specs for ${{ matrix.app }}..."
-        crystal spec || echo "No specs found, skipping..."
+      - name: Run specs
+        working-directory: ./apps/${{ matrix.app }}
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ matrix.app }}_test
+          MINIO_ENDPOINT: http://localhost:9000
+          MINIO_ACCESS_KEY: minioadmin
+          MINIO_SECRET_KEY: minioadmin
+          MINIO_BUCKET: test-bucket
+        run: |
+          echo "Running specs for ${{ matrix.app }}..."
+          crystal spec
 
-    - name: Format check
-      working-directory: ./apps/${{ matrix.app }}
-      run: |
-        echo "Checking Crystal formatting for ${{ matrix.app }}..."
-        crystal tool format --check src/
-
+      - name: Format check
+        working-directory: ./apps/${{ matrix.app }}
+        run: |
+          echo "Checking Crystal formatting for ${{ matrix.app }}..."
+          crystal tool format --check src/
 
   # Security scanning
   security:
@@ -83,50 +82,50 @@ jobs:
       contents: read
       security-events: write
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Run Trivy vulnerability scanner
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        scan-ref: '.'
-        format: 'sarif'
-        output: 'trivy-results.sarif'
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy-results.sarif"
 
-    - name: Upload Trivy scan results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
-      continue-on-error: true
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: "trivy-results.sarif"
+        continue-on-error: true
 
   # Terraform validation
   terraform:
     name: Terraform Validation
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: '${{ secrets.GCP_SA_KEY }}'
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: "${{ secrets.GCP_SA_KEY }}"
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.6.0
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.0
 
-    - name: Terraform Format
-      working-directory: ./terraform
-      run: terraform fmt -check
+      - name: Terraform Format
+        working-directory: ./terraform
+        run: terraform fmt -check
 
-    - name: Terraform Init
-      working-directory: ./terraform
-      run: terraform init -backend=false
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: terraform init -backend=false
 
-    - name: Terraform Validate
-      working-directory: ./terraform
-      run: terraform validate
+      - name: Terraform Validate
+        working-directory: ./terraform
+        run: terraform validate
