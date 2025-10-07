@@ -57,7 +57,6 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-
     response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
