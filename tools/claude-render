@@ -1,0 +1,218 @@
+#!/usr/bin/env crystal
+
+require "json"
+require "colorize"
+
+# Renders Claude streaming JSON output in a human-readable format
+class ClaudeStreamRenderer
+  def initialize(@io : IO = STDIN, @output : IO = STDOUT)
+    @current_text = ""
+    @in_tool_use = false
+    @tool_name = ""
+  end
+
+  def run
+    buffer = String::Builder.new
+    brace_count = 0
+    in_string = false
+    escape_next = false
+
+    @io.each_line do |line|
+      # Track opening and closing braces to find complete JSON objects
+      # Must handle strings properly since they can contain braces
+      line.each_char do |char|
+        buffer << char
+
+        if escape_next
+          escape_next = false
+          next
+        end
+
+        case char
+        when '\\'
+          if in_string
+            escape_next = true
+          end
+        when '"'
+          in_string = !in_string
+        when '{', '}'
+          if !in_string
+            brace_count += 1 if char == '{'
+            brace_count -= 1 if char == '}'
+
+            # Complete JSON object found
+            if brace_count == 0
+              begin
+                data = JSON.parse(buffer.to_s)
+                process_event(data)
+              rescue ex : JSON::ParseException
+                @output.puts "⚠️  Parse error: #{ex.message}".colorize(:yellow)
+              end
+              buffer = String::Builder.new
+            end
+          end
+        end
+      end
+    end
+  end
+
+  private def process_event(data : JSON::Any)
+    type = data["type"]?.try(&.as_s)
+
+    case type
+    when "system"
+      process_system_event(data)
+    when "stream_event"
+      process_stream_event(data)
+    when "assistant"
+      # Full assistant message - already displayed via deltas
+    when "tool_result"
+      process_tool_result(data)
+    when "user"
+      process_user_message(data)
+    when "result"
+      # Final result - can be shown if needed
+    end
+  end
+
+  private def process_system_event(data : JSON::Any)
+    subtype = data["subtype"]?.try(&.as_s)
+
+    case subtype
+    when "init"
+      model = data["model"]?.try(&.as_s)
+      session_id = data["session_id"]?.try(&.as_s)
+      @output.puts "🚀 Claude initialized".colorize(:green).bold
+      @output.puts "   Model: #{model}".colorize(:cyan)
+      @output.puts "   Session: #{session_id}".colorize(:dark_gray)
+      @output.puts
+    end
+  end
+
+  private def process_stream_event(data : JSON::Any)
+    event = data["event"]?
+    return unless event
+
+    event_type = event["type"]?.try(&.as_s)
+
+    case event_type
+    when "message_start"
+      @output.print "💭 ".colorize(:blue)
+    when "content_block_start"
+      process_content_block_start(event)
+    when "content_block_delta"
+      process_content_block_delta(event)
+    when "content_block_stop"
+      process_content_block_stop(event)
+    when "message_delta"
+      # Message metadata updated
+    when "message_stop"
+      @output.puts if @current_text.empty?
+      @output.puts
+    end
+  end
+
+  private def process_content_block_start(event : JSON::Any)
+    content_block = event["content_block"]?
+    return unless content_block
+
+    block_type = content_block["type"]?.try(&.as_s)
+
+    case block_type
+    when "tool_use"
+      @in_tool_use = true
+      @tool_name = content_block["name"]?.try(&.as_s) || "unknown"
+      tool_id = content_block["id"]?.try(&.as_s)
+      @output.puts if !@current_text.empty?
+      @output.puts
+      @output.puts "🔧 Tool: #{@tool_name}".colorize(:yellow).bold
+      @output.print "   Input: ".colorize(:dark_gray)
+    when "text"
+      @in_tool_use = false
+    end
+  end
+
+  private def process_content_block_delta(event : JSON::Any)
+    delta = event["delta"]?
+    return unless delta
+
+    delta_type = delta["type"]?.try(&.as_s)
+
+    case delta_type
+    when "text_delta"
+      text = delta["text"]?.try(&.as_s) || ""
+      @current_text += text
+      @output.print text
+      @output.flush
+    when "input_json_delta"
+      json = delta["partial_json"]?.try(&.as_s) || ""
+      @output.print json.colorize(:yellow)
+      @output.flush
+    end
+  end
+
+  private def process_content_block_stop(event : JSON::Any)
+    if @in_tool_use
+      @output.puts
+      @in_tool_use = false
+    end
+  end
+
+  private def process_tool_result(data : JSON::Any)
+    tool_use_id = data["tool_use_id"]?.try(&.as_s)
+    is_error = data["is_error"]?.try(&.as_bool) || false
+    content = data["content"]?
+
+    @output.puts
+
+    if is_error
+      @output.puts "❌ Tool Error".colorize(:red).bold
+      if content
+        content.as_a.each do |item|
+          if item["type"]? == "text"
+            @output.puts "   #{item["text"]?}".colorize(:red)
+          end
+        end
+      end
+    else
+      @output.puts "✅ Tool Complete".colorize(:green).bold
+      if content
+        content.as_a.each do |item|
+          if item["type"]? == "text"
+            text = item["text"]?.try(&.as_s) || ""
+            # Truncate long output
+            if text.size > 500
+              @output.puts "   #{text[0..500]}...".colorize(:dark_gray)
+              @output.puts "   (#{text.size} chars total)".colorize(:dark_gray)
+            else
+              @output.puts "   #{text}".colorize(:dark_gray)
+            end
+          end
+        end
+      end
+    end
+    @output.puts
+  end
+
+  private def process_user_message(data : JSON::Any)
+    content = data["content"]?
+    return unless content
+
+    @output.puts
+    @output.puts "👤 User:".colorize(:blue).bold
+    if content.as_s?
+      @output.puts "   #{content.as_s}".colorize(:white)
+    elsif content.as_a?
+      content.as_a.each do |item|
+        if item["type"]? == "text"
+          @output.puts "   #{item["text"]?}".colorize(:white)
+        end
+      end
+    end
+    @output.puts
+  end
+end
+
+# Run the renderer
+renderer = ClaudeStreamRenderer.new
+renderer.run

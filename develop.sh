@@ -47,13 +47,6 @@ echo ""
 # Simple loop
 while true; do
     echo "🤖 Starting next loop..."
-    echo "==========================="
-    # Ensure environment variables are still set (they should persist from above)
-    export CLAUDE_CONFIG_DIR="$ACTUAL_HOME/.config/claude"
-    export XDG_CONFIG_HOME="$ACTUAL_HOME/.config"
-    export XDG_DATA_HOME="$ACTUAL_HOME/.local/share"
-    export XDG_CACHE_HOME="$ACTUAL_HOME/.cache"
-
-    cat PROMPT.md | claude --verbose -p --dangerously-skip-permissions
+    cat PROMPT.md | claude --dangerously-skip-permissions --print --include-partial-messages --output-format=stream-json --verbose | tools/claude-render
     sleep 5
 done
