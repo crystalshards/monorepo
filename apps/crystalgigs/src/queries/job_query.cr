@@ -4,7 +4,7 @@ class JobQuery < Job::BaseQuery
   end
 
   def published
-    where_not_nil(:published_at)
+    where("published_at IS NOT NULL")
   end
 
   def not_expired

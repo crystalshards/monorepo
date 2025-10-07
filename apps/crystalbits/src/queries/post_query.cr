@@ -1,6 +1,6 @@
 class PostQuery < Post::BaseQuery
   def published
-    where_not_nil(:published_at).where("published_at <= ?", Time.utc)
+    where("published_at IS NOT NULL AND published_at <= ?", Time.utc)
   end
 
   def featured
