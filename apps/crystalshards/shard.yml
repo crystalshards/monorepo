@@ -32,7 +32,7 @@ dependencies:
   jwt:
     github: crystal-community/jwt
     version: ~> 1.6.1
-  joobq:
-    github: azutoolkit/joobq
-    version: ~> 0.3.1
+  mosquito:
+    github: mosquito-cr/mosquito
+    version: ~> 1.0
 development_dependencies: {}

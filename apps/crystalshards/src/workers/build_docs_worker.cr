@@ -3,12 +3,9 @@ require "./base_worker"
 module CrystalShards::Workers
   # Worker to build documentation for a shard version
   # This runs crystal docs in a sandboxed environment
-  struct BuildDocsWorker
-    include JoobQ::Job
-    include BaseJob
-
-    def initialize(@shard_name : String, @version : String)
-    end
+  class BuildDocsWorker < BaseJob
+    param shard_name : String
+    param version : String
 
     def perform
       log_info "Building docs for: #{@shard_name}@#{@version}"

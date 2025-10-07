@@ -1,8 +1,8 @@
-require "joobq"
+require "mosquito"
 
 module CrystalShards::Workers
-  # Base job module for shared functionality
-  module BaseJob
+  # Base class for all background jobs
+  abstract class BaseJob < Mosquito::QueuedJob
     # Log helper
     protected def log_info(message : String)
       Log.info { "#{self.class.name}: #{message}" }

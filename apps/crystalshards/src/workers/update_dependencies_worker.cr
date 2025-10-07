@@ -3,12 +3,9 @@ require "./base_worker"
 module CrystalShards::Workers
   # Worker to update dependency graph for a shard
   # This analyzes dependencies and updates reverse dependencies
-  struct UpdateDependenciesWorker
-    include JoobQ::Job
-    include BaseJob
-
-    def initialize(@shard_name : String, @version : String)
-    end
+  class UpdateDependenciesWorker < BaseJob
+    param shard_name : String
+    param version : String
 
     def perform
       log_info "Updating dependencies for: #{@shard_name}@#{@version}"

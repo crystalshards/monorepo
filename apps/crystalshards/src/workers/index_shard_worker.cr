@@ -3,12 +3,9 @@ require "./base_worker"
 module CrystalShards::Workers
   # Worker to index a shard and extract metadata
   # This is enqueued when a new shard version is published
-  struct IndexShardWorker
-    include JoobQ::Job
-    include BaseJob
-
-    def initialize(@shard_name : String, @version : String)
-    end
+  class IndexShardWorker < BaseJob
+    param shard_name : String
+    param version : String
 
     def perform
       log_info "Indexing shard: #{@shard_name}@#{@version}"
