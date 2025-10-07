@@ -8,7 +8,7 @@ class Api::Shards::Versions::Show < ApiAction
       head 404
     else
       version = ShardVersionQuery.new
-        .shard_id(shard.id)
+        .shard_id(shard.id.not_nil!)
         .version(version_number)
         .preload_dependencies
         .preload_downloads

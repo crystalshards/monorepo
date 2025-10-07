@@ -10,7 +10,7 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
       head 404
     else
       version = ShardVersionQuery.new
-        .shard_id(shard.id)
+        .shard_id(shard.id.not_nil!)
         .version(version_number)
         .first?
 
@@ -21,7 +21,7 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
       else
         # Track download
         SaveDownload.create!(
-          shard_version_id: version.id,
+          shard_version_id: version.id.not_nil!,
           ip_address: request.remote_address.to_s,
           user_agent: request.headers["User-Agent"]? || "unknown",
           country_code: request.headers["CF-IPCountry"]?,
