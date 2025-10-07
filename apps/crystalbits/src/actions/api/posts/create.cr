@@ -3,6 +3,14 @@ class Api::Posts::Create < ApiAction
   include Lucky::RateLimit
   rate_limit to: 10, within: 1.hour
 
+  def rate_limit_identifier
+    if addr = request.remote_address
+      addr.to_s
+    else
+      "test:default"
+    end
+  end
+
   post "/api/posts" do
     SavePost.create(params) do |operation, post|
       if post

@@ -4,7 +4,7 @@ describe Api::Shards::Versions::Index do
   it "returns 404 when shard not found" do
     response = ApiClient.exec(Api::Shards::Versions::Index.with(shard_name: "nonexistent"))
 
-    response.status.should eq(404)
+    response.status_code.should eq(404)
   end
 
   it "returns list of versions for a shard" do

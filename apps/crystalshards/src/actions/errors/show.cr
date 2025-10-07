@@ -29,7 +29,12 @@ class Errors::Show < Lucky::ErrorAction
   # If none of the 'render' methods return a response for the raised Exception,
   # Lucky will use this method.
   def default_render(error : Exception) : Lucky::Response
-    error_json DEFAULT_MESSAGE, status: 500
+    if LuckyEnv.test?
+      Lucky::Log.dexter.error { {unhandled_exception: error.message, backtrace: error.backtrace.join("\n")} }
+      error_json "#{DEFAULT_MESSAGE} #{error.message}", status: 500
+    else
+      error_json DEFAULT_MESSAGE, status: 500
+    end
   end
 
   private def error_json(message : String, status : Int, details = nil, param = nil)

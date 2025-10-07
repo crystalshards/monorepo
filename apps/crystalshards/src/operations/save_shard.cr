@@ -6,5 +6,15 @@ class SaveShard < Shard::SaveOperation
   before_save do
     validate_required name, repository_url
     validate_uniqueness_of name
+    validate_url_format
+    total_downloads.value ||= 0_i64
+  end
+
+  private def validate_url_format
+    if url = repository_url.value
+      unless url.starts_with?("http://") || url.starts_with?("https://")
+        repository_url.add_error "must be a valid URL starting with http:// or https://"
+      end
+    end
   end
 end

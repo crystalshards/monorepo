@@ -3,8 +3,9 @@ class SavePost < Post::SaveOperation
     :tags, :published_at, :featured, :view_count
 
   before_save do
-    validate_required title, slug, content, author_name
+    validate_required title, content, author_name
     generate_slug_if_empty
+    validate_required slug
     validate_slug_uniqueness
     generate_excerpt_if_empty
   end

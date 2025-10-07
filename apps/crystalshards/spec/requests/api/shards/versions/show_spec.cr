@@ -7,7 +7,7 @@ describe Api::Shards::Versions::Show do
       version_number: "0.1.0"
     ))
 
-    response.status.should eq(404)
+    response.status_code.should eq(404)
   end
 
   it "returns 404 when version not found" do
@@ -18,7 +18,7 @@ describe Api::Shards::Versions::Show do
       version_number: "999.999.999"
     ))
 
-    response.status.should eq(404)
+    response.status_code.should eq(404)
   end
 
   it "returns version details with dependencies" do

@@ -1,10 +1,10 @@
 class PostQuery < Post::BaseQuery
   def published
-    where("published_at IS NOT NULL AND published_at <= ?", Time.utc)
+    published_at.is_not_nil.published_at.lte(Time.utc)
   end
 
-  def featured
-    where("featured = ?", true)
+  def featured_only
+    featured(true)
   end
 
   def by_tag(tag : String)

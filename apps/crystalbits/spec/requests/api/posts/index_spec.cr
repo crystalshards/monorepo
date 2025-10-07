@@ -28,7 +28,7 @@ describe Api::Posts::Index do
   it "searches by title or content" do
     PostFactory.create &.title("Crystal Language Guide")
     PostFactory.create &.content("This post is about Crystal programming")
-    PostFactory.create &.title("Ruby Tutorial")
+    PostFactory.create &.title("Ruby Tutorial").content("This is about Ruby programming language")
 
     response = ApiClient.exec(Api::Posts::Index, q: "Crystal")
 

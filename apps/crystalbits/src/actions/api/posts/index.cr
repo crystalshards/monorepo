@@ -6,7 +6,7 @@ class Api::Posts::Index < ApiAction
     per_page = params.get?(:per_page).try(&.to_i) || 20
     per_page = [per_page, 100].min
 
-    query = PostQuery.new.published.recent
+    query = PostQuery.new.published
 
     if tag = params.get?(:tag)
       query = query.by_tag(tag)
@@ -17,22 +17,24 @@ class Api::Posts::Index < ApiAction
     end
 
     if params.get?(:featured) == "true"
-      query = query.featured
+      query = query.featured_only
     end
 
     if params.get?(:popular) == "true"
       query = query.popular
+    else
+      query = query.recent
     end
 
     total_count = query.select_count
     offset_value = (page - 1) * per_page
 
-    paginated_posts = query
+    posts = query
       .limit(per_page)
       .offset(offset_value)
 
     json({
-      posts:    paginated_posts.map { |post| serialize_post(post) },
+      posts:    posts.map { |post| serialize_post(post) },
       page:     page,
       per_page: per_page,
       total:    total_count,

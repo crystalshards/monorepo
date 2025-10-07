@@ -2,15 +2,22 @@ require "../../../spec_helper"
 
 describe Api::Shards::Create do
   it "creates a new shard successfully" do
-    response = ApiClient.exec(Api::Shards::Create, body: {
-      name:           "test-shard",
-      description:    "A test shard for Crystal",
-      repository_url: "https://github.com/user/test-shard",
-      homepage_url:   "https://test-shard.org",
-      license:        "MIT",
-      version:        "0.1.0",
-    }.to_json)
+    user = UserFactory.create
 
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name: "test-shard",
+        description: "A test shard for Crystal",
+        repository_url: "https://github.com/user/test-shard",
+        homepage_url: "https://test-shard.org",
+        license: "MIT",
+      },
+      version: "0.1.0"
+    )
+
+    if response.status_code != 201
+      pp! response.status_code, response.body
+    end
     response.should send_json(201)
     json = JSON.parse(response.body)
     json["message"].should eq("Shard created successfully, indexing started")
@@ -24,48 +31,64 @@ describe Api::Shards::Create do
   end
 
   it "validates required fields" do
-    response = ApiClient.exec(Api::Shards::Create, body: {
-      name: "test-shard",
-      # Missing required repository_url and version
-    }.to_json)
+    user = UserFactory.create
+
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name: "test-shard",
+        # Missing required repository_url
+      }
+    )
 
     response.should send_json(422)
     response.body.should contain("errors")
   end
 
   it "validates name uniqueness" do
+    user = UserFactory.create
+
     # Create first shard
     ShardFactory.create &.name("duplicate-shard")
       .repository_url("https://github.com/user/duplicate-shard")
 
     # Attempt to create shard with same name
-    response = ApiClient.exec(Api::Shards::Create, body: {
-      name:           "duplicate-shard",
-      repository_url: "https://github.com/user/duplicate-shard-2",
-      version:        "0.1.0",
-    }.to_json)
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name: "duplicate-shard",
+        repository_url: "https://github.com/user/duplicate-shard-2",
+      },
+      version: "0.1.0"
+    )
 
     response.should send_json(422)
     response.body.should contain("errors")
   end
 
   it "validates repository URL format" do
-    response = ApiClient.exec(Api::Shards::Create, body: {
-      name:           "test-shard",
-      repository_url: "not-a-valid-url",
-      version:        "0.1.0",
-    }.to_json)
+    user = UserFactory.create
+
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name: "test-shard",
+        repository_url: "not-a-valid-url",
+      },
+      version: "0.1.0"
+    )
 
     response.should send_json(422)
     response.body.should contain("errors")
   end
 
   it "allows optional fields" do
-    response = ApiClient.exec(Api::Shards::Create, body: {
-      name:           "minimal-shard",
-      repository_url: "https://github.com/user/minimal-shard",
-      version:        "1.0.0",
-    }.to_json)
+    user = UserFactory.create
+
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name: "minimal-shard",
+        repository_url: "https://github.com/user/minimal-shard",
+      },
+      version: "1.0.0"
+    )
 
     response.should send_json(201)
 
@@ -76,13 +99,17 @@ describe Api::Shards::Create do
   end
 
   it "enqueues indexing worker after creation" do
+    user = UserFactory.create
+
     # Note: In production this would check worker queue
     # For now we just verify the response indicates indexing started
-    response = ApiClient.exec(Api::Shards::Create, body: {
-      name:           "worker-test-shard",
-      repository_url: "https://github.com/user/worker-test-shard",
-      version:        "2.0.0",
-    }.to_json)
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name: "worker-test-shard",
+        repository_url: "https://github.com/user/worker-test-shard",
+      },
+      version: "2.0.0"
+    )
 
     response.should send_json(201)
     response.body.should contain("indexing started")
@@ -96,11 +123,15 @@ describe Api::Shards::Create do
   end
 
   it "validates version format" do
-    response = ApiClient.exec(Api::Shards::Create, body: {
-      name:           "version-test-shard",
-      repository_url: "https://github.com/user/version-test-shard",
-      version:        "invalid-version",
-    }.to_json)
+    user = UserFactory.create
+
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name: "version-test-shard",
+        repository_url: "https://github.com/user/version-test-shard",
+      },
+      version: "invalid-version"
+    )
 
     # Should accept the version for now (IndexShardWorker will validate it)
     # Or return 422 if validation is implemented

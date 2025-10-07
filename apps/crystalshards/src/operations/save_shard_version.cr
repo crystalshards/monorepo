@@ -1,6 +1,6 @@
 class SaveShardVersion < ShardVersion::SaveOperation
   permit_columns :version, :yanked, :released_at, :commit_sha,
-    :crystal_version, :metadata
+    :crystal_version, :metadata, :checksum
 
   before_save do
     validate_required version, released_at, shard_id
