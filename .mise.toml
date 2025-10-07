@@ -2,25 +2,18 @@
 experimental = true
 
 [tools]
-crystal = "latest"
-node = "latest"
-python = "latest"
-terraform = "latest"
-kubectl = "latest"
-helm = "latest"
-go = "latest"
+"aqua:twistedpair/google-cloud-sdk" = "latest"
 "npm:@anthropic-ai/claude-code" = "latest"
 "npm:@devcontainers/cli" = "latest"
 "npm:markdownlint-cli2" = "latest"
-"npm:@go-task/cli" = "latest"
-"aqua:astral-sh/uv" = "0.8.2"
-"aqua:helm/helm" = "latest"
-"aqua:hashicorp/terraform" = "latest"
-"aqua:kubernetes/kubectl" = "latest"
-"aqua:twistedpair/google-cloud-sdk" = "latest"
-"go:github.com/ankitpokhrel/jira-cli/cmd/jira" = "latest"
-"go:github.com/zaquestion/lab" = "latest"
-
+crystal = "latest"
+go = "latest"
+helm = "latest"
+kubectl = "latest"
+node = "latest"
+python = "latest"
+terraform = "latest"
+uv = "latest"
 
 [env]
 LUCKY_ENV = "development"
