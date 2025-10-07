@@ -43,14 +43,19 @@ RUN apk add --no-cache \
     yaml \
     openssl
 
-# Copy the compiled binary
-RUN if [ "$BUILD_TARGET" = "worker" ]; then \
-      echo "worker" > /app/.build_target; \
-    else \
-      echo "crystalshards" > /app/.build_target; \
-    fi
+# Create non-root user (UID 1000 to match Kubernetes security context)
+RUN addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser && \
+    chown -R appuser:appuser /app
 
+# Copy the compiled binary
 COPY --from=builder /app/${BUILD_TARGET} .
+
+# Ensure binary is executable
+RUN chmod +x ./${BUILD_TARGET}
+
+# Switch to non-root user
+USER 1000
 
 # Expose port (3000 for API, not used for worker)
 EXPOSE 3000

@@ -33,8 +33,19 @@ RUN apk add --no-cache \
     yaml \
     openssl
 
+# Create non-root user (UID 1000 to match Kubernetes security context)
+RUN addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser && \
+    chown -R appuser:appuser /app
+
 # Copy the compiled binary
 COPY --from=builder /app/crystaldocs .
+
+# Ensure binary is executable
+RUN chmod +x ./crystaldocs
+
+# Switch to non-root user
+USER 1000
 
 # Expose port
 EXPOSE 3000
