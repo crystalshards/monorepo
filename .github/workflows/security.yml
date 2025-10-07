@@ -108,7 +108,7 @@ jobs:
     
     strategy:
       matrix:
-        app: [shards-registry, shards-docs, admin, simple-registry, simple-lucky-registry]
+        app: [crystalshards, crystaldocs, crystalgigs, crystalbits]
 
     steps:
     - name: Checkout code
@@ -169,7 +169,7 @@ jobs:
         echo "" >> license-report.md
         
         # Check each application's dependencies
-        for app in shards-registry shards-docs admin simple-registry simple-lucky-registry; do
+        for app in crystalshards crystaldocs crystalgigs crystalbits; do
           if [ -f "apps/$app/shard.yml" ]; then
             echo "## $app Dependencies" >> license-report.md
             cd apps/$app
