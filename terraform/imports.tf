@@ -43,6 +43,12 @@ import {
   id = "crystalshards-org/artifactregistry.googleapis.com"
 }
 
+# Import BigQuery dataset for GKE usage metering
+import {
+  to = module.cluster.google_bigquery_dataset.usage
+  id = "projects/crystalshards-org/datasets/gke_usage_metering"
+}
+
 # Import firewall rules
 import {
   to = module.networking.google_compute_firewall.allow_http_https
