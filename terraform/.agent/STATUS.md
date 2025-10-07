@@ -1,6 +1,6 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (10:45 UTC)
+**Last Updated**: 2025-10-07 (11:00 UTC)
 **Current Phase**: Infrastructure Ready - Awaiting Terraform Apply
 
 ## ✅ Done
@@ -16,10 +16,12 @@
 - [x] PostgreSQL clusters (CNPG) for all 4 apps
 - [x] Shared Redis cluster
 - [x] Shared MinIO tenant
-- [x] Application secrets with secure generation ✅ NEW
+- [x] Application secrets with secure generation ✅
   - Cryptographically secure SECRET_KEY_BASE (128 chars, random provider)
   - Dynamic DATABASE_URL fetched from CNPG-generated secrets
   - No hardcoded credentials
+- [x] Health check endpoints (/api/health) for all 4 apps ✅ NEW
+- [x] Kubernetes liveness/readiness probes configured ✅ NEW
 - [x] Terraform validation passing ✅
 - [x] CI builds passing ✅
 
@@ -30,12 +32,12 @@
 - [x] CI: Terraform validation ✅, app builds ✅ (all passing!)
 - [x] Background job system: Migrated from JoobQ to Mosquito ✅
 - [x] Core data models: Shard, ShardVersion, Dependency, Download, Owner ✅
-- [x] SaveOperations for all models (validation and database interactions) ✅ NEW
+- [x] SaveOperations for all models (validation and database interactions) ✅
 - [x] Database migrations for all models with indexes and constraints ✅
 - [x] API endpoints: All endpoints implemented and building successfully ✅
 - [x] Query classes for database operations ✅
 - [x] Test specs and factories for API endpoints ✅
-- [x] shard.lock files generated for all apps ✅ NEW
+- [x] shard.lock files generated for all apps ✅
 
 ## 🚀 Current Status
 
@@ -47,8 +49,10 @@
 - ✅ Removed `--release` flag from Crystal builds (60x faster compilation)
 - ✅ Fixed Terraform validation error (removed unsupported cleanup_policies block)
 - ✅ Updated registry location from `var.region` to `us` multi-region
-- ✅ **NEW**: Added secure secret generation using Terraform random provider
-- ✅ **NEW**: Created comprehensive deployment runbook (terraform/DEPLOYMENT_RUNBOOK.md)
+- ✅ Added secure secret generation using Terraform random provider
+- ✅ Created comprehensive deployment runbook (terraform/DEPLOYMENT_RUNBOOK.md)
+- ✅ **NEW**: Implemented /api/health endpoints for all 4 apps
+- ✅ **NEW**: Added Kubernetes liveness/readiness probes with proper timeouts
 - ✅ Terraform validation passing
 - ⏳ **NEXT**: Apply Terraform to create infrastructure (including Artifact Registry)
 
