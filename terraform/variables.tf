@@ -14,3 +14,9 @@ variable "cluster_name" {
   type        = string
   default     = "crystalshards-cluster"
 }
+
+variable "image_tag" {
+  description = "Docker image tag to deploy (git commit SHA, e.g., 'sha-abc123')"
+  type        = string
+  default     = "dev" # Use 'dev' for initial deployment, should be overridden in production
+}

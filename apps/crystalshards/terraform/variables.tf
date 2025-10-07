@@ -9,7 +9,7 @@ variable "project_id" {
 }
 
 variable "image_tag" {
-  description = "Docker image tag to deploy"
+  description = "Docker image tag to deploy (git commit SHA, e.g., 'sha-abc123')"
   type        = string
-  default     = "latest"
+  # No default - must be explicitly set to prevent accidental 'latest' deployments
 }

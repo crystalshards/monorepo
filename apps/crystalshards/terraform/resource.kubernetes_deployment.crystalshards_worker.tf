@@ -43,12 +43,17 @@ resource "kubernetes_deployment" "crystalshards_worker" {
 
           security_context {
             allow_privilege_escalation = false
-            read_only_root_filesystem  = false
+            read_only_root_filesystem  = true
             run_as_non_root            = true
             run_as_user                = 1000
             capabilities {
               drop = ["ALL"]
             }
+          }
+
+          volume_mount {
+            name       = "tmp"
+            mount_path = "/tmp"
           }
 
           env {
@@ -156,6 +161,11 @@ resource "kubernetes_deployment" "crystalshards_worker" {
             initial_delay_seconds = 30
             period_seconds        = 30
           }
+        }
+
+        volume {
+          name = "tmp"
+          empty_dir {}
         }
       }
     }

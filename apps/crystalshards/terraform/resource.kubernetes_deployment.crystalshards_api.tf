@@ -43,12 +43,17 @@ resource "kubernetes_deployment" "crystalshards_api" {
 
           security_context {
             allow_privilege_escalation = false
-            read_only_root_filesystem  = false # Lucky needs to write tmp files
+            read_only_root_filesystem  = true
             run_as_non_root            = true
             run_as_user                = 1000
             capabilities {
               drop = ["ALL"]
             }
+          }
+
+          volume_mount {
+            name       = "tmp"
+            mount_path = "/tmp"
           }
 
           port {
@@ -178,6 +183,11 @@ resource "kubernetes_deployment" "crystalshards_api" {
             timeout_seconds       = 3
             failure_threshold     = 3
           }
+        }
+
+        volume {
+          name = "tmp"
+          empty_dir {}
         }
       }
     }

@@ -5,6 +5,7 @@ module "applications" {
 
   cluster_name = module.cluster.cluster_name
   project_id   = var.project_id
+  image_tag    = var.image_tag
 
   depends_on = [module.ingress]
 }
