@@ -15,10 +15,10 @@ module CrystalShards
 
       File.open(file_path, "r") do |file|
         @client.put_object(
-          bucket: MinIOConfig.settings.packages_bucket,
-          key: key,
-          body: file.gets_to_end,
-          metadata: HTTP::Headers{
+          MinIOConfig.settings.packages_bucket,
+          key,
+          file.gets_to_end,
+          {
             "Content-Type"    => "application/gzip",
             "X-Shard-Name"    => shard_name,
             "X-Shard-Version" => version,
@@ -29,14 +29,30 @@ module CrystalShards
       key
     end
 
+    # Upload a package from String content (for multipart uploads)
+    # Returns the object key (path in MinIO)
+    def upload_package_from_io(shard_name : String, version : String, content : String) : String
+      key = package_key(shard_name, version)
+
+      @client.put_object(
+        MinIOConfig.settings.packages_bucket,
+        key,
+        content,
+        {
+          "Content-Type"    => "application/gzip",
+          "X-Shard-Name"    => shard_name,
+          "X-Shard-Version" => version,
+        }
+      )
+
+      key
+    end
+
     # Download a package file from MinIO
     # Returns the file contents as a String
     def download_package(shard_name : String, version : String) : String
       key = package_key(shard_name, version)
-      response = @client.get_object(
-        bucket: MinIOConfig.settings.packages_bucket,
-        key: key
-      )
+      response = @client.get_object(MinIOConfig.settings.packages_bucket, key)
       response.body
     end
 
@@ -44,10 +60,7 @@ module CrystalShards
     def package_exists?(shard_name : String, version : String) : Bool
       key = package_key(shard_name, version)
       begin
-        @client.head_object(
-          bucket: MinIOConfig.settings.packages_bucket,
-          key: key
-        )
+        @client.head_object(MinIOConfig.settings.packages_bucket, key)
         true
       rescue ex : Awscr::S3::Exception
         false
@@ -75,10 +88,10 @@ module CrystalShards
 
         File.open(file_path, "r") do |file|
           @client.put_object(
-            bucket: MinIOConfig.settings.docs_bucket,
-            key: key,
-            body: file.gets_to_end,
-            metadata: HTTP::Headers{
+            MinIOConfig.settings.docs_bucket,
+            key,
+            file.gets_to_end,
+            {
               "Content-Type"    => content_type,
               "X-Shard-Name"    => shard_name,
               "X-Shard-Version" => version,
@@ -95,10 +108,7 @@ module CrystalShards
     # Get documentation file from MinIO
     def download_doc(shard_name : String, version : String, file_path : String) : String
       key = docs_key(shard_name, version, file_path)
-      response = @client.get_object(
-        bucket: MinIOConfig.settings.docs_bucket,
-        key: key
-      )
+      response = @client.get_object(MinIOConfig.settings.docs_bucket, key)
       response.body
     end
 
@@ -106,10 +116,7 @@ module CrystalShards
     def docs_exist?(shard_name : String, version : String) : Bool
       key = docs_key(shard_name, version, "index.html")
       begin
-        @client.head_object(
-          bucket: MinIOConfig.settings.docs_bucket,
-          key: key
-        )
+        @client.head_object(MinIOConfig.settings.docs_bucket, key)
         true
       rescue ex : Awscr::S3::Exception
         false

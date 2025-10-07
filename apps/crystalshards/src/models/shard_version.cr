@@ -6,6 +6,7 @@ class ShardVersion < BaseModel
     column commit_sha : String?
     column crystal_version : String?
     column metadata : JSON::Any?
+    column checksum : String?
 
     belongs_to shard : Shard
     has_many dependencies : Dependency
