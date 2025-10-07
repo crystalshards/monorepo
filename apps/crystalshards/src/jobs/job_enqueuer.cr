@@ -1,4 +1,4 @@
-require "joobq"
+require "mosquito"
 require "../workers/*"
 
 module CrystalShards::Jobs
