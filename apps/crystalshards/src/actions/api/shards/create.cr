@@ -1,6 +1,9 @@
 require "../../../services/storage_service"
 
 class Api::Shards::Create < ApiAction
+  include Lucky::RateLimit
+  rate_limit to: 10, within: 1.hour
+
   post "/api/shards" do
     # Accept JSON payload with shard metadata
     # File upload is handled by a separate endpoint for now

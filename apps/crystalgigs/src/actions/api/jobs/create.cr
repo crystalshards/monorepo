@@ -1,4 +1,7 @@
 class Api::Jobs::Create < ApiAction
+  include Lucky::RateLimit
+  rate_limit to: 5, within: 1.hour
+
   post "/api/jobs" do
     SaveJob.create(params) do |operation, job|
       if job

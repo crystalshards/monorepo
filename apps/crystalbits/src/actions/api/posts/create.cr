@@ -1,4 +1,7 @@
 class Api::Posts::Create < ApiAction
+  include Lucky::RateLimit
+  rate_limit to: 10, within: 1.hour
+
   post "/api/posts" do
     SavePost.create(params) do |operation, post|
       if post

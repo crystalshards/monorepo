@@ -2,6 +2,8 @@ require "../../../../../services/storage_service"
 
 class Api::Shards::Versions::Downloads::Create < ApiAction
   include Api::Auth::SkipRequireAuthToken
+  include Lucky::RateLimit
+  rate_limit to: 100, within: 1.hour
 
   post "/api/shards/:shard_name/:version_number/download" do
     shard = ShardQuery.new.name(shard_name).first?
