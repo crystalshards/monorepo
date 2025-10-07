@@ -32,7 +32,7 @@ describe Api::Shards::Versions::Show do
       .released_at(Time.utc(2024, 1, 1))
       .commit_sha("abc123")
 
-    dep = DependencyBox.create &.shard_version_id(version.id)
+    dep = DependencyFactory.create &.shard_version_id(version.id)
       .name("dependency-shard")
       .version_requirement("~> 1.0")
       .scope("runtime")
@@ -58,7 +58,8 @@ describe Api::Shards::Versions::Show do
     version = ShardVersionFactory.create &.shard_id(shard.id).version("0.1.0")
 
     3.times do
-      DownloadBox.create &.shard_version_id(version.id)
+      DownloadFactory.create &.shard_version_id(version.id)
+        .shard_id(shard.id)
         .ip_address("192.168.1.1")
         .user_agent("Test")
         .downloaded_at(Time.utc)

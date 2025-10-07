@@ -21,6 +21,7 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
       else
         # Track download
         SaveDownload.create!(
+          shard_id: shard.id.not_nil!,
           shard_version_id: version.id.not_nil!,
           ip_address: request.remote_address.to_s,
           user_agent: request.headers["User-Agent"]? || "unknown",

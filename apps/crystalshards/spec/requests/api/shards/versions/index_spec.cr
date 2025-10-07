@@ -35,12 +35,14 @@ describe Api::Shards::Versions::Index do
     shard = ShardFactory.create &.name("test-shard")
     version = ShardVersionFactory.create &.shard_id(shard.id).version("0.1.0")
 
-    DownloadBox.create &.shard_version_id(version.id)
+    DownloadFactory.create &.shard_version_id(version.id)
+      .shard_id(shard.id)
       .ip_address("192.168.1.1")
       .user_agent("Test")
       .downloaded_at(Time.utc)
 
-    DownloadBox.create &.shard_version_id(version.id)
+    DownloadFactory.create &.shard_version_id(version.id)
+      .shard_id(shard.id)
       .ip_address("192.168.1.2")
       .user_agent("Test")
       .downloaded_at(Time.utc)

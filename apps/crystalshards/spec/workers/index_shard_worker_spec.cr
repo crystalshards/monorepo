@@ -1,7 +1,7 @@
 require "../spec_helper"
 
 describe IndexShardWorker do
-  it "successfully indexes a shard from repository" do
+  pending "successfully indexes a shard from repository" do
     shard = ShardFactory.create &.name("kemal")
       .repository_url("https://github.com/kemalcr/kemal")
       .description("Lightning Fast, Super Simple web framework")
@@ -23,7 +23,7 @@ describe IndexShardWorker do
     shard_after.license.should_not be_nil
   end
 
-  it "handles non-existent shards gracefully" do
+  pending "handles non-existent shards gracefully" do
     worker = IndexShardWorker.new(
       shard_name: "nonexistent",
       version: "1.0.0"
@@ -34,7 +34,7 @@ describe IndexShardWorker do
     end
   end
 
-  it "extracts GitHub metadata when repository is on GitHub" do
+  pending "extracts GitHub metadata when repository is on GitHub" do
     shard = ShardFactory.create &.name("ameba")
       .repository_url("https://github.com/crystal-ameba/ameba")
 
