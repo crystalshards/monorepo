@@ -19,9 +19,9 @@ module CrystalShards
           key: key,
           body: file.gets_to_end,
           metadata: HTTP::Headers{
-            "Content-Type" => "application/gzip",
-            "X-Shard-Name" => shard_name,
-            "X-Shard-Version" => version
+            "Content-Type"    => "application/gzip",
+            "X-Shard-Name"    => shard_name,
+            "X-Shard-Version" => version,
           }
         )
       end
@@ -66,12 +66,12 @@ module CrystalShards
         key = docs_key(shard_name, version, relative_path)
 
         content_type = case File.extname(file_path)
-        when ".html" then "text/html"
-        when ".css"  then "text/css"
-        when ".js"   then "application/javascript"
-        when ".json" then "application/json"
-        else "application/octet-stream"
-        end
+                       when ".html" then "text/html"
+                       when ".css"  then "text/css"
+                       when ".js"   then "application/javascript"
+                       when ".json" then "application/json"
+                       else              "application/octet-stream"
+                       end
 
         File.open(file_path, "r") do |file|
           @client.put_object(
@@ -79,9 +79,9 @@ module CrystalShards
             key: key,
             body: file.gets_to_end,
             metadata: HTTP::Headers{
-              "Content-Type" => content_type,
-              "X-Shard-Name" => shard_name,
-              "X-Shard-Version" => version
+              "Content-Type"    => content_type,
+              "X-Shard-Name"    => shard_name,
+              "X-Shard-Version" => version,
             }
           )
         end
