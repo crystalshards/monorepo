@@ -7,3 +7,9 @@ variable "project_id" {
   description = "The GCP project ID"
   type        = string
 }
+
+variable "image_tag" {
+  description = "Docker image tag to deploy (git commit SHA or 'latest')"
+  type        = string
+  default     = "latest"
+}

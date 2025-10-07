@@ -4,4 +4,5 @@ module "crystalshards" {
 
   cluster_name = var.cluster_name
   project_id   = var.project_id
+  image_tag    = var.image_tag
 }

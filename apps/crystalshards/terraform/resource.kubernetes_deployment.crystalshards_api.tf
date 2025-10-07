@@ -28,9 +28,28 @@ resource "kubernetes_deployment" "crystalshards_api" {
       }
 
       spec {
+        security_context {
+          run_as_non_root = true
+          run_as_user     = 1000
+          fs_group        = 1000
+          seccomp_profile {
+            type = "RuntimeDefault"
+          }
+        }
+
         container {
           name  = "api"
-          image = "us-docker.pkg.dev/${var.project_id}/crystalshards/crystalshards:latest"
+          image = "us-docker.pkg.dev/${var.project_id}/crystalshards/crystalshards:${var.image_tag}"
+
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = false # Lucky needs to write tmp files
+            run_as_non_root            = true
+            run_as_user                = 1000
+            capabilities {
+              drop = ["ALL"]
+            }
+          }
 
           port {
             container_port = 3000
