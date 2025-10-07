@@ -2,6 +2,7 @@ require "../../../services/storage_service"
 require "digest/sha256"
 
 class Api::Shards::Upload < ApiAction
+  include Api::Auth::RequireAuthToken
   include Lucky::RateLimit
   rate_limit to: 10, within: 1.hour
 

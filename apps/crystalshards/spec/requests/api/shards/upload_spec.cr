@@ -3,6 +3,8 @@ require "digest/sha256"
 
 describe Api::Shards::Upload do
   it "uploads a package with multipart form data" do
+    user = UserFactory.create
+
     # Create test package content
     package_content = "fake tar.gz content for testing"
     checksum = Digest::SHA256.hexdigest(package_content)
@@ -26,7 +28,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.exec(
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
       body: io.to_s
@@ -46,6 +48,7 @@ describe Api::Shards::Upload do
   end
 
   it "validates required fields are present" do
+    user = UserFactory.create
     io = IO::Memory.new
     builder = HTTP::FormData::Builder.new(io, "boundary123")
 
@@ -54,7 +57,8 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.exec(
+
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
       body: io.to_s
@@ -66,6 +70,7 @@ describe Api::Shards::Upload do
 
   it "validates package file extension" do
     package_content = "fake content"
+    user = UserFactory.create
 
     io = IO::Memory.new
     builder = HTTP::FormData::Builder.new(io, "boundary123")
@@ -82,7 +87,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.exec(
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
       body: io.to_s
@@ -95,6 +100,7 @@ describe Api::Shards::Upload do
   it "validates checksum when provided" do
     package_content = "fake tar.gz content"
     wrong_checksum = "0000000000000000000000000000000000000000000000000000000000000000"
+    user = UserFactory.create
 
     io = IO::Memory.new
     builder = HTTP::FormData::Builder.new(io, "boundary123")
@@ -112,7 +118,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.exec(
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
       body: io.to_s
@@ -127,6 +133,7 @@ describe Api::Shards::Upload do
 
   it "computes checksum when not provided" do
     package_content = "fake tar.gz content"
+    user = UserFactory.create
 
     io = IO::Memory.new
     builder = HTTP::FormData::Builder.new(io, "boundary123")
@@ -143,7 +150,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.exec(
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
       body: io.to_s
@@ -155,7 +162,9 @@ describe Api::Shards::Upload do
   end
 
   it "rejects non-multipart content type" do
-    response = ApiClient.exec(
+    user = UserFactory.create
+
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "application/json"},
       body: {name: "json-shard"}.to_json
@@ -167,6 +176,7 @@ describe Api::Shards::Upload do
 
   it "handles optional fields correctly" do
     package_content = "minimal package content"
+    user = UserFactory.create
     checksum = Digest::SHA256.hexdigest(package_content)
 
     io = IO::Memory.new
@@ -184,7 +194,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.exec(
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
       body: io.to_s
@@ -201,6 +211,7 @@ describe Api::Shards::Upload do
   it "creates shard version with correct checksum" do
     package_content = "versioned package content"
     checksum = Digest::SHA256.hexdigest(package_content)
+    user = UserFactory.create
 
     io = IO::Memory.new
     builder = HTTP::FormData::Builder.new(io, "boundary123")
@@ -217,7 +228,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.exec(
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
       body: io.to_s
@@ -237,6 +248,7 @@ describe Api::Shards::Upload do
   it "prevents duplicate version uploads" do
     package_content = "first upload content"
 
+    user = UserFactory.create
     # First upload
     io = IO::Memory.new
     builder = HTTP::FormData::Builder.new(io, "boundary123")
@@ -250,7 +262,7 @@ describe Api::Shards::Upload do
     )
     builder.finish
 
-    response = ApiClient.exec(
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
       body: io.to_s
@@ -271,7 +283,7 @@ describe Api::Shards::Upload do
     )
     builder2.finish
 
-    response2 = ApiClient.exec(
+    response2 = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary456"},
       body: io2.to_s
@@ -283,6 +295,7 @@ describe Api::Shards::Upload do
   it "rejects packages exceeding size limit" do
     # Create a package content larger than 50 MB
     large_content = "x" * (51 * 1024 * 1024)
+    user = UserFactory.create
 
     io = IO::Memory.new
     builder = HTTP::FormData::Builder.new(io, "boundary123")
@@ -296,7 +309,7 @@ describe Api::Shards::Upload do
     )
     builder.finish
 
-    response = ApiClient.exec(
+    response = ApiClient.auth(user).exec(
       Api::Shards::Upload,
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
       body: io.to_s
@@ -306,5 +319,29 @@ describe Api::Shards::Upload do
     json = JSON.parse(response.body)
     json["error"].should eq("Package size exceeds maximum allowed size")
     json["max_size_mb"].should eq(50)
+  end
+
+  it "requires authentication" do
+    package_content = "test content"
+
+    io = IO::Memory.new
+    builder = HTTP::FormData::Builder.new(io, "boundary123")
+    builder.field("name", "auth-test-shard")
+    builder.field("version", "1.0.0")
+    builder.field("repository_url", "https://github.com/user/auth-test-shard")
+    builder.file(
+      "package",
+      IO::Memory.new(package_content),
+      HTTP::FormData::FileMetadata.new(filename: "package.tar.gz")
+    )
+    builder.finish
+
+    response = ApiClient.exec(
+      Api::Shards::Upload,
+      headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
+      body: io.to_s
+    )
+
+    response.status_code.should eq(401)
   end
 end
