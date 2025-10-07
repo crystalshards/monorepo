@@ -23,7 +23,7 @@ class Api::Health::Show < ApiAction
   end
 
   private def check_redis : String
-    redis = Redis::Client.new(url: ENV["REDIS_URL"]? || "redis://localhost:6379")
+    redis = Redis::Client.new(uri: URI.parse(ENV["REDIS_URL"]? || "redis://localhost:6379"))
     redis.ping
     "healthy"
   rescue ex
