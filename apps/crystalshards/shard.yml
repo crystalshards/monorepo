@@ -35,4 +35,7 @@ dependencies:
   mosquito:
     github: mosquito-cr/mosquito
     version: ~> 1.0
+  awscr-s3:
+    github: taylorfinnell/awscr-s3
+    version: ~> 0.8.0
 development_dependencies: {}

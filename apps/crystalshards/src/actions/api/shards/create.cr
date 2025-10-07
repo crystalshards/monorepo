@@ -1,7 +1,10 @@
+require "../../../services/storage_service"
+
 class Api::Shards::Create < ApiAction
   post "/api/shards" do
-    # TODO: Extract shard info from request
-    # This will need to parse uploaded shard.yml or fetch from git repo
+    # Accept JSON payload with shard metadata
+    # File upload is handled by a separate endpoint for now
+    # TODO: Add multipart support using Shrine or similar
 
     SaveShard.create(
       name: params.get("name"),
@@ -12,14 +15,16 @@ class Api::Shards::Create < ApiAction
       license: params.get?("license")
     ) do |operation, shard|
       if shard
-        # Enqueue worker to index the shard
+        version_string = params.get("version")
+
+        # Enqueue worker to index the shard (parse shard.yml, create version, upload package)
         IndexShardWorker.new(
           shard_name: shard.name,
-          version: params.get("version")
+          version: version_string
         ).enqueue
 
         json({
-          message: "Shard created successfully",
+          message: "Shard created successfully, indexing started",
           shard:   {
             id:   shard.id,
             name: shard.name,

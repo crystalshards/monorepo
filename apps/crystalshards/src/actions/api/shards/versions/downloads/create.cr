@@ -1,3 +1,5 @@
+require "../../../../../services/storage_service"
+
 class Api::Shards::Versions::Downloads::Create < ApiAction
   include Api::Auth::SkipRequireAuthToken
 
@@ -17,6 +19,7 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
       elsif version.yanked
         json({error: "This version has been yanked and is no longer available"}, status: 410)
       else
+        # Track download
         SaveDownload.create!(
           shard_version_id: version.id,
           ip_address: request.remote_address.to_s,
@@ -27,11 +30,22 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
 
         SaveShard.update!(shard, total_downloads: shard.total_downloads + 1)
 
-        json({
-          shard_name: shard.name,
-          version:    version.version,
-          message:    "Download tracked successfully",
-        })
+        # Return presigned URL for actual download
+        # This allows MinIO to serve the file directly without going through our app
+        begin
+          storage = CrystalShards::StorageService.new
+          download_url = storage.package_download_url(shard.name, version.version)
+
+          json({
+            shard_name:   shard.name,
+            version:      version.version,
+            download_url: download_url,
+            message:      "Download URL generated",
+          })
+        rescue ex
+          Log.error { "Failed to generate download URL: #{ex.message}" }
+          json({error: "Package not available"}, status: 500)
+        end
       end
     end
   end

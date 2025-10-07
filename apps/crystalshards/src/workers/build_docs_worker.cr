@@ -1,4 +1,5 @@
 require "./base_worker"
+require "../services/storage_service"
 
 class BuildDocsWorker < BaseJob
   param shard_name : String
@@ -114,68 +115,13 @@ class BuildDocsWorker < BaseJob
   end
 
   private def upload_to_storage(shard : Shard, shard_version : ShardVersion, docs_dir : String) : String
-    minio_endpoint = ENV["MINIO_ENDPOINT"]? || "minio.infrastructure.svc.cluster.local:9000"
-    minio_access_key = ENV["MINIO_ACCESS_KEY"]? || "minioadmin"
-    minio_secret_key = ENV["MINIO_SECRET_KEY"]? || "minioadmin"
-    bucket_name = "crystaldocs"
+    storage = CrystalShards::StorageService.new
+    uploaded_keys = storage.upload_docs(shard.name, shard_version.version, docs_dir)
 
-    docs_path = "#{shard.name}/#{shard_version.version}"
-
-    Dir.glob("#{docs_dir}/**/*").each do |file_path|
-      next unless File.file?(file_path)
-
-      relative_path = file_path.sub("#{docs_dir}/", "")
-      object_key = "#{docs_path}/#{relative_path}"
-
-      upload_file_to_minio(
-        endpoint: minio_endpoint,
-        access_key: minio_access_key,
-        secret_key: minio_secret_key,
-        bucket: bucket_name,
-        object_key: object_key,
-        file_path: file_path
-      )
-    end
-
-    log_info "Uploaded docs to MinIO: #{docs_path}"
-    "https://crystaldocs.org/#{docs_path}"
-  end
-
-  private def upload_file_to_minio(endpoint : String, access_key : String, secret_key : String, bucket : String, object_key : String, file_path : String)
-    http_client = HTTP::Client.new(endpoint.split(":")[0], endpoint.split(":")[1].to_i)
-
-    file_content = File.read(file_path)
-    content_type = guess_content_type(file_path)
-
-    date = Time.utc.to_s("%Y%m%dT%H%M%SZ")
-    authorization = "AWS4-HMAC-SHA256 Credential=#{access_key}/#{date[0..7]}/us-east-1/s3/aws4_request"
-
-    headers = HTTP::Headers{
-      "Host"           => endpoint,
-      "Content-Type"   => content_type,
-      "Content-Length" => file_content.bytesize.to_s,
-      "Authorization"  => authorization,
-    }
-
-    response = http_client.put("/#{bucket}/#{object_key}", headers: headers, body: file_content)
-
-    unless response.status_code == 200
-      log_error "Failed to upload #{object_key}: #{response.status_code}"
-    end
+    log_info "Uploaded #{uploaded_keys.size} documentation files to MinIO"
+    "https://crystaldocs.org/#{shard.name}/#{shard_version.version}"
   rescue ex : Exception
-    log_error "Error uploading file to MinIO: #{file_path}", ex
-  end
-
-  private def guess_content_type(file_path : String) : String
-    case File.extname(file_path)
-    when ".html"         then "text/html"
-    when ".css"          then "text/css"
-    when ".js"           then "application/javascript"
-    when ".json"         then "application/json"
-    when ".png"          then "image/png"
-    when ".jpg", ".jpeg" then "image/jpeg"
-    when ".svg"          then "image/svg+xml"
-    else                      "application/octet-stream"
-    end
+    log_error "Error uploading docs to MinIO", ex
+    raise ex
   end
 end
