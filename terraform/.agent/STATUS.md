@@ -65,11 +65,15 @@
 **ACTION REQUIRED**: Terraform must be applied to create Artifact Registry before Docker images can be built
 
 **Recent Progress** (2025-10-07):
-- ✅ **Multipart File Upload** (Issue #1):
+- ✅ **Upload Endpoint Security & Validation** (Issue #1 + enhancements):
   - Implemented POST /api/shards/upload endpoint with multipart/form-data support
+  - **Authentication required** (Api::Auth::RequireAuthToken) - prevents anonymous uploads
+  - **50 MB size limit** - prevents memory exhaustion from large files
   - SHA256 checksum validation (client-provided or auto-computed)
+  - Duplicate version upload prevention (database unique constraint)
   - Added checksum field to ShardVersion model (migration 10)
-  - Comprehensive test coverage: 8 specs for validation, checksums, file types
+  - Comprehensive test coverage: 11 specs including auth, size limits, duplicates
+  - OpenAPI spec updated with security requirements and all error responses
   - All CI tests passing ✅
 - ✅ **Phase 6 Complete - Production Hardening**:
   - Added OpenAPI 3.0 specs for all 4 apps (1447 lines of comprehensive API documentation)
