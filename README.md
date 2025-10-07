@@ -37,16 +37,16 @@ Following the "less is more" approach - a simple prompt drives continuous develo
 
 1. **CrystalShards.org** - Package registry like rubygems.org
 2. **CrystalDocs.org** - Documentation platform like docs.rs
-3. **CrystalGigs.com** - Paid job board for Crystal developers
+3. **CrystalGigs.com** - Job board for Crystal developers
+4. **CrystalBits.org** - Newsletter/blog platform
 
 Features:
 
 - Full-text search, dependency graphs, download stats
-- Automated documentation generation in sandboxed K8s jobs
-- Stripe integration for paid job postings
+- Automated documentation generation with background workers
 - Everything runs in-cluster (no external cloud services)
-- KEDA autoscaling (scale to zero when idle)
-- Cost-optimized with Heroku-style scale-on-request
+- Security-hardened with non-root containers and minimal capabilities
+- GKE Autopilot for automatic scaling and optimization
 
 ## Files
 
@@ -59,23 +59,27 @@ Features:
 ## Architecture
 
 ```
-/apps/crystalshards     - Main registry (Lucky app)
+/apps/crystalshards     - Main registry (Lucky app + Mosquito workers)
 /apps/crystaldocs       - Documentation platform (Lucky app)
-/apps/crystalgigs       - Job board with payments (Lucky app)
-/apps/worker           - Background job processor
-/infrastructure/terraform - GKE cluster setup
-/infrastructure/kubernetes - K8s manifests & operators
-/shared                - Shared Crystal code/models
-/.github/workflows     - CI/CD pipelines
+/apps/crystalgigs       - Job board (Lucky app)
+/apps/crystalbits       - Newsletter/blog (Lucky app)
+/terraform              - Infrastructure as Code (GKE, K8s resources)
+  /modules/networking   - VPC, subnets, Cloud NAT
+  /modules/cluster      - GKE Autopilot cluster
+  /modules/operators    - Infrastructure operators
+  /modules/ingress      - Traefik + external-dns
+  /modules/applications - App-specific K8s resources
+/.github/workflows      - CI/CD pipelines
 ```
 
 ## In-Cluster Services
 
-- **PostgreSQL**: CloudNativePG operator
-- **Redis**: Redis operator
-- **Object Storage**: MinIO
-- **Autoscaling**: KEDA
-- **Ingress**: NGINX with cert-manager
+- **PostgreSQL**: CloudNativePG operator (per-app databases)
+- **Redis**: Redis operator (shared cluster)
+- **Object Storage**: MinIO operator (packages & docs)
+- **Background Jobs**: Mosquito (Crystal job framework)
+- **Ingress**: Traefik with cert-manager
+- **Monitoring**: Prometheus + Grafana
 
 ## Monitoring
 
@@ -116,12 +120,12 @@ The agent:
 
 ## Cost Control
 
-- KEDA autoscaling (scale to zero when idle)
-- Apps wake on HTTP request (Heroku-style)
-- In-cluster databases (no cloud SQL costs)
-- MinIO for object storage (no cloud storage costs)
-- Agent: 5 second sleep between iterations
-- Easy to stop: `kubectl delete pod crystalshards-agent -n claude`
+- GKE Autopilot (pay only for running pods, automatic bin-packing)
+- In-cluster databases with CNPG (no Cloud SQL costs)
+- MinIO for object storage (no Cloud Storage costs)
+- Traefik ingress (no external load balancer costs per app)
+- Resource limits on all pods for predictable costs
+- Estimated monthly cost: $185-310
 
 ## GitHub Setup Required
 
