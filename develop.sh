@@ -3,15 +3,14 @@
 
 cd /workspaces/monorepo
 
-# Set up persistent Claude config directory
-export CLAUDE_CONFIG_DIR="/workspaces/.claude-config"
-export XDG_CONFIG_HOME="/workspaces/.claude-config"
-export XDG_DATA_HOME="/workspaces/.claude-data"
-export XDG_CACHE_HOME="/workspaces/.claude-cache"
+# Set up cache directories in user home (writable by claude user)
+export CLAUDE_CONFIG_DIR="$HOME/.config/claude"
+export XDG_CONFIG_HOME="$HOME/.config"
+export XDG_DATA_HOME="$HOME/.local/share"
+export XDG_CACHE_HOME="$HOME/.cache"
 
-# Ensure directories exist with proper permissions
+# Ensure directories exist
 mkdir -p "$CLAUDE_CONFIG_DIR" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
-chmod -R 755 "$CLAUDE_CONFIG_DIR" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
 
 eval "$(mise activate bash)"
 
