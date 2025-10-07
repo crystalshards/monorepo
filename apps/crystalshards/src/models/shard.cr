@@ -6,7 +6,7 @@ class Shard < BaseModel
     column homepage_url : String?
     column documentation_url : String?
     column license : String?
-    column total_downloads : Int64, default: 0
+    column total_downloads : Int64
     column github_stars : Int32?
     column github_forks : Int32?
     column last_synced_at : Time?
