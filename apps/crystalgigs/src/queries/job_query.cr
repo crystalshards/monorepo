@@ -1,0 +1,38 @@
+class JobQuery < Job::BaseQuery
+  def active
+    active(true)
+  end
+
+  def published
+    where_not_nil(:published_at)
+  end
+
+  def not_expired
+    where("expires_at IS NULL OR expires_at > ?", Time.utc)
+  end
+
+  def featured
+    featured(true)
+  end
+
+  def remote
+    remote(true)
+  end
+
+  def by_job_type(type : String)
+    job_type(type)
+  end
+
+  def by_location(location : String)
+    where("location ILIKE ?", "%#{location}%")
+  end
+
+  def search(query : String)
+    where("title ILIKE ? OR description ILIKE ? OR company_name ILIKE ?",
+      "%#{query}%", "%#{query}%", "%#{query}%")
+  end
+
+  def recent
+    order_by(:published_at, :desc)
+  end
+end
