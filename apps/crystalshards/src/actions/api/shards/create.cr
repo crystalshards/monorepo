@@ -6,8 +6,7 @@ class Api::Shards::Create < ApiAction
 
   post "/api/shards" do
     # Accept JSON payload with shard metadata
-    # File upload is handled by a separate endpoint for now
-    # TODO: Add multipart support using Shrine or similar
+    # For file uploads with packages, use POST /api/shards/upload (multipart/form-data)
 
     SaveShard.create(
       name: params.get("name"),
