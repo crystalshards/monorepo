@@ -233,4 +233,50 @@ describe Api::Shards::Upload do
     version.try(&.version).should eq("2.5.3")
     version.try(&.checksum).should eq(checksum)
   end
+
+  it "prevents duplicate version uploads" do
+    package_content = "first upload content"
+
+    # First upload
+    io = IO::Memory.new
+    builder = HTTP::FormData::Builder.new(io, "boundary123")
+    builder.field("name", "duplicate-test-shard")
+    builder.field("version", "1.0.0")
+    builder.field("repository_url", "https://github.com/user/duplicate-test-shard")
+    builder.file(
+      "package",
+      IO::Memory.new(package_content),
+      HTTP::FormData::FileMetadata.new(filename: "package.tar.gz")
+    )
+    builder.finish
+
+    response = ApiClient.exec(
+      Api::Shards::Upload,
+      headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
+      body: io.to_s
+    )
+    response.should send_json(201)
+
+    # Attempt duplicate upload with different content
+    different_content = "second upload content"
+    io2 = IO::Memory.new
+    builder2 = HTTP::FormData::Builder.new(io2, "boundary456")
+    builder2.field("name", "duplicate-test-shard")
+    builder2.field("version", "1.0.0")
+    builder2.field("repository_url", "https://github.com/user/duplicate-test-shard")
+    builder2.file(
+      "package",
+      IO::Memory.new(different_content),
+      HTTP::FormData::FileMetadata.new(filename: "package.tar.gz")
+    )
+    builder2.finish
+
+    response2 = ApiClient.exec(
+      Api::Shards::Upload,
+      headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary456"},
+      body: io2.to_s
+    )
+    response2.should send_json(422)
+    response2.body.should contain("errors")
+  end
 end
