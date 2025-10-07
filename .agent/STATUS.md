@@ -27,14 +27,29 @@
 - Run 18317256463 (CI): ✅ SUCCESS (3m26s) - 2025-10-07 15:13 UTC
 - Run 18317256467 (Security): ✅ SUCCESS (2m51s) - 2025-10-07 15:13 UTC
 
-## Current Blocker
+## Deployment Status
 
-⏳ **Awaiting Terraform Apply** - Requires human with GCP credentials
+✅ **Ready to Deploy** - CI/CD configured with all required secrets
 
-The infrastructure code is complete and validated. The next step requires:
-1. Human operator with access to GCP project
-2. Run `terraform apply` from `/workspaces/monorepo/terraform/`
-3. See `terraform/DEPLOYMENT_RUNBOOK.md` for detailed instructions
+The infrastructure code is complete and validated. Deployment can be triggered via:
+
+**Option 1: GitHub Actions (Recommended)**
+- Go to Actions → "Deploy to Production" → "Run workflow"
+- This will run `terraform apply` automatically with configured secrets
+
+**Option 2: Manual via gh CLI**
+```bash
+gh workflow run deploy.yml
+```
+
+**Option 3: Manual Terraform**
+- Requires local GCP credentials
+- See `terraform/DEPLOYMENT_RUNBOOK.md` for detailed instructions
+
+**Required Secrets** (already configured in GitHub):
+- ✅ `GCP_SA_KEY` - Service account credentials
+- ✅ `GCP_PROJECT_ID` - Google Cloud project ID
+- ✅ `TF_API_TOKEN` - Terraform Cloud token (optional)
 
 ## What Agent Can Do Now
 
@@ -62,12 +77,14 @@ Since all code is complete and CI is passing, the agent is in a **ready state**:
 - MinIO storage integration
 - Comprehensive specs
 
-### Phase 3: Deploy Infrastructure (In Progress ⏳)
-1. ⏳ Apply Terraform (requires GCP credentials) **<-- CURRENT BLOCKER**
-2. ⏳ Build and push Docker images to Artifact Registry
+### Phase 3: Deploy Infrastructure (Ready ✅)
+1. ⏳ Trigger deployment via GitHub Actions (creates GKE + Artifact Registry)
+2. ⏳ Build and push Docker images (automated after step 1)
 3. ⏳ Verify all pods running
 4. ⏳ Test ingress routing
 5. ⏳ Validate database connections
+
+**Note**: All secrets configured. Deployment can be triggered via GitHub UI.
 
 ### Phase 4: CrystalDocs Implementation (Complete ✅)
 - Doc and DocVersion models
@@ -87,18 +104,18 @@ Since all code is complete and CI is passing, the agent is in a **ready state**:
 
 ## Next Actions
 
-**For Human Operator:**
-1. Review `terraform/DEPLOYMENT_RUNBOOK.md`
-2. Ensure GCP credentials are configured
-3. Run `cd terraform && terraform apply`
-4. Monitor deployment progress
+**To Deploy:**
+1. Navigate to GitHub Actions → "Deploy to Production" → "Run workflow"
+   - Or run: `gh workflow run deploy.yml`
+2. Monitor deployment progress in GitHub Actions
+3. Wait 15-25 minutes for GKE cluster creation
 
-**For Agent (after deployment):**
+**After Deployment (Automated CI or Manual Verification):**
 1. Verify all pods are running
 2. Test health endpoints
 3. Run E2E tests
-4. Monitor for any deployment issues
-5. Address any bugs or improvements
+4. Configure DNS to point to ingress IP
+5. Monitor for any deployment issues
 
 ## Key Files
 
