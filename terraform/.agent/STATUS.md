@@ -1,7 +1,7 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (11:50 UTC)
-**Current Phase**: Phase 4 - CrystalDocs Core Features Implemented ✅
+**Last Updated**: 2025-10-07 (12:10 UTC)
+**Current Phase**: Phase 5 - All Apps MVP Complete ✅
 
 ## ✅ Done
 
@@ -45,6 +45,9 @@
 **ACTION REQUIRED**: Terraform must be applied to create Artifact Registry before Docker images can be built
 
 **Recent Progress** (Today):
+- ✅ **Phase 5 Complete**: Implemented CrystalGigs and CrystalBits MVPs
+- ✅ CrystalGigs Job Board: Job model, API endpoints, comprehensive specs
+- ✅ CrystalBits Blog: Post model, API endpoints, view tracking, auto-slug generation
 - ✅ Fixed awscr-s3 dependency version (updated from ~> 0.8.x to ~> 0.10.0)
 - ✅ All CI tests passing (crystalshards, crystaldocs, crystalbits, crystalgigs)
 - ✅ Migrated from deprecated GCR to Artifact Registry
@@ -180,9 +183,26 @@
 2. Search within docs
 3. Syntax highlighting
 
-**Phase 5: Other Apps** (ongoing)
-1. crystalgigs MVP
-2. crystalbits MVP
+**Phase 5: Other Apps** ✅ COMPLETE
+
+*CrystalGigs (Job Board):* ✅ DONE
+1. ✅ Job model with comprehensive fields (title, company, location, remote, salary, etc)
+2. ✅ SaveJob operation with validations (job_type, salary range, apply methods)
+3. ✅ JobQuery with filtering (active, published, remote, location, search)
+4. ✅ API endpoints: GET /api/jobs (list), GET /api/jobs/:id (show), POST /api/jobs (create)
+5. ✅ Database migration with indexes for common queries
+6. ✅ Comprehensive test specs with pagination, filtering, and search
+7. ✅ JobFactory for test data generation
+
+*CrystalBits (Blog/Newsletter):* ✅ DONE
+1. ✅ Post model with content fields (title, slug, content, excerpt, tags)
+2. ✅ SavePost operation with auto-slug generation and uniqueness validation
+3. ✅ PostQuery with filtering (published, featured, popular, tags, search)
+4. ✅ API endpoints: GET /api/posts (list), GET /api/posts/:slug (show), POST /api/posts (create)
+5. ✅ Show endpoint increments view_count automatically
+6. ✅ Database migration with GIN index for tag searches
+7. ✅ Comprehensive test specs with view tracking and auto-generation
+8. ✅ PostFactory for test data generation
 
 ## 📝 Future Work
 
