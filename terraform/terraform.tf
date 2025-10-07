@@ -4,7 +4,7 @@ terraform {
   # GCS backend for persistent state
   # CI validation uses -backend=false flag
   backend "gcs" {
-    bucket = "waldrip-net-terraform-state"
+    bucket = "crystalshards-org-terraform-state"
     prefix = "terraform/state"
   }
 
