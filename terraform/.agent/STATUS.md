@@ -1,7 +1,7 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (08:39 UTC)
-**Current Phase**: Infrastructure Deployment In Progress (Phase 2 Complete)
+**Last Updated**: 2025-10-07 (09:55 UTC)
+**Current Phase**: Fixing CI/CD Pipeline - Adding Docker Image Build
 
 ## ✅ Done
 
@@ -34,23 +34,21 @@
 - [x] Test specs and factories for API endpoints ✅
 - [x] shard.lock files generated for all apps ✅ NEW
 
-## 🚀 Current Deployment
+## 🚀 Current Status
 
-**Deployment Run**: https://github.com/crystalshards/monorepo/actions/runs/18306500291
-**Status**: In Progress (12+ minutes - GKE Autopilot cluster creation)
+**Issue Found**: Deployment failed because Docker images don't exist in GCR
+**Root Cause**: CI workflow only validates code but doesn't build/push images
+**Solution**: Created new `build-images.yml` workflow to build and push all app images
+
 **Recent Fixes**:
-- Fixed dangling reference to null_resource.wait_for_cert_manager_crds (commit 336723a)
-- Fixed Terraform state migration (removed old resources from state)
-- Removed import blocks for non-existent GCP resources
-- Fixed GKE Autopilot compatibility issues:
-  - Increased MinIO operator CPU to 500m minimum
-  - Disabled Prometheus kube-system monitoring components
-  - Fixed cert-manager CRD wait script syntax
+- ✅ Created `.github/workflows/build-images.yml` - Builds & pushes Docker images to GCR
+- ✅ Updated deploy workflow to depend on image build workflow
+- ✅ Added matrix build for all apps (crystalshards API+worker, other apps API only)
 
 ## ⚠️ Known Issues
 
-1. **Security Scanning Workflow** - License Compliance Check fails because it expects dependencies to be installed via `shards install`, but CI runs in a clean environment. This is a non-critical check that can be improved or skipped in the future.
-2. **CI Continuous Integration** - Build passes ✅ (all compilation errors fixed)
+1. **Deployment Failed** - Pods couldn't start because Docker images didn't exist in GCR (FIXED)
+2. **Security Scanning Workflow** - License Compliance Check fails because it expects dependencies to be installed via `shards install`, but CI runs in a clean environment. This is a non-critical check that can be improved or skipped in the future.
 
 ## 📋 Next Tasks
 
@@ -82,12 +80,13 @@
 3. ✅ Documentation storage (BuildDocsWorker integration)
 4. ✅ Presigned URL generation for secure downloads
 
-**Phase 3: Deploy & Validate Infrastructure**
-1. Run `terraform plan`
-2. Deploy to GKE cluster
-3. Verify all pods running
-4. Test ingress routing
-5. Validate database connections
+**Phase 3: Deploy & Validate Infrastructure** (IN PROGRESS)
+1. ✅ Created Docker image build pipeline
+2. ⏳ Waiting for images to build and push to GCR
+3. ⏳ Deploy to GKE cluster (will auto-trigger after images build)
+4. ⏳ Verify all pods running
+5. ⏳ Test ingress routing
+6. ⏳ Validate database connections
 
 **Phase 4: Implement CrystalDocs** (1-2 weeks)
 1. Fetch/serve docs from MinIO

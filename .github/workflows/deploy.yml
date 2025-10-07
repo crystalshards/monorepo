@@ -1,9 +1,9 @@
 name: Deploy to Production
 
 on:
-  # Deploy after CI passes on main branch
+  # Deploy after CI passes and images are built
   workflow_run:
-    workflows: ["Continuous Integration"]
+    workflows: ["Build and Push Docker Images"]
     branches: [main]
     types:
       - completed
@@ -15,21 +15,21 @@ jobs:
     name: Deploy GKE Infrastructure
     runs-on: ubuntu-latest
     environment: production
-    # Only run if CI passed or if manually triggered with skip_ci_check
+    # Only run if image build passed or if manually triggered
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'success')
 
     steps:
-    - name: Check CI Status
+    - name: Check Image Build Status
       if: github.event_name == 'workflow_run'
       run: |
-        echo "CI workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+        echo "Image build workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
         if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-          echo "❌ CI checks failed. Deployment blocked."
+          echo "❌ Image build failed. Deployment blocked."
           exit 1
         fi
-        echo "✅ CI checks passed. Proceeding with deployment."
+        echo "✅ Docker images built and pushed. Proceeding with deployment."
 
     - name: Checkout code
       uses: actions/checkout@v4

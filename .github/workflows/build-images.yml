@@ -1,0 +1,97 @@
+name: Build and Push Docker Images
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'apps/**'
+      - '.github/workflows/build-images.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: gcr.io
+
+jobs:
+  build-and-push:
+    name: Build and Push ${{ matrix.app }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        app: [crystalshards, crystaldocs, crystalgigs, crystalbits]
+        target: [api, worker]
+        exclude:
+          # Only crystalshards has workers
+          - app: crystaldocs
+            target: worker
+          - app: crystalgigs
+            target: worker
+          - app: crystalbits
+            target: worker
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Configure Docker for GCR
+      run: gcloud auth configure-docker gcr.io
+
+    - name: Set image tags
+      id: tags
+      run: |
+        APP="${{ matrix.app }}"
+        TARGET="${{ matrix.target }}"
+        PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+        SHA="${GITHUB_SHA::8}"
+
+        if [ "$TARGET" = "worker" ]; then
+          IMAGE_NAME="${APP}-worker"
+        else
+          IMAGE_NAME="${APP}"
+        fi
+
+        echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+        echo "full_image=$REGISTRY/$PROJECT_ID/$IMAGE_NAME:$SHA" >> $GITHUB_OUTPUT
+        echo "latest_image=$REGISTRY/$PROJECT_ID/$IMAGE_NAME:latest" >> $GITHUB_OUTPUT
+
+    - name: Build Docker image
+      working-directory: ./apps/${{ matrix.app }}
+      run: |
+        echo "Building ${{ steps.tags.outputs.image_name }}..."
+
+        BUILD_ARG=""
+        if [ "${{ matrix.target }}" = "worker" ]; then
+          BUILD_ARG="--build-arg BUILD_TARGET=worker"
+        fi
+
+        docker build $BUILD_ARG \
+          -t ${{ steps.tags.outputs.full_image }} \
+          -t ${{ steps.tags.outputs.latest_image }} \
+          .
+
+    - name: Push Docker image
+      run: |
+        echo "Pushing ${{ steps.tags.outputs.image_name }} to GCR..."
+        docker push ${{ steps.tags.outputs.full_image }}
+        docker push ${{ steps.tags.outputs.latest_image }}
+        echo "✅ Image pushed: ${{ steps.tags.outputs.latest_image }}"
+
+    - name: Image summary
+      run: |
+        echo "## 📦 Docker Image Built" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**App**: ${{ matrix.app }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Target**: ${{ matrix.target }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Image**: \`${{ steps.tags.outputs.latest_image }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "**SHA Tag**: \`${{ steps.tags.outputs.full_image }}\`" >> $GITHUB_STEP_SUMMARY
