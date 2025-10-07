@@ -34,5 +34,5 @@ dependencies:
     version: ~> 1.6.1
   joobq:
     github: azutoolkit/joobq
-    version: ~> 0.4.0
+    version: ~> 0.3.1
 development_dependencies: {}
