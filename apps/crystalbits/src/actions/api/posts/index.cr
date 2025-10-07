@@ -22,8 +22,12 @@ class Api::Posts::Index < ApiAction
       query = query.popular
     end
 
-    paginated_posts = query.paginate(page: page, per_page: per_page)
     total_count = query.select_count
+    offset_value = (page - 1) * per_page
+
+    paginated_posts = query
+      .limit(per_page)
+      .offset(offset_value)
 
     json({
       posts:    paginated_posts.map { |post| serialize_post(post) },
