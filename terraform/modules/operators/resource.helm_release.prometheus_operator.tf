@@ -8,9 +8,21 @@ resource "helm_release" "prometheus_operator" {
 
   create_namespace = true
 
-  # Minimal configuration for cost optimization
+  # GKE Autopilot-compatible configuration
+  # Autopilot restricts access to kube-system namespace and control plane components
   values = [
     yamlencode({
+      # Disable components that try to access kube-system or control plane
+      defaultRules = {
+        create = true
+        rules = {
+          kubeScheduler            = false
+          kubeControllerManager   = false
+          kubeProxy               = false
+          kubeApiserverSlos       = false
+        }
+      }
+
       prometheus = {
         prometheusSpec = {
           replicas  = 1
@@ -39,9 +51,11 @@ resource "helm_release" "prometheus_operator" {
           }
         }
       }
+
       alertmanager = {
         enabled = false
       }
+
       grafana = {
         enabled  = true
         replicas = 1
@@ -59,24 +73,45 @@ resource "helm_release" "prometheus_operator" {
           enabled = false
         }
       }
+
+      # Disable node exporter for GKE Autopilot
       nodeExporter = {
         enabled = false
       }
+
+      # Keep kube-state-metrics for basic cluster metrics
       kubeStateMetrics = {
         enabled = true
       }
-      # Disable kube-controller-manager and kube-scheduler monitoring for GKE Autopilot
-      # These attempt to create services in kube-system which is not allowed
+
+      # Disable all control plane component monitoring for GKE Autopilot
+      kubeApiServer = {
+        enabled = false
+      }
+
       kubeControllerManager = {
         enabled = false
       }
+
       kubeScheduler = {
         enabled = false
       }
+
       kubeProxy = {
         enabled = false
       }
+
       kubeEtcd = {
+        enabled = false
+      }
+
+      # Disable CoreDNS monitoring to avoid kube-system access
+      coreDns = {
+        enabled = false
+      }
+
+      # Disable kubeDns monitoring
+      kubeDns = {
         enabled = false
       }
     })
