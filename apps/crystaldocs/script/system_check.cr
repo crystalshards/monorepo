@@ -10,7 +10,6 @@ require "./helpers/*"
 #   * Note: Booting additional processes for things like mail, background jobs, etc...
 #     should go in your Procfile.dev.
 
-
 # CUSTOM PRE-BOOT CHECKS
 # example:
 # if command_not_running "redis-cli", "ping"
