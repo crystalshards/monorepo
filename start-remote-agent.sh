@@ -44,7 +44,20 @@ echo "✅ Pod is ready!"
 echo ""
 echo "Next steps:"
 
-./remote-login.sh
+./remote-claude.sh --dangerously-skip-permissions "Say: You are now logged in, you may quit this claude session."
+
+if [ $? -eq 0 ]; then
+    echo ""
+    echo "✅ Authentication complete!"
+    echo ""
+    echo "The agent will now start processing tasks automatically."
+    echo ""
+    echo "📜 To view logs: kubectl --context gke_waldrip-net_us-central1-a_cluster-1 logs -f $POD_NAME -n $NAMESPACE -c agent"
+else
+    echo ""
+    echo "❌ Authentication failed. Please try again."
+    exit 1
+fi
 
 echo "📜 Following logs"
 kubectl --context gke_waldrip-net_us-central1-a_cluster-1 logs -f $POD_NAME -n $NAMESPACE -c agent

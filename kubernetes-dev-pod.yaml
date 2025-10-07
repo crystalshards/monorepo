@@ -62,6 +62,11 @@ spec:
             secretKeyRef:
               name: github-secrets
               key: token
+        - name: GH_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-secrets
+              key: token
         - name: ENVBUILDER_GIT_USERNAME
           value: x-access-token
         - name: ENVBUILDER_GIT_PASSWORD

@@ -9,7 +9,7 @@ Build the Crystal language ecosystem infrastructure:
 
 ## Current State
 
-See `terraform/.agent/STATUS.md` for complete status.
+See `.agent/STATUS.md` for complete status.
 
 **TL;DR**: All 6 phases complete (Infrastructure, CrystalShards, CrystalDocs, CrystalGigs, CrystalBits, Production Hardening). All CI passing. Ready for Terraform apply and deployment.
 

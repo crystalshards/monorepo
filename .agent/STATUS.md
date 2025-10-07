@@ -119,10 +119,10 @@ Since all code is complete and CI is passing, the agent is in a **ready state**:
 
 ## Key Files
 
-- `/workspaces/monorepo/terraform/.agent/STATUS.md` - Detailed infrastructure status
-- `/workspaces/monorepo/terraform/DEPLOYMENT_RUNBOOK.md` - Deployment instructions
-- `/workspaces/monorepo/PROMPT.md` - Project overview and conventions
-- `/workspaces/monorepo/CLAUDE.md` - Agent development guidelines
+- `.agent/STATUS.md` - This file - comprehensive project status
+- `terraform/DEPLOYMENT_RUNBOOK.md` - Deployment instructions
+- `PROMPT.md` - Project overview and conventions
+- `CLAUDE.md` - Agent development guidelines
 
 ## Notes
 

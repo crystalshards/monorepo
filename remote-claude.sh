@@ -24,6 +24,14 @@ if [ "$POD_STATUS" != "Running" ]; then
     exit 1
 fi
 
+echo "⏳ Waiting for envbuilder to be ready..."
+until kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -n "$NAMESPACE" -c agent -- su - claude -s /bin/bash -c "true" > /dev/null 2>&1; do
+  printf "."
+  sleep 10
+done
+
+echo ""
+echo "✅ Envbuilder is ready!"
 echo "📝 Starting login process..."
 echo ""
 echo "⚠️  IMPORTANT: Use your Claude Max account if available!"
@@ -59,18 +67,5 @@ kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -
     fi
 
     # Perform login
-    claude 'Say: You are now logged in, you may quit this claude session.'
+    claude $@
 "
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✅ Authentication complete!"
-    echo ""
-    echo "The agent will now start processing tasks automatically."
-    echo ""
-    echo "📜 To view logs: kubectl --context gke_waldrip-net_us-central1-a_cluster-1 logs -f $POD_NAME -n $NAMESPACE -c agent"
-else
-    echo ""
-    echo "❌ Authentication failed. Please try again."
-    exit 1
-fi
