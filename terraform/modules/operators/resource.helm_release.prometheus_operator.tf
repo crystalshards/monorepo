@@ -7,7 +7,7 @@ resource "helm_release" "prometheus_operator" {
   namespace  = "monitoring"
 
   create_namespace = true
-  timeout          = 600  # 10 minutes
+  timeout          = 600 # 10 minutes
   wait             = true
 
   # GKE Autopilot-compatible configuration
@@ -18,10 +18,10 @@ resource "helm_release" "prometheus_operator" {
       defaultRules = {
         create = true
         rules = {
-          kubeScheduler            = false
-          kubeControllerManager   = false
-          kubeProxy               = false
-          kubeApiserverSlos       = false
+          kubeScheduler         = false
+          kubeControllerManager = false
+          kubeProxy             = false
+          kubeApiserverSlos     = false
         }
       }
 

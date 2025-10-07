@@ -7,7 +7,7 @@ resource "helm_release" "traefik" {
   namespace  = "traefik-system"
 
   create_namespace = true
-  timeout          = 600  # 10 minutes
+  timeout          = 600 # 10 minutes
   wait             = true
 
   values = [yamlencode({

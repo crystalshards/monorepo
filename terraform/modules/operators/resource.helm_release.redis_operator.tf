@@ -6,7 +6,7 @@ resource "helm_release" "redis_operator" {
   version    = "0.15.0" # Using stable version
   namespace  = kubernetes_namespace.infrastructure.metadata[0].name
 
-  timeout = 600  # 10 minutes
+  timeout = 600 # 10 minutes
   wait    = true
 
   set {

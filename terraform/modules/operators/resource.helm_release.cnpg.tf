@@ -6,7 +6,7 @@ resource "helm_release" "cnpg" {
   version    = "0.19.1"
   namespace  = kubernetes_namespace.infrastructure.metadata[0].name
 
-  timeout = 600  # 10 minutes
+  timeout = 600 # 10 minutes
   wait    = true
 
   set {
