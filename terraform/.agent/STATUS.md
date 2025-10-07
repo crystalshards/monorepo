@@ -1,7 +1,7 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (11:08 UTC)
-**Current Phase**: Infrastructure Ready - All CI Passing ✅
+**Last Updated**: 2025-10-07 (11:16 UTC)
+**Current Phase**: Infrastructure Ready - Security Hardened ✅
 
 ## ✅ Done
 
@@ -62,6 +62,11 @@
   - Image tag parameterization: Prepared for SHA-based deployments
   - Fixes CKV_K8S_14, CKV_K8S_28, CKV_K8S_29, CKV_K8S_30, CKV_K8S_43
 - ✅ Fixed Docker file ownership (--chown=1000:1000) for non-root containers
+- ✅ **Additional security hardening**: Read-only root filesystem (CKV_K8S_22)
+  - Set read_only_root_filesystem=true for all containers
+  - Added writable emptyDir volumes at /tmp for temporary files
+  - Removed default='latest' from image_tag variables
+  - Require explicit image_tag values (prevents accidental latest deployments)
 - ✅ **All CI checks passing** - Ready for deployment
 - ⏳ **NEXT**: Apply Terraform to create infrastructure (requires GCP credentials)
 
