@@ -7,13 +7,10 @@ experimental = true
 "npm:@devcontainers/cli" = "latest"
 "npm:markdownlint-cli2" = "latest"
 crystal = "latest"
-go = "latest"
 helm = "latest"
 kubectl = "latest"
 node = "latest"
-python = "latest"
 terraform = "latest"
-uv = "latest"
 
 [env]
 LUCKY_ENV = "development"
