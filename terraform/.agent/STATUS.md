@@ -46,13 +46,13 @@ None! All CI checks passing. ✅
 3. ✅ Add model validations and associations
 4. ✅ Create queries for common operations
 
-*API Endpoints:* 🔄 IN PROGRESS
+*API Endpoints:* ✅ COMPLETE
 1. ✅ GET /api/shards - List all shards (with pagination)
 2. ✅ GET /api/shards/:name - Get shard details
 3. ✅ POST /api/shards - Publish new shard (authenticated)
-4. ⏳ GET /api/shards/:name/versions - List versions (TODO)
-5. ⏳ GET /api/shards/:name/:version - Get specific version (TODO)
-6. ⏳ POST /api/shards/:name/:version/download - Track downloads (TODO)
+4. ✅ GET /api/shards/:name/versions - List versions
+5. ✅ GET /api/shards/:name/:version - Get specific version
+6. ✅ POST /api/shards/:name/:version/download - Track downloads
 
 *Background Workers (1-2 days):*
 1. Implement IndexShardWorker (parse shard.yml, extract metadata)
