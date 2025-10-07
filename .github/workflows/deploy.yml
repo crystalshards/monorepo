@@ -1,6 +1,12 @@
 name: Deploy to Production
 
 on:
+  # Auto-deploy after CI passes on main
+  workflow_run:
+    workflows: ["Continuous Integration"]
+    branches: [main]
+    types:
+      - completed
   # Allow manual deployment with approval
   workflow_dispatch:
     inputs:
@@ -14,8 +20,21 @@ jobs:
     name: Deploy GKE Infrastructure
     runs-on: ubuntu-latest
     environment: production
+    # Only deploy if CI passed or manual trigger
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
+    - name: Check CI Status
+      if: github.event_name == 'workflow_run'
+      run: |
+        echo "CI workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
+        if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+          echo "❌ CI failed. Deployment blocked."
+          exit 1
+        fi
+        echo "✅ CI passed. Proceeding with deployment."
 
     - name: Checkout code
       uses: actions/checkout@v4
@@ -74,11 +93,5 @@ jobs:
         echo "📦 GKE Autopilot cluster is ready"
         echo "🔧 Operators installed: cert-manager, Traefik, Redis, PostgreSQL (CNPG), MinIO"
         echo "📝 Artifact Registry is ready for Docker images"
-
-    - name: Trigger image build
-      if: success() && inputs.target == ''
-      run: |
-        echo "Triggering Docker image build workflow..."
-        gh workflow run build-images.yml
-      env:
-        GH_TOKEN: ${{ github.token }}
+        echo ""
+        echo "Docker images will be built automatically when apps/** changes are pushed"
