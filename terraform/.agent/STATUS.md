@@ -1,7 +1,7 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (10:50 UTC)
-**Current Phase**: Infrastructure Ready - Awaiting Terraform Apply
+**Last Updated**: 2025-10-07 (10:55 UTC)
+**Current Phase**: Infrastructure Ready - Security Hardened
 
 ## ✅ Done
 
@@ -56,6 +56,11 @@
 - ✅ Added Kubernetes liveness/readiness probes with proper timeouts
 - ✅ Fixed Crystal code formatting (hash key alignment in health checks)
 - ✅ Fixed Redis client API usage (changed `url:` to `uri: URI.parse()`)
+- ✅ **Security hardening**: Added security contexts, capability drops, and parameterized image tags
+  - Pod security: Run as non-root (UID 1000), seccomp RuntimeDefault
+  - Container security: Drop ALL capabilities, disable privilege escalation
+  - Image tag parameterization: Prepared for SHA-based deployments
+  - Fixes CKV_K8S_14, CKV_K8S_28, CKV_K8S_29, CKV_K8S_30, CKV_K8S_43
 - ✅ Terraform validation passing
 - ⏳ **NEXT**: Waiting for CI to pass, then apply Terraform to create infrastructure
 
@@ -80,8 +85,8 @@
 
 ## ⚠️ Known Issues
 
-1. **Deployment Failed** - Pods couldn't start because Docker images didn't exist in GCR (FIXED)
-2. **Security Scanning Workflow** - License Compliance Check fails because it expects dependencies to be installed via `shards install`, but CI runs in a clean environment. This is a non-critical check that can be improved or skipped in the future.
+1. **Docker Image Build Failure** - Artifact Registry repository doesn't exist yet (requires `terraform apply`)
+2. **Security Scanning Workflow** - License Compliance Check fails (non-critical, runs in clean CI environment)
 
 ## 📋 Next Tasks
 
