@@ -1,6 +1,6 @@
 # CrystalShards Status
 
-**Last Updated**: 2025-10-07 (11:00 UTC)
+**Last Updated**: 2025-10-07 (10:50 UTC)
 **Current Phase**: Infrastructure Ready - Awaiting Terraform Apply
 
 ## ✅ Done
@@ -20,10 +20,11 @@
   - Cryptographically secure SECRET_KEY_BASE (128 chars, random provider)
   - Dynamic DATABASE_URL fetched from CNPG-generated secrets
   - No hardcoded credentials
-- [x] Health check endpoints (/api/health) for all 4 apps ✅ NEW
-- [x] Kubernetes liveness/readiness probes configured ✅ NEW
+  - MinIO credentials (ACCESS_KEY, SECRET_KEY) for S3-compatible storage
+- [x] Health check endpoints (/api/health) for all 4 apps ✅
+- [x] Kubernetes liveness/readiness probes configured ✅
 - [x] Terraform validation passing ✅
-- [x] CI builds passing ✅
+- [x] Code formatting and compilation fixes ✅
 
 ### Applications
 - [x] 4 Lucky apps: crystalshards, crystaldocs, crystalgigs, crystalbits
@@ -51,10 +52,12 @@
 - ✅ Updated registry location from `var.region` to `us` multi-region
 - ✅ Added secure secret generation using Terraform random provider
 - ✅ Created comprehensive deployment runbook (terraform/DEPLOYMENT_RUNBOOK.md)
-- ✅ **NEW**: Implemented /api/health endpoints for all 4 apps
-- ✅ **NEW**: Added Kubernetes liveness/readiness probes with proper timeouts
+- ✅ Implemented /api/health endpoints for all 4 apps
+- ✅ Added Kubernetes liveness/readiness probes with proper timeouts
+- ✅ Fixed Crystal code formatting (hash key alignment in health checks)
+- ✅ Fixed Redis client API usage (changed `url:` to `uri: URI.parse()`)
 - ✅ Terraform validation passing
-- ⏳ **NEXT**: Apply Terraform to create infrastructure (including Artifact Registry)
+- ⏳ **NEXT**: Waiting for CI to pass, then apply Terraform to create infrastructure
 
 **Deployment Order** (Critical):
 1. **Apply Terraform** to create GKE cluster + Artifact Registry repository
