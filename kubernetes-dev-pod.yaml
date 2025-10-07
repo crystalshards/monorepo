@@ -13,21 +13,6 @@ spec:
   securityContext:
     fsGroup: 1000
     fsGroupChangePolicy: "OnRootMismatch"
-  initContainers:
-    - name: setup-envbuilder
-      image: busybox:latest
-      command:
-        - sh
-        - -c
-        - |
-          mkdir -p /.envbuilder
-          chmod 777 /.envbuilder
-          chown 1000:1000 /.envbuilder
-      securityContext:
-        runAsUser: 0
-      volumeMounts:
-        - name: envbuilder-cache
-          mountPath: /.envbuilder
   containers:
     - name: dind
       image: docker:24-dind
@@ -51,10 +36,6 @@ spec:
     - name: agent
       image: ghcr.io/coder/envbuilder:latest
       imagePullPolicy: Always
-      securityContext:
-        runAsUser: 1000
-        runAsGroup: 1000
-        runAsNonRoot: false
       env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
@@ -99,8 +80,6 @@ spec:
       volumeMounts:
         - name: workspaces
           mountPath: /workspaces
-        - name: envbuilder-cache
-          mountPath: /.envbuilder
       resources:
         requests:
           memory: "4Gi"
@@ -115,8 +94,6 @@ spec:
     - name: docker-storage
       persistentVolumeClaim:
         claimName: crystalshards-docker-storage
-    - name: envbuilder-cache
-      emptyDir: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
