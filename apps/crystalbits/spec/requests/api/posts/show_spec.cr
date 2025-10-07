@@ -4,7 +4,7 @@ describe Api::Posts::Show do
   it "returns a post by slug" do
     post = PostFactory.create &.slug("crystal-guide")
 
-    response = ApiClient.exec(Api::Posts::Show, slug: "crystal-guide")
+    response = ApiClient.exec(Api::Posts::Show.with(slug: "crystal-guide"))
 
     response.status_code.should eq(200)
     body = JSON.parse(response.body)
@@ -16,7 +16,7 @@ describe Api::Posts::Show do
   it "increments view count" do
     post = PostFactory.create &.view_count(10)
 
-    response = ApiClient.exec(Api::Posts::Show, slug: post.slug)
+    response = ApiClient.exec(Api::Posts::Show.with(slug: post.slug))
 
     body = JSON.parse(response.body)
     body["view_count"].should eq(11)
@@ -26,7 +26,7 @@ describe Api::Posts::Show do
   end
 
   it "returns 404 for non-existent post" do
-    response = ApiClient.exec(Api::Posts::Show, slug: "non-existent")
+    response = ApiClient.exec(Api::Posts::Show.with(slug: "non-existent"))
 
     response.status_code.should eq(404)
     body = JSON.parse(response.body)

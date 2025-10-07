@@ -4,7 +4,7 @@ class CreateDependencies::V00000000000004 < Avram::Migrator::Migration::V1
       primary_key id : Int64
       add_timestamps
       add_belongs_to shard_version : ShardVersion, on_delete: :cascade, index: true
-      add_belongs_to dependent_shard : Shard?, on_delete: :set_null, index: true
+      add_belongs_to dependent_shard : Shard?, on_delete: :nullify, index: true
       add name : String
       add version_requirement : String
       add scope : String, default: "runtime"

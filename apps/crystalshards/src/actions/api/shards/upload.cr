@@ -69,8 +69,8 @@ class Api::Shards::Upload < ApiAction
 
     if package_content.bytesize > MAX_PACKAGE_SIZE
       return json({
-        error:       "Package size exceeds maximum allowed size",
-        max_size_mb: MAX_PACKAGE_SIZE / (1024 * 1024),
+        error:          "Package size exceeds maximum allowed size",
+        max_size_mb:    MAX_PACKAGE_SIZE / (1024 * 1024),
         actual_size_mb: (package_content.bytesize / (1024.0 * 1024.0)).round(2),
       }, status: 413)
     end
