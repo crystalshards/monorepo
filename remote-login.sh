@@ -32,32 +32,35 @@ echo ""
 # Execute login in the container
 kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -n "$NAMESPACE" -c agent -- bash -c "
     cd /workspaces/monorepo
-    
-    # Set up persistent Claude config directory
-    export CLAUDE_CONFIG_DIR='/workspaces/.claude-config'
-    export XDG_CONFIG_HOME='/workspaces/.claude-config'
-    export XDG_DATA_HOME='/workspaces/.claude-data'
-    export XDG_CACHE_HOME='/workspaces/.claude-cache'
-    
-    # Ensure directories exist with proper permissions
+
+    # Set up cache directories in user home
+    export CLAUDE_CONFIG_DIR=\"\$HOME/.config/claude\"
+    export XDG_CONFIG_HOME=\"\$HOME/.config\"
+    export XDG_DATA_HOME=\"\$HOME/.local/share\"
+    export XDG_CACHE_HOME=\"\$HOME/.cache\"
+
+    # Ensure directories exist
     mkdir -p \"\$CLAUDE_CONFIG_DIR\" \"\$XDG_DATA_HOME\" \"\$XDG_CACHE_HOME\"
-    chmod -R 755 \"\$CLAUDE_CONFIG_DIR\" \"\$XDG_DATA_HOME\" \"\$XDG_CACHE_HOME\"
-    
+
+    # Activate mise environment
+    eval \"\$(mise activate bash)\"
+    export PATH=\"/root/.local/share/mise/shims:/root/.local/bin:\${PATH}\"
+
     # Ensure Claude CLI is installed
     if ! command -v claude &> /dev/null; then
         echo 'Installing Claude CLI...'
         npm install -g @anthropic-ai/claude-code
     fi
-    
+
     # Perform login
     claude login
     touch /workspaces/.claude-ready
-    
-    # Create ready file on successful login
-    if claude -p test; then
+
+    # Verify login and create ready file
+    if [ -f /workspaces/.claude-ready ]; then
         echo ''
         echo '✅ Login successful! Ready file created.'
-        echo '   Config stored in: /workspaces/.claude-config'
+        echo '   Config stored in: \$CLAUDE_CONFIG_DIR'
     else
         echo ''
         echo '❌ Login failed. Please try again.'
