@@ -9,13 +9,15 @@ class CreateDownloads::V00000000000005 < Avram::Migrator::Migration::V1
       add ip_address : String?
       add user_agent : String?
       add country_code : String?
-
-      add_index [:shard_id, :downloaded_at]
-      add_index [:shard_version_id, :downloaded_at]
     end
+
+    create_index table_for(Download), [:shard_id, :downloaded_at]
+    create_index table_for(Download), [:shard_version_id, :downloaded_at]
   end
 
   def rollback
+    drop_index table_for(Download), [:shard_id, :downloaded_at]
+    drop_index table_for(Download), [:shard_version_id, :downloaded_at]
     drop table_for(Download)
   end
 end

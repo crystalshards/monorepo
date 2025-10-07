@@ -12,12 +12,13 @@ class CreateShardVersions::V00000000000003 < Avram::Migrator::Migration::V1
       add commit_sha : String?
       add crystal_version : String?
       add metadata : JSON::Any?
-
-      add_index [:shard_id, :version], unique: true
     end
+
+    create_index table_for(ShardVersion), [:shard_id, :version], unique: true
   end
 
   def rollback
+    drop_index table_for(ShardVersion), [:shard_id, :version]
     drop table_for(ShardVersion)
   end
 end
