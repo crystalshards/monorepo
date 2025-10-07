@@ -14,7 +14,7 @@ class UpdateDependenciesWorker < BaseJob
     end
 
     shard_version = ShardVersionQuery.new
-      .shard_id(shard.id)
+      .shard_id(shard.id.not_nil!)
       .version(@version)
       .first?
 
@@ -37,7 +37,7 @@ class UpdateDependenciesWorker < BaseJob
     dependencies = metadata["dependencies"]?.try(&.as_h?)
     return unless dependencies
 
-    DependencyQuery.new.shard_version_id(shard_version.id).delete
+    DependencyQuery.new.shard_version_id(shard_version.id.not_nil!).delete
 
     dependencies.each do |dep_name, dep_spec|
       store_dependency(shard_version, dep_name.to_s, dep_spec, "runtime")
@@ -59,7 +59,7 @@ class UpdateDependenciesWorker < BaseJob
     dependent_shard = ShardQuery.new.name(dep_name).first?
 
     SaveDependency.create do |operation|
-      operation.shard_version_id.value = shard_version.id
+      operation.shard_version_id.value = shard_version.id.not_nil!
       operation.name.value = dep_name
       operation.version_requirement.value = version_requirement
       operation.scope.value = scope

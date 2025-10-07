@@ -15,7 +15,7 @@ class BuildDocsWorker < BaseJob
     end
 
     shard_version = ShardVersionQuery.new
-      .shard_id(shard.id)
+      .shard_id(shard.id.not_nil!)
       .version(@version)
       .first?
 
