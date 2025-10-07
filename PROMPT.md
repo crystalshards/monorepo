@@ -11,7 +11,7 @@ Build the Crystal language ecosystem infrastructure:
 
 See `terraform/.agent/STATUS.md` for complete status.
 
-**TL;DR**: Infrastructure 100% complete. All CI passing. Ready for Terraform apply.
+**TL;DR**: All 6 phases complete (Infrastructure, CrystalShards, CrystalDocs, CrystalGigs, CrystalBits, Production Hardening). All CI passing. Ready for Terraform apply and deployment.
 
 ## Architecture
 
@@ -98,14 +98,23 @@ Worker deployment separate from API deployment (scales independently).
 4. ⏳ Test ingress routing
 5. ⏳ Validate database connections
 
-**Phase 4: Implement crystaldocs** (upcoming)
-1. Fetch/serve docs from MinIO
-2. Version switcher UI
-3. Search within docs
+**Phase 4: Implement crystaldocs** ✅ COMPLETE
+1. ✅ Doc and DocVersion models with migrations
+2. ✅ API endpoints (list, show, version details)
+3. ✅ MinIO integration via DocsStorageService
+4. ✅ Comprehensive specs and factories
+5. Future: Version switcher UI, Search within docs
 
-**Phase 5: Other Apps** (future)
-1. crystalgigs MVP (post jobs, browse jobs)
-2. crystalbits MVP (blog posts, newsletter)
+**Phase 5: Other Apps** ✅ COMPLETE
+1. ✅ crystalgigs MVP (Job model, API endpoints, comprehensive specs)
+2. ✅ crystalbits MVP (Post model, API endpoints, view tracking, auto-slug)
+
+**Phase 6: Production Hardening** ✅ COMPLETE
+1. ✅ OpenAPI 3.0 specifications for all 4 apps
+2. ✅ Rate limiting on all POST endpoints (Redis-backed)
+3. ✅ Comprehensive rate limiting documentation
+4. ✅ Security hardening (non-root containers, read-only filesystems)
+5. ✅ All CI tests passing
 
 ## Important Conventions
 
