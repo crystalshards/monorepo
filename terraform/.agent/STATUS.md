@@ -26,15 +26,18 @@
 - [x] Dockerfiles for all apps (api/worker targets)
 - [x] CI: Terraform validation ✅, app builds ✅ (all passing!)
 - [x] Background job system: Migrated from JoobQ to Mosquito ✅
-- [x] Core data models: Shard, ShardVersion, Dependency, Download, Owner ✅ NEW
-- [x] Database migrations for all models with indexes and constraints ✅ NEW
-- [x] API endpoints: GET /api/shards, GET /api/shards/:name, POST /api/shards ✅ NEW
-- [x] Query classes for database operations ✅ NEW
-- [x] Test specs and factories for API endpoints ✅ NEW
+- [x] Core data models: Shard, ShardVersion, Dependency, Download, Owner ✅
+- [x] SaveOperations for all models (validation and database interactions) ✅ NEW
+- [x] Database migrations for all models with indexes and constraints ✅
+- [x] API endpoints: All endpoints implemented and building successfully ✅
+- [x] Query classes for database operations ✅
+- [x] Test specs and factories for API endpoints ✅
+- [x] shard.lock files generated for all apps ✅ NEW
 
 ## ⚠️ Known Issues
 
-None! All CI checks passing. ✅
+1. **Security Scanning Workflow** - License Compliance Check fails because it expects dependencies to be installed via `shards install`, but CI runs in a clean environment. This is a non-critical check that can be improved or skipped in the future.
+2. **CI Continuous Integration** - Build passes ✅ (all compilation errors fixed)
 
 ## 📋 Next Tasks
 
