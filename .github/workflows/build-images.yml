@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
+      max-parallel: 1  # Build one image at a time to avoid resource contention
       matrix:
         app: [crystalshards, crystaldocs, crystalgigs, crystalbits]
         target: [api, worker]
