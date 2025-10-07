@@ -45,6 +45,11 @@
 **ACTION REQUIRED**: Terraform must be applied to create Artifact Registry before Docker images can be built
 
 **Recent Progress** (Today):
+- ✅ **Added missing test spec**: Created comprehensive tests for POST /api/shards endpoint
+  - 8 test cases covering creation, validation, uniqueness, error handling
+  - Fixed migration syntax: moved composite indexes outside create table blocks
+  - Fixed Dependency model: changed optional: true to nullable type (Shard?)
+  - All CI tests passing ✅
 - ✅ **Phase 5 Complete**: Implemented CrystalGigs and CrystalBits MVPs
 - ✅ CrystalGigs Job Board: Job model, API endpoints, comprehensive specs
 - ✅ CrystalBits Blog: Post model, API endpoints, view tracking, auto-slug generation
