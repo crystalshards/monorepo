@@ -11,15 +11,25 @@ resource "helm_release" "minio_operator" {
     value = "1"
   }
 
-  # Resource limits for operator
+  # Resource limits for operator - GKE Autopilot requires 500m minimum CPU for pod anti-affinity
+  set {
+    name  = "operator.resources.requests.cpu"
+    value = "500m"
+  }
+
   set {
     name  = "operator.resources.limits.cpu"
-    value = "200m"
+    value = "1000m"
+  }
+
+  set {
+    name  = "operator.resources.requests.memory"
+    value = "512Mi"
   }
 
   set {
     name  = "operator.resources.limits.memory"
-    value = "256Mi"
+    value = "1Gi"
   }
 
   # Disable console for cost savings

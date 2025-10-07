@@ -65,6 +65,20 @@ resource "helm_release" "prometheus_operator" {
       kubeStateMetrics = {
         enabled = true
       }
+      # Disable kube-controller-manager and kube-scheduler monitoring for GKE Autopilot
+      # These attempt to create services in kube-system which is not allowed
+      kubeControllerManager = {
+        enabled = false
+      }
+      kubeScheduler = {
+        enabled = false
+      }
+      kubeProxy = {
+        enabled = false
+      }
+      kubeEtcd = {
+        enabled = false
+      }
     })
   ]
 }
