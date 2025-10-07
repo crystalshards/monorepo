@@ -13,6 +13,20 @@ spec:
   securityContext:
     fsGroup: 1000
     fsGroupChangePolicy: "OnRootMismatch"
+  initContainers:
+    - name: fix-workspaces-permissions
+      image: busybox:latest
+      command:
+        - sh
+        - -c
+        - |
+          chown -R 1000:1000 /workspaces/.claude-cache /workspaces/.claude-data /workspaces/.claude-config 2>/dev/null || true
+          chmod -R 777 /workspaces/.claude-cache /workspaces/.claude-data /workspaces/.claude-config 2>/dev/null || true
+      securityContext:
+        runAsUser: 0
+      volumeMounts:
+        - name: workspaces
+          mountPath: /workspaces
   containers:
     - name: dind
       image: docker:24-dind
