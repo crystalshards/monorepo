@@ -1,6 +1,6 @@
 class ShardFactory < Avram::Factory
   def initialize
-    name "sample-shard"
+    name "sample-shard-#{UUID.random.to_s[0..7]}"
     repository_url "https://github.com/crystal-lang/sample-shard"
     description "A sample Crystal shard"
     total_downloads 0

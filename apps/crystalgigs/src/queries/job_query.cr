@@ -1,22 +1,22 @@
 class JobQuery < Job::BaseQuery
-  def active
-    where("active = ?", true)
+  def active_only
+    active(true)
   end
 
-  def published
-    where("published_at IS NOT NULL")
+  def published_only
+    published_at.is_not_nil
   end
 
   def not_expired
-    where("expires_at IS NULL OR expires_at > ?", Time.utc)
+    expires_at.is_nil.or { expires_at.gt(Time.utc) }
   end
 
-  def featured
-    where("featured = ?", true)
+  def featured_only
+    featured(true)
   end
 
-  def remote
-    where("remote = ?", true)
+  def remote_only
+    remote(true)
   end
 
   def by_job_type(type : String)
@@ -24,12 +24,13 @@ class JobQuery < Job::BaseQuery
   end
 
   def by_location(location : String)
-    where("location ILIKE ?", "%#{location}%")
+    self.location.ilike("%#{location}%")
   end
 
   def search(query : String)
+    search_term = "%#{query}%"
     where("title ILIKE ? OR description ILIKE ? OR company_name ILIKE ?",
-      "%#{query}%", "%#{query}%", "%#{query}%")
+      search_term, search_term, search_term)
   end
 
   def recent

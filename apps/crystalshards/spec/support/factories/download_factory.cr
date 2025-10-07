@@ -1,7 +1,8 @@
 class DownloadFactory < Avram::Factory
   def initialize
-    shard_version_id ShardVersionFactory.create.id
-    shard_id ShardFactory.create.id
+    version = ShardVersionFactory.create
+    shard_version_id version.id
+    shard_id version.shard_id
     downloaded_at Time.utc
     ip_address "127.0.0.1"
     user_agent "Test Agent"

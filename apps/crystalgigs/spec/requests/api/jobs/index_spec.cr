@@ -38,9 +38,9 @@ describe Api::Jobs::Index do
   end
 
   it "searches by title, description, or company name" do
-    JobFactory.create &.title("Senior Crystal Developer")
-    JobFactory.create &.company_name("Crystal Corp")
-    JobFactory.create &.title("JavaScript Developer")
+    JobFactory.create &.title("Senior Crystal Developer").company_name("Tech Inc").description("Build amazing things")
+    JobFactory.create &.title("Ruby Developer").company_name("Crystal Corp").description("Join our team")
+    JobFactory.create &.title("JavaScript Developer").company_name("JS Solutions").description("Frontend work")
 
     response = ApiClient.exec(Api::Jobs::Index, q: "Crystal")
 

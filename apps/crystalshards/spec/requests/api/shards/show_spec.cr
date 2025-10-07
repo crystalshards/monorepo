@@ -4,7 +4,7 @@ describe Api::Shards::Show do
   it "returns 404 when shard not found" do
     response = ApiClient.exec(Api::Shards::Show.with(shard_name: "nonexistent"))
 
-    response.status.should eq(404)
+    response.status.should eq(HTTP::Status::NOT_FOUND)
   end
 
   it "returns shard details with versions" do

@@ -4,13 +4,15 @@ class SaveJob < Job::SaveOperation
     :tags, :published_at, :expires_at, :featured, :active
 
   before_save do
-    validate_required title, description, company_name, job_type, apply_url
+    validate_required title, description, company_name, job_type
     validate_presence_of_at_least_one_of apply_url, apply_email
     validate_job_type
     validate_salary_range
   end
 
   private def validate_job_type
+    return unless job_type.value
+
     valid_types = ["full-time", "part-time", "contract", "freelance", "internship"]
     unless valid_types.includes?(job_type.value)
       job_type.add_error("must be one of: #{valid_types.join(", ")}")

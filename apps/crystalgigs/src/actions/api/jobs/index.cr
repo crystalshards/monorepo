@@ -7,8 +7,8 @@ class Api::Jobs::Index < ApiAction
     per_page = [per_page, 100].min
 
     query = JobQuery.new
-      .active
-      .published
+      .active_only
+      .published_only
       .not_expired
       .recent
 
@@ -21,7 +21,7 @@ class Api::Jobs::Index < ApiAction
     end
 
     if params.get?(:remote) == "true"
-      query = query.remote
+      query = query.remote_only
     end
 
     if search_query = params.get?(:q)
@@ -29,7 +29,7 @@ class Api::Jobs::Index < ApiAction
     end
 
     if params.get?(:featured) == "true"
-      query = query.featured
+      query = query.featured_only
     end
 
     total_count = query.select_count

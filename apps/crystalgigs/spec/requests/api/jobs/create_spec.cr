@@ -3,11 +3,13 @@ require "../../../spec_helper"
 describe Api::Jobs::Create do
   it "creates a new job with valid params" do
     params = {
-      title:        "Crystal Developer",
-      description:  "Looking for Crystal expertise",
-      company_name: "Crystal Corp",
-      job_type:     "full-time",
-      apply_url:    "https://example.com/apply",
+      job: {
+        title:        "Crystal Developer",
+        description:  "Looking for Crystal expertise",
+        company_name: "Crystal Corp",
+        job_type:     "full-time",
+        apply_url:    "https://example.com/apply",
+      },
     }
 
     response = ApiClient.exec(Api::Jobs::Create, **params)
@@ -22,24 +24,28 @@ describe Api::Jobs::Create do
 
   it "returns errors for invalid params" do
     params = {
-      title:       "Crystal Developer",
-      description: "Looking for Crystal expertise",
+      job: {
+        title:       "Crystal Developer",
+        description: "Looking for Crystal expertise",
+      },
     }
 
     response = ApiClient.exec(Api::Jobs::Create, **params)
 
     response.status_code.should eq(422)
     body = JSON.parse(response.body)
-    body["errors"].should be_a(Array(JSON::Any))
+    body["errors"].as_a.size.should be > 0
   end
 
   it "validates job_type is valid" do
     params = {
-      title:        "Crystal Developer",
-      description:  "Looking for Crystal expertise",
-      company_name: "Crystal Corp",
-      job_type:     "invalid-type",
-      apply_url:    "https://example.com/apply",
+      job: {
+        title:        "Crystal Developer",
+        description:  "Looking for Crystal expertise",
+        company_name: "Crystal Corp",
+        job_type:     "invalid-type",
+        apply_url:    "https://example.com/apply",
+      },
     }
 
     response = ApiClient.exec(Api::Jobs::Create, **params)
@@ -49,13 +55,15 @@ describe Api::Jobs::Create do
 
   it "validates salary range" do
     params = {
-      title:        "Crystal Developer",
-      description:  "Looking for Crystal expertise",
-      company_name: "Crystal Corp",
-      job_type:     "full-time",
-      apply_url:    "https://example.com/apply",
-      salary_min:   150000,
-      salary_max:   100000,
+      job: {
+        title:        "Crystal Developer",
+        description:  "Looking for Crystal expertise",
+        company_name: "Crystal Corp",
+        job_type:     "full-time",
+        apply_url:    "https://example.com/apply",
+        salary_min:   150000,
+        salary_max:   100000,
+      },
     }
 
     response = ApiClient.exec(Api::Jobs::Create, **params)

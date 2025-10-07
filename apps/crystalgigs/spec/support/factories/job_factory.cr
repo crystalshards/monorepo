@@ -13,6 +13,7 @@ class JobFactory < Avram::Factory
     apply_url "https://crystalcorp.example.com/careers/senior-developer"
     tags ["crystal", "backend", "web"]
     published_at Time.utc
+    expires_at Time.utc + 30.days
     active true
   end
 end
