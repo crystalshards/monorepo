@@ -19,7 +19,7 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
       else
         SaveDownload.create!(
           shard_version_id: version.id,
-          ip_address: request.remote_address || "unknown",
+          ip_address: request.remote_address.to_s,
           user_agent: request.headers["User-Agent"]? || "unknown",
           country_code: request.headers["CF-IPCountry"]?,
           downloaded_at: Time.utc
