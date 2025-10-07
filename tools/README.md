@@ -29,6 +29,7 @@ cat log.txt | ./tools/claude-render
 ## Installation
 
 The repository includes both:
+
 - **claude-stream-renderer.cr** - Crystal source (run with `crystal run`)
 - **claude-stream-renderer** - Compiled binary (faster)
 - **claude-render** - Wrapper script that uses compiled version if available

@@ -5,9 +5,11 @@ Welcome to the comprehensive API documentation for the CrystalShards ecosystem! 
 ## 🏗️ Platforms
 
 ### 1. **CrystalShards Registry** - `api.crystalshards.org`
+
 The central package registry for Crystal language shards (similar to rubygems.org or npmjs.com).
 
 **Key Features:**
+
 - Submit and discover Crystal shards
 - Advanced search with filtering and sorting
 - Real-time analytics and trending searches
@@ -15,9 +17,11 @@ The central package registry for Crystal language shards (similar to rubygems.or
 - Rate limiting and authentication
 
 ### 2. **CrystalDocs Platform** - `docs-api.crystalshards.org`
+
 Automated documentation generation and hosting platform (similar to docs.rs).
 
 **Key Features:**
+
 - Sandboxed documentation builds
 - Version-specific documentation hosting
 - Full-text search across all documentation
@@ -25,9 +29,11 @@ Automated documentation generation and hosting platform (similar to docs.rs).
 - Cross-linking and reference navigation
 
 ### 3. **CrystalGigs Job Board** - `gigs-api.crystalshards.org`
+
 Premium job board for Crystal developers with integrated payments.
 
 **Key Features:**
+
 - Paid job postings with Stripe integration
 - Advanced job search and filtering
 - Automated payment processing
@@ -37,6 +43,7 @@ Premium job board for Crystal developers with integrated payments.
 ## 🚀 Quick Start
 
 ### 1. **View Interactive Documentation**
+
 ```bash
 # Serve the documentation locally
 cd docs/api
@@ -45,12 +52,14 @@ python -m http.server 8080
 ```
 
 ### 2. **Download OpenAPI Specification**
+
 ```bash
 # Download the complete OpenAPI 3.0 specification
 curl -O https://raw.githubusercontent.com/crystalshards/monorepo/main/docs/api/openapi.yml
 ```
 
 ### 3. **Generate Client SDKs**
+
 ```bash
 # Generate client libraries using OpenAPI Generator
 npx @openapitools/openapi-generator-cli generate \
@@ -68,6 +77,7 @@ npx @openapitools/openapi-generator-cli generate \
 ## 🔐 Authentication
 
 ### JWT Authentication
+
 ```bash
 # Login to get JWT token (when user authentication is implemented)
 curl -X POST https://api.crystalshards.org/auth/login \
@@ -80,6 +90,7 @@ curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
 ```
 
 ### API Key Authentication
+
 ```bash
 # Use API key (when available)
 curl -H "Authorization: Bearer YOUR_API_KEY" \
@@ -89,6 +100,7 @@ curl -H "Authorization: Bearer YOUR_API_KEY" \
 ## 📚 Example Usage
 
 ### Search Shards
+
 ```bash
 # Basic search
 curl "https://api.crystalshards.org/api/v1/search?q=web+framework"
@@ -101,6 +113,7 @@ curl "https://api.crystalshards.org/api/v1/search/suggestions?q=kem&limit=5"
 ```
 
 ### Submit a Shard
+
 ```bash
 # Submit a shard (requires authentication)
 curl -X POST https://api.crystalshards.org/api/v1/shards \
@@ -110,6 +123,7 @@ curl -X POST https://api.crystalshards.org/api/v1/shards \
 ```
 
 ### Trigger Documentation Build
+
 ```bash
 # Start documentation build
 curl -X POST https://docs-api.crystalshards.org/docs/api/v1/build \
@@ -126,6 +140,7 @@ curl https://docs-api.crystalshards.org/docs/api/v1/build/build_123abc/status
 ```
 
 ### Post a Job
+
 ```bash
 # Create job posting with payment
 curl -X POST https://gigs-api.crystalshards.org/jobs/api/v1/jobs \
@@ -151,6 +166,7 @@ curl -X POST https://gigs-api.crystalshards.org/jobs/api/v1/jobs \
 | API Key (Pro)  | 10,000        | 120/min     |
 
 Rate limit headers are included in all responses:
+
 - `X-RateLimit-Limit`: Total requests allowed per hour
 - `X-RateLimit-Remaining`: Requests remaining in current window
 - `X-RateLimit-Reset`: Unix timestamp when limit resets
@@ -158,6 +174,7 @@ Rate limit headers are included in all responses:
 ## 🛠️ Development
 
 ### Local Development Setup
+
 ```bash
 # Start all services with Docker Compose
 make dev
@@ -170,6 +187,7 @@ cd apps/crystalbits && lucky dev
 ```
 
 ### Testing API Endpoints
+
 ```bash
 # Health checks
 curl http://localhost:3000/health
@@ -192,6 +210,7 @@ All API endpoints return consistent error responses:
 ```
 
 Common HTTP status codes:
+
 - `200` - Success
 - `201` - Created (for POST requests)
 - `400` - Bad Request (invalid parameters)
@@ -206,6 +225,7 @@ Common HTTP status codes:
 ## 📈 Monitoring
 
 ### Prometheus Metrics
+
 All services expose Prometheus metrics at `/metrics`:
 
 ```
@@ -220,6 +240,7 @@ crystalgigs_payments_completed_total 23
 ```
 
 ### Health Monitoring
+
 ```bash
 # Check service health
 curl https://api.crystalshards.org/health
@@ -250,4 +271,4 @@ This API documentation and the CrystalShards platform are licensed under the MIT
 
 ---
 
-**Built with ❤️ for the Crystal community**
+> **Built with ❤️ for the Crystal community**

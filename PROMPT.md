@@ -16,6 +16,7 @@ See `.agent/STATUS.md` for complete status.
 ## Architecture
 
 ### Monorepo Structure
+
 ```
 apps/
   crystalshards/      # Package registry (Lucky app + JoobQ workers)
@@ -34,6 +35,7 @@ terraform/
 ```
 
 ### Technology Stack
+
 - **Framework**: Lucky (Crystal web framework)
 - **Database**: CloudNativePG (in-cluster PostgreSQL operator)
 - **Cache/Queue**: Redis operator (in-cluster)
@@ -44,6 +46,7 @@ terraform/
 - **IaC**: Terraform (one resource per file)
 
 ### Kubernetes Namespaces
+
 - `crystalshards` - Package registry app
 - `crystaldocs` - Documentation app
 - `crystalgigs` - Job board app
@@ -56,18 +59,21 @@ terraform/
 ✅ **All deployment resources created:**
 
 Each app has:
+
 - ✅ `resource.kubernetes_deployment.<app>_api.tf` - API server pods
 - ✅ `resource.kubernetes_service.<app>.tf` - Service to expose pods
 - ✅ `resource.kubectl_manifest.<app>_postgres.tf` - PostgreSQL cluster (CNPG)
 - ✅ `resource.kubernetes_secret.<app>_secrets.tf` - DATABASE_URL, REDIS_URL, SECRET_KEY_BASE
 
 Shared:
+
 - ✅ Redis cluster in infrastructure namespace
 - ✅ MinIO tenant for package/doc storage
 
 ## Background Workers (crystalshards only)
 
 Mosquito workers in `apps/crystalshards/src/workers/`:
+
 - **IndexShardWorker** - Parse shard.yml, extract metadata, update search index
 - **BuildDocsWorker** - Run `crystal docs` in sandbox, upload to MinIO
 - **UpdateDependenciesWorker** - Update dependency graph
@@ -77,6 +83,7 @@ Worker deployment separate from API deployment (scales independently).
 ## Next Tasks
 
 **Phase 1: Make Deployable** ✅ COMPLETE
+
 1. ✅ Create deployments for all 4 apps
 2. ✅ Create services for all 4 apps
 3. ✅ Create PostgreSQL clusters for all 4 apps
@@ -85,6 +92,7 @@ Worker deployment separate from API deployment (scales independently).
 6. ✅ Test `terraform plan` succeeds
 
 **Phase 2: Implement crystalshards** ✅ COMPLETE
+
 1. ✅ Models: Shard, ShardVersion, Dependency, Download, Owner
 2. ✅ Migrations for database schema
 3. ✅ API endpoints: GET /shards, POST /shards, GET /shards/:name
@@ -92,6 +100,7 @@ Worker deployment separate from API deployment (scales independently).
 5. ✅ MinIO integration for package storage
 
 **Phase 3: Deploy Infrastructure** ⏳ IN PROGRESS
+
 1. ⏳ Apply Terraform (requires GCP credentials)
 2. ⏳ Build and push Docker images to Artifact Registry
 3. ⏳ Verify all pods running
@@ -99,6 +108,7 @@ Worker deployment separate from API deployment (scales independently).
 5. ⏳ Validate database connections
 
 **Phase 4: Implement crystaldocs** ✅ COMPLETE
+
 1. ✅ Doc and DocVersion models with migrations
 2. ✅ API endpoints (list, show, version details)
 3. ✅ MinIO integration via DocsStorageService
@@ -106,10 +116,12 @@ Worker deployment separate from API deployment (scales independently).
 5. Future: Version switcher UI, Search within docs
 
 **Phase 5: Other Apps** ✅ COMPLETE
+
 1. ✅ crystalgigs MVP (Job model, API endpoints, comprehensive specs)
 2. ✅ crystalbits MVP (Post model, API endpoints, view tracking, auto-slug)
 
 **Phase 6: Production Hardening** ✅ COMPLETE
+
 1. ✅ OpenAPI 3.0 specifications for all 4 apps
 2. ✅ Rate limiting on all POST endpoints (Redis-backed)
 3. ✅ Comprehensive rate limiting documentation
@@ -119,12 +131,15 @@ Worker deployment separate from API deployment (scales independently).
 ## Important Conventions
 
 ### Terraform
+
 - One resource per file: `resource.<type>.<name>.tf`
 - Module files: `module.<name>.tf`
 - All apps reference their namespace: `kubernetes_namespace.<app>.metadata[0].name`
 
 ### GKE Autopilot Requirements
+
 All pods MUST have resource requests/limits:
+
 ```hcl
 resources {
   requests = {
@@ -139,13 +154,16 @@ resources {
 ```
 
 ### Environment Variables (Lucky apps)
+
 Required:
+
 - `LUCKY_ENV=production`
 - `PORT=3000`
 - `DATABASE_URL=postgresql://...`
 - `SECRET_KEY_BASE=...`
 
 crystalshards also needs:
+
 - `REDIS_URL=redis://...` (for Mosquito workers)
 
 ## Workflow
@@ -162,12 +180,14 @@ crystalshards also needs:
 ## Error Handling
 
 Never get blocked:
+
 1. Log errors to `.agent/errors.log`
 2. Try alternative approaches (3 attempts)
 3. Document in STATUS.md
 4. Continue with next task
 
 Common fixes:
+
 - Terraform errors: Check variable passing between modules
 - CI failures: Read logs, fix root cause
 - Missing files: Check paths, create if needed

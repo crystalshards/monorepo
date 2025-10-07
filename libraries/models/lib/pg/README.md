@@ -1,4 +1,5 @@
 # crystal-pg
+
 A native, non-blocking Postgres driver for Crystal
 
 [![CI](https://github.com/will/crystal-pg/actions/workflows/ci.yml/badge.svg)](https://github.com/will/crystal-pg/actions/workflows/ci.yml)
@@ -68,7 +69,9 @@ PG_DB.query_one("select '{hello, world}'::text[]", &.read(Array(String))
 ```
 
 ### Error Handling
+
 It is possible to catch errors and notifications and pass them along to Crystal for further handling.
+
 ```Crystal
 DB.connect("postgres:///") do |cnn|
   # Capture and print all exceptions
@@ -135,20 +138,20 @@ Since it uses protocol version 3, older versions probably also work but are not 
 
 ## Supported Datatypes
 
-- text
-- boolean
-- int8, int4, int2
-- float4, float8
-- timestamptz, date, timestamp (but no one should use ts when tstz exists!)
-- json and jsonb
-- uuid
-- bytea
-- numeric/decimal (1)
-- varchar
-- regtype
-- geo types: point, box, path, lseg, polygon, circle, line
-- array types: int8, int4, int2, float8, float4, bool, text, numeric, timestamptz, date, timestamp
-- interval (2)
+* text
+* boolean
+* int8, int4, int2
+* float4, float8
+* timestamptz, date, timestamp (but no one should use ts when tstz exists!)
+* json and jsonb
+* uuid
+* bytea
+* numeric/decimal (1)
+* varchar
+* regtype
+* geo types: point, box, path, lseg, polygon, circle, line
+* array types: int8, int4, int2, float8, float4, bool, text, numeric, timestamptz, date, timestamp
+* interval (2)
 
 1: A note on numeric: In Postgres this type has arbitrary precision. In this
     driver, it is represented as a `PG::Numeric` which retains all precision, but
@@ -161,7 +164,7 @@ Since it uses protocol version 3, older versions probably also work but are not 
     in Crystal datatype. Therfore we provide a `PG::Interval` type that can be converted to
     `Time::Span` and `Time::MonthSpan`.
 
-# Authentication Methods
+## Authentication Methods
 
 By default this driver will accept `scram-sha-256` and `md5`, as well as
 `trust`. However `cleartext` is disabled by default. You can control exactly

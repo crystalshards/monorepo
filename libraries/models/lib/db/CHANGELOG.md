@@ -22,12 +22,12 @@
 
 ## v0.12.0 (2023-06-23)
 
-- **(breaking-change)** Refactor how drivers create connections. Allow creating `Database` without `URI`s. ([#181](https://github.com/crystal-lang/crystal-db/pull/181), thanks @bcardiff)
-- Close a transaction when `return`ing from within its block. ([#167](https://github.com/crystal-lang/crystal-db/pull/167), thanks @jgaskins)
-- Fix race conditions in multi-thread mode. ([#178](https://github.com/crystal-lang/crystal-db/pull/178), thanks @bcardiff)
-- Allow the use of `Enum`s when reading a `ResultSet`. ([#168](https://github.com/crystal-lang/crystal-db/pull/168), thanks @jgaskins)
-- Fix specs for Crystal 1.4 and 1.5. ([#163](https://github.com/crystal-lang/crystal-db/pull/163), [#173](https://github.com/crystal-lang/crystal-db/pull/173), thanks @straight-shoota)
-- Update README. ([#172](https://github.com/crystal-lang/crystal-db/pull/172), [#180](https://github.com/crystal-lang/crystal-db/pull/180), thanks @amauryt, @jgaskins)
+* **(breaking-change)** Refactor how drivers create connections. Allow creating `Database` without `URI`s. ([#181](https://github.com/crystal-lang/crystal-db/pull/181), thanks @bcardiff)
+* Close a transaction when `return`ing from within its block. ([#167](https://github.com/crystal-lang/crystal-db/pull/167), thanks @jgaskins)
+* Fix race conditions in multi-thread mode. ([#178](https://github.com/crystal-lang/crystal-db/pull/178), thanks @bcardiff)
+* Allow the use of `Enum`s when reading a `ResultSet`. ([#168](https://github.com/crystal-lang/crystal-db/pull/168), thanks @jgaskins)
+* Fix specs for Crystal 1.4 and 1.5. ([#163](https://github.com/crystal-lang/crystal-db/pull/163), [#173](https://github.com/crystal-lang/crystal-db/pull/173), thanks @straight-shoota)
+* Update README. ([#172](https://github.com/crystal-lang/crystal-db/pull/172), [#180](https://github.com/crystal-lang/crystal-db/pull/180), thanks @amauryt, @jgaskins)
 
 Note: The breaking-change introduced in this release does not affect consumers of the library, only driver implementors.
 
@@ -158,11 +158,11 @@ This release requires crystal 0.20.1
 
 This release requires crystal 0.19.2
 
-Note: v0.1.1 is yanked since is incompatible with v0.1.0 [more](https://github.com/crystal-lang/crystal-mysql/issues/10).
+Note: v0.1.1 is yanked since is incompatible with v0.1.0. [Additional details](https://github.com/crystal-lang/crystal-mysql/issues/10).
 
-* Added connection pool. `DB.open` works with a underlying connection pool. Use `Database#using_connection` to ensure the same connection is been used across multiple statements. [more](https://github.com/crystal-lang/crystal-db/pull/12)
+* Added connection pool. `DB.open` works with a underlying connection pool. Use `Database#using_connection` to ensure the same connection is been used across multiple statements. [Additional details](https://github.com/crystal-lang/crystal-db/pull/12)
 
-* Added mappings. JSON/YAML-like mapping macros (thanks @spalladino) [more](https://github.com/crystal-lang/crystal-db/pull/2)
+* Added mappings. JSON/YAML-like mapping macros (thanks @spalladino). [Additional details](https://github.com/crystal-lang/crystal-db/pull/2)
 
 * Changed require ResultSet implementors to just implement `read`, optionally implementing `read(T.class)`.
 

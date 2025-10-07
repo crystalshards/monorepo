@@ -1,0 +1,17 @@
+name: statusline
+version: 0.1.0
+
+authors:
+  - jwaldrip <jason@waldrip.net>
+
+targets:
+  statusline:
+    main: src/main.cr
+
+dependencies:
+  front_matter:
+    github: chris-huxtable/front_matter.cr
+
+crystal: ">= 1.17.0"
+
+license: MIT

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/veelenga/bin/master/ameba/logo.png" width="800">
+  <img src="https://raw.githubusercontent.com/veelenga/bin/master/ameba/logo.png" alt="Ameba Logo" width="800">
   <h3 align="center">Ameba</h3>
   <p align="center">Code style linter for Crystal<p>
   <p align="center">
@@ -8,9 +8,9 @@
     </sup>
   </p>
   <p align="center">
-    <a href="https://github.com/crystal-ameba/ameba/actions/workflows/ci.yml"><img src="https://github.com/crystal-ameba/ameba/actions/workflows/ci.yml/badge.svg"></a>
-    <a href="https://github.com/crystal-ameba/ameba/releases"><img src="https://img.shields.io/github/release/crystal-ameba/ameba.svg?maxAge=360"></a>
-    <a href="https://github.com/crystal-ameba/ameba/blob/master/LICENSE"><img src="https://img.shields.io/github/license/crystal-ameba/ameba.svg"></a>
+    <a href="https://github.com/crystal-ameba/ameba/actions/workflows/ci.yml"><img src="https://github.com/crystal-ameba/ameba/actions/workflows/ci.yml/badge.svg" alt="CI Status"></a>
+    <a href="https://github.com/crystal-ameba/ameba/releases"><img src="https://img.shields.io/github/release/crystal-ameba/ameba.svg?maxAge=360" alt="Latest Release"></a>
+    <a href="https://github.com/crystal-ameba/ameba/blob/master/LICENSE"><img src="https://img.shields.io/github/license/crystal-ameba/ameba.svg" alt="License"></a>
   </p>
 </p>
 
@@ -72,7 +72,7 @@ Finished in 389.45 milliseconds
 
 ### Watch a tutorial
 
-<a href="https://luckycasts.com/videos/ameba"><img src="https://i.imgur.com/uOETQlM.png" title="Write Better Crystal Code with the Ameba Shard" width="500" /></a>
+<a href="https://luckycasts.com/videos/ameba"><img src="https://i.imgur.com/uOETQlM.png" alt="Write Better Crystal Code with the Ameba Shard" title="Write Better Crystal Code with the Ameba Shard" width="500" /></a>
 
 [🎬 Watch the LuckyCast showing how to use Ameba](https://luckycasts.com/videos/ameba)
 
@@ -81,7 +81,7 @@ Finished in 389.45 milliseconds
 Rules that are marked as `[Correctable]` in the output can be automatically corrected using `--fix` flag:
 
 ```sh
-$ ameba --fix
+ameba --fix
 ```
 
 ### Explain issues
@@ -93,8 +93,8 @@ To be convenient, you can just copy-paste the `PATH:line:column` string from the
 report and paste behind the `ameba` command to check it out.
 
 ```sh
-$ ameba crystal/command/format.cr:26:83           # show explanation for the issue
-$ ameba --explain crystal/command/format.cr:26:83 # same thing
+ameba crystal/command/format.cr:26:83           # show explanation for the issue
+ameba --explain crystal/command/format.cr:26:83 # same thing
 ```
 
 ### Run in parallel
@@ -102,15 +102,15 @@ $ ameba --explain crystal/command/format.cr:26:83 # same thing
 Some quick benchmark results measured while running Ameba on Crystal repo:
 
 ```sh
-$ CRYSTAL_WORKERS=1 ameba #=> 29.11 seconds
-$ CRYSTAL_WORKERS=2 ameba #=> 19.49 seconds
-$ CRYSTAL_WORKERS=4 ameba #=> 13.48 seconds
-$ CRYSTAL_WORKERS=8 ameba #=> 10.14 seconds
+CRYSTAL_WORKERS=1 ameba #=> 29.11 seconds
+CRYSTAL_WORKERS=2 ameba #=> 19.49 seconds
+CRYSTAL_WORKERS=4 ameba #=> 13.48 seconds
+CRYSTAL_WORKERS=8 ameba #=> 10.14 seconds
 ```
 
 ## Installation
 
-### As a project dependency:
+### As a project dependency
 
 Add this to your application's `shard.yml`:
 
@@ -125,8 +125,8 @@ Build `bin/ameba` binary within your project directory while running `shards ins
 ### OS X
 
 ```sh
-$ brew tap crystal-ameba/ameba
-$ brew install ameba
+brew tap crystal-ameba/ameba
+brew install ameba
 ```
 
 ### Docker
@@ -134,13 +134,13 @@ $ brew install ameba
 Build the image:
 
 ```sh
-$ docker build -t ghcr.io/crystal-ameba/ameba .
+docker build -t ghcr.io/crystal-ameba/ameba .
 ```
 
 To use the resulting image on a local source folder, mount the current (or target) directory into `/src`:
 
 ```sh
-$ docker run -v $(pwd):/src ghcr.io/crystal-ameba/ameba
+docker run -v $(pwd):/src ghcr.io/crystal-ameba/ameba
 ```
 
 Also available on GitHub: https://github.com/crystal-ameba/ameba/pkgs/container/ameba
@@ -148,8 +148,8 @@ Also available on GitHub: https://github.com/crystal-ameba/ameba/pkgs/container/
 ### From sources
 
 ```sh
-$ git clone https://github.com/crystal-ameba/ameba && cd ameba
-$ make install
+git clone https://github.com/crystal-ameba/ameba && cd ameba
+make install
 ```
 
 ## Configuration
@@ -195,10 +195,10 @@ One or more rules, or a one or more group of rules can be included or excluded
 via command line arguments:
 
 ```sh
-$ ameba --only   Lint/Syntax # runs only Lint/Syntax rule
-$ ameba --only   Style,Lint  # runs only rules from Style and Lint groups
-$ ameba --except Lint/Syntax # runs all rules except Lint/Syntax
-$ ameba --except Style,Lint  # runs all rules except rules in Style and Lint groups
+ameba --only   Lint/Syntax # runs only Lint/Syntax rule
+ameba --only   Style,Lint  # runs only rules from Style and Lint groups
+ameba --except Lint/Syntax # runs all rules except Lint/Syntax
+ameba --except Style,Lint  # runs all rules except rules in Style and Lint groups
 ```
 
 Or through the configuration file:

@@ -2,7 +2,7 @@
 
 This is a project written using [Lucky](https://luckyframework.org). Enjoy!
 
-### Setting up the project
+## Setting up the project
 
 1. [Install required dependencies](https://luckyframework.org/guides/getting-started/installing#install-required-dependencies)
 1. Update database settings in `config/database.cr`

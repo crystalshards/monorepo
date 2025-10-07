@@ -6,6 +6,24 @@
                 "-y",
                 "@upstash/context7-mcp@latest"
             ]
+        },
+        "postgres": {
+            "command": "uvx",
+            "args": [
+                "postgres-mcp",
+                "--access-mode=unrestricted"
+            ],
+            "env": {
+                "DATABASE_URI": "postgresql://postgres:postgres@localhost:5432/gigsmart_dev"
+            }
+        },
+        "playwright": {
+            "command": "npx",
+            "args": [
+                "@playwright/mcp@latest",
+                "--isolated",
+                "--storage-state={path/to/storage.json}"
+            ]
         }
     }
 }

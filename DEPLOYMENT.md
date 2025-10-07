@@ -50,6 +50,7 @@ gcloud iam service-accounts keys create crystalshards-ci-key.json \
 ### Setting up the Cluster
 
 1. **Create GKE Cluster** (if not exists):
+
 ```bash
 cd terraform
 terraform init
@@ -57,7 +58,8 @@ terraform plan
 terraform apply
 ```
 
-2. **Deploy Infrastructure**:
+1. **Deploy Infrastructure**:
+
 ```bash
 ./scripts/deploy-infrastructure.sh
 ```
@@ -78,12 +80,12 @@ The project uses GitHub Actions for automated:
    - Code formatting checks
    - E2E browser tests
 
-2. **`security.yml`**: Security scanning
+1. **`security.yml`**: Security scanning
    - SARIF security scanning
    - Dependency vulnerability checks
    - Secret detection
 
-3. **`build-and-deploy.yml`**: Build and deployment
+1. **`build-and-deploy.yml`**: Build and deployment
    - Docker image building
    - Container vulnerability scanning
    - Kubernetes deployment
@@ -107,11 +109,13 @@ gh workflow run "Build and Deploy" -f environment=production
 ## Environment Configuration
 
 ### Staging
+
 - Namespace: `*-staging`
 - Resource limits: Smaller (development workloads)
 - Scale to zero after 5 minutes idle
 
 ### Production
+
 - Namespace: `crystalshards`, `crystaldocs`, `crystalgigs`
 - Resource limits: Production-ready
 - High availability with multiple replicas
@@ -119,10 +123,12 @@ gh workflow run "Build and Deploy" -f environment=production
 ## Monitoring
 
 Access monitoring dashboards:
+
 - **Grafana**: `http://grafana.crystalshards.org`
 - **Prometheus**: `http://prometheus.crystalshards.org`
 
 Key metrics monitored:
+
 - Application response times
 - Error rates
 - Database performance
@@ -134,21 +140,27 @@ Key metrics monitored:
 ### Common Issues
 
 1. **Authentication Failure**
+
    ```
    google-github-actions/auth failed with: the GitHub Action workflow must specify exactly one of "workload_identity_provider" or "credentials_json"
    ```
+
    **Solution**: Configure `GCP_SA_KEY` or `WIF_PROVIDER` secret in GitHub repository
 
-2. **Image Push Failure**
+1. **Image Push Failure**
+
    ```
    unauthorized: authentication required
    ```
+
    **Solution**: Verify service account has `roles/storage.admin` and `roles/container.developer`
 
-3. **Deployment Timeout**
+1. **Deployment Timeout**
+
    ```
    timed out waiting for the condition
    ```
+
    **Solution**: Check pod logs with `kubectl logs -f deployment/app-name -n namespace`
 
 ### Debug Commands
@@ -178,5 +190,6 @@ The deployment is configured for cost efficiency:
 - **In-Cluster Services**: No external cloud service costs
 
 Expected monthly costs:
+
 - **Staging**: ~$50-100 (scales to zero frequently)
 - **Production**: ~$200-400 (depends on traffic)

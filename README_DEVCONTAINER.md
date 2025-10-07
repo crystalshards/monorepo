@@ -15,21 +15,21 @@ This project is configured to run autonomously in a Kubernetes environment using
 
 1. Create the required secrets:
 
-```bash
-# Claude API key
-kubectl create secret generic claude-secrets \
-  --from-literal=api-key="your-claude-api-key"
+   ```bash
+   # Claude API key
+   kubectl create secret generic claude-secrets \
+     --from-literal=api-key="your-claude-api-key"
 
-# GitHub token (needs repo, workflow, and packages permissions)
-kubectl create secret generic github-secrets \
-  --from-literal=token="your-github-token"
-```
+   # GitHub token (needs repo, workflow, and packages permissions)
+   kubectl create secret generic github-secrets \
+     --from-literal=token="your-github-token"
+   ```
 
 2. Deploy the development pod:
 
-```bash
-kubectl apply -f kubernetes-dev-pod.yaml
-```
+   ```bash
+   kubectl apply -f kubernetes-dev-pod.yaml
+   ```
 
 3. The pod will
 
@@ -39,9 +39,9 @@ kubectl apply -f kubernetes-dev-pod.yaml
 
 4. Monitor the progress:
 
-```bash
-kubectl logs -f crystalshards-dev
-```
+   ```bash
+   kubectl logs -f crystalshards-dev
+   ```
 
 5. Access the running container:
 

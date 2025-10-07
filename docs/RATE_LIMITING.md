@@ -57,11 +57,13 @@ The `Retry-After` header indicates how many seconds until the rate limit resets.
 ### Rate Limit Storage
 
 Rate limits are stored in Redis with keys in the format:
+
 ```
 ratelimit:<action_class>:<identifier>
 ```
 
 For example:
+
 ```
 ratelimit:api:shards:create:192.168.1.100
 ratelimit:api:jobs:create:10.0.0.50
@@ -170,6 +172,7 @@ TTL ratelimit:api:shards:create:192.168.1.100
 ### Prometheus Metrics
 
 Consider adding Prometheus metrics to track:
+
 - Number of rate limit violations per endpoint
 - Top IPs hitting rate limits
 - Average time between rate limit hits

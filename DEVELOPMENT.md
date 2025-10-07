@@ -68,6 +68,7 @@ make clean         # Clean up
 Migrations are in `libraries/migrations/` and run automatically on startup.
 
 Connect to database:
+
 ```bash
 make db-console
 ```
@@ -75,6 +76,7 @@ make db-console
 ## Background Jobs
 
 The worker processes background jobs including:
+
 - Documentation generation
 - Shard indexing  
 - Search index updates
@@ -84,6 +86,7 @@ The worker processes background jobs including:
 ## Testing
 
 Each app has its own test suite:
+
 ```bash
 cd apps/crystalshards && crystal spec
 cd apps/crystaldocs && crystal spec

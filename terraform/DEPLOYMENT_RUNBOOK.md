@@ -6,6 +6,7 @@
 ## Current State
 
 ✅ **Complete**:
+
 - All Terraform modules written and validated
 - All Kubernetes resources defined (Deployments, Services, Ingresses)
 - PostgreSQL clusters (CloudNativePG operator)
@@ -121,6 +122,7 @@ terraform init
 ```
 
 **Expected output**:
+
 ```
 Terraform has been successfully initialized!
 ```
@@ -134,6 +136,7 @@ terraform plan
 ```
 
 **What will be created**:
+
 - GKE Autopilot cluster
 - VPC network with Cloud NAT
 - Artifact Registry repository (us-docker.pkg.dev)
@@ -148,6 +151,7 @@ terraform plan
 - Kubernetes secrets (generated)
 
 **Review checklist**:
+
 - [ ] Cluster region is correct
 - [ ] Artifact Registry location is `us` (multi-region)
 - [ ] All 4 app namespaces will be created
@@ -156,7 +160,7 @@ terraform plan
 
 ### Step 5: Apply Terraform
 
-**⚠️ This will create billable GCP resources**
+> **Warning**: This will create billable GCP resources
 
 ```bash
 terraform apply
@@ -167,6 +171,7 @@ Review the plan one more time, then type `yes` to proceed.
 **Expected duration**: 15-25 minutes (GKE cluster creation is slow)
 
 **Monitor progress**:
+
 ```bash
 # In another terminal, watch cluster creation
 watch -n 10 "gcloud container clusters list --project=$PROJECT_ID"
@@ -229,6 +234,7 @@ After Terraform is applied, GitHub Actions will automatically build and push ima
 3. Images will be pushed to `us-docker.pkg.dev/$PROJECT_ID/crystalshards/*`
 
 **Monitor build progress**:
+
 ```bash
 # Watch GitHub Actions workflows
 gh run list --limit 5
@@ -256,6 +262,7 @@ kubectl get ingress -A
 ```
 
 **Wait for all pods to be Ready (1/1)**:
+
 ```bash
 watch -n 5 "kubectl get pods -A | grep -E 'crystalshards|crystaldocs|crystalgigs|crystalbits'"
 ```
@@ -289,6 +296,7 @@ curl -H "Host: api.crystalbits.org" http://$INGRESS_IP/health
 ```
 
 **Expected response** (all should return 200 OK):
+
 ```json
 {
   "status": "ok",
@@ -330,6 +338,7 @@ npm test
 **Symptom**: Resource already exists error
 
 **Solution**: Import existing resource or remove from state
+
 ```bash
 terraform import <resource_type>.<name> <resource_id>
 ```
@@ -341,17 +350,20 @@ terraform import <resource_type>.<name> <resource_id>
 **Root cause**: Images haven't been built yet, or registry permissions issue
 
 **Solution 1**: Wait for CI to build images
+
 ```bash
 gh run list --workflow="Build and Push Docker Images"
 ```
 
 **Solution 2**: Build images manually
+
 ```bash
 cd /workspaces/monorepo
 make build-images
 ```
 
 **Solution 3**: Check service account permissions
+
 ```bash
 gcloud artifacts repositories get-iam-policy crystalshards \
   --project=$PROJECT_ID \
@@ -363,6 +375,7 @@ gcloud artifacts repositories get-iam-policy crystalshards \
 **Symptom**: Pods show "Waiting for database to be ready"
 
 **Solution**: Check CNPG cluster status
+
 ```bash
 kubectl get clusters.postgresql.cnpg.io -A
 kubectl describe cluster crystalshards-db -n crystalshards
@@ -376,6 +389,7 @@ kubectl logs -n infrastructure -l app.kubernetes.io/name=cloudnative-pg
 **Symptom**: Traefik service stuck in "Pending"
 
 **Solution**: Check GCP load balancer creation
+
 ```bash
 # Check service
 kubectl describe svc traefik -n traefik-system
@@ -389,6 +403,7 @@ gcloud compute forwarding-rules list --project=$PROJECT_ID
 **Symptom**: HTTPS shows certificate error
 
 **Solution**: Check cert-manager
+
 ```bash
 kubectl get certificates -A
 kubectl describe certificate -n crystalshards
@@ -400,12 +415,14 @@ kubectl logs -n infrastructure -l app.kubernetes.io/name=cert-manager
 If deployment fails and you need to rollback:
 
 ### Option 1: Rollback Deployment
+
 ```bash
 kubectl rollout undo deployment/crystalshards-api -n crystalshards
 kubectl rollout status deployment/crystalshards-api -n crystalshards
 ```
 
 ### Option 2: Destroy Infrastructure
+
 ```bash
 cd terraform
 terraform destroy
@@ -448,6 +465,7 @@ gcloud container clusters describe crystalshards-cluster \
 ## Cost Estimates
 
 **Monthly costs (estimated)**:
+
 - GKE Autopilot cluster: $150-250
   - 4 API deployments (250m CPU, 512Mi RAM each)
   - 1 worker deployment (500m CPU, 1Gi RAM)
@@ -459,6 +477,7 @@ gcloud container clusters describe crystalshards-cluster \
 - **Total**: ~$185-310/month
 
 **Cost optimization**:
+
 - Autopilot only charges for pods that are running
 - Consider reducing replicas in non-prod environments
 - Use KEDA for scale-to-zero workloads

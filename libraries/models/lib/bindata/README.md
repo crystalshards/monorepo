@@ -32,7 +32,7 @@ Then you can specify the structures fields. There are a few different field type
    * Useful when a group of fields are related or optional
 5. Enums
 6. Bools
-6. Arrays (fixed size and dynamic)
+7. Arrays (fixed size and dynamic)
 
 
 ### Examples
@@ -140,7 +140,7 @@ ber.tag_class # => ASN1::BER::TagClass::Universal
 ```
 
 
-## Real World Examples:
+## Real World Examples
 
 * ASN.1
   * https://github.com/crystal-community/jwt/blob/master/src/jwt.cr#L251

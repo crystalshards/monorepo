@@ -22,17 +22,20 @@ This Terraform configuration creates a cost-optimized GKE cluster with all neces
 ## Setup
 
 1. Copy the example variables file:
+
    ```bash
    cp terraform.tfvars.example terraform.tfvars
    ```
 
 2. Edit `terraform.tfvars` with your GCP project details:
+
    ```hcl
    project_id = "your-project-id"
    region     = "us-central1"
    ```
 
 3. Initialize and apply Terraform:
+
    ```bash
    terraform init
    terraform plan
@@ -40,6 +43,7 @@ This Terraform configuration creates a cost-optimized GKE cluster with all neces
    ```
 
 4. Configure kubectl:
+
    ```bash
    gcloud container clusters get-credentials crystalshards-cluster --region us-central1 --project your-project-id
    ```
@@ -47,6 +51,7 @@ This Terraform configuration creates a cost-optimized GKE cluster with all neces
 ## Resource Estimates
 
 With default settings (Autopilot + preemptible nodes):
+
 - **Idle cost**: ~$50-100/month (when scaled to zero)
 - **Active cost**: ~$200-400/month (under normal load)
 - **Scaling**: Automatically scales from 0 to 50+ pods based on traffic

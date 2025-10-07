@@ -74,6 +74,7 @@ Building CrystalShards.org and CrystalDocs.org - a comprehensive Crystal languag
 - Continue with next task if truly stuck after 3 attempts
 
 **Recovery Examples:**
+
 ```bash
 # If gh command fails
 git log --oneline | grep "issue" || echo "No issues found"
@@ -296,6 +297,7 @@ gh auth login                         # Login to GitHub
 ### Finding Work
 
 **When no active task or all tasks are blocked:**
+
 1. Check GitHub issues: `gh issue list --repo crystalshards/crystalshards-claude`
 2. Filter for actionable issues:
    - `gh issue list --label "ready" --assignee=""`

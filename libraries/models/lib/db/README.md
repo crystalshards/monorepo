@@ -79,13 +79,13 @@ end
 
 Issues not yet addressed:
 
-- [x] Support non prepared statements. [#25](https://github.com/crystal-lang/crystal-db/pull/25)
-- [x] Time data type. (implementation details depends on actual drivers)
-- [x] Data type extensibility. Allow each driver to extend the data types allowed.
-- [x] Transactions & nested transactions. [#27](https://github.com/crystal-lang/crystal-db/pull/27)
-- [x] Connection pool.
-- [x] Logging
-- [ ] Direct access to `IO` to avoid memory allocation for blobs.
+* [x] Support non prepared statements. [#25](https://github.com/crystal-lang/crystal-db/pull/25)
+* [x] Time data type. (implementation details depends on actual drivers)
+* [x] Data type extensibility. Allow each driver to extend the data types allowed.
+* [x] Transactions & nested transactions. [#27](https://github.com/crystal-lang/crystal-db/pull/27)
+* [x] Connection pool.
+* [x] Logging
+* [ ] Direct access to `IO` to avoid memory allocation for blobs.
 
 ## Contributing
 
@@ -97,4 +97,4 @@ Issues not yet addressed:
 
 ## Contributors
 
-- [bcardiff](https://github.com/bcardiff) Brian J. Cardiff - creator, maintainer
+* [bcardiff](https://github.com/bcardiff) Brian J. Cardiff - creator, maintainer
