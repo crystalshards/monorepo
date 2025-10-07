@@ -25,9 +25,7 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
           downloaded_at: Time.utc
         )
 
-        ShardQuery.new.id(shard.id).first!.tap do |s|
-          SaveShard.update!(s, total_downloads: s.total_downloads + 1)
-        end
+        SaveShard.update!(shard, total_downloads: shard.total_downloads + 1)
 
         json({
           shard_name: shard.name,
