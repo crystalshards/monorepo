@@ -64,7 +64,7 @@ jobs:
     needs: deploy-cluster
     runs-on: ubuntu-latest
     strategy:
-      max-parallel: 1
+      fail-fast: false
       matrix:
         app: [crystalshards, crystaldocs, crystalgigs, crystalbits]
         target: [api, worker]
