@@ -14,7 +14,12 @@ class Api::Shards::Index < ApiAction
       shards_query = shards_query.name.ilike("%#{search_query}%")
     end
 
-    paginated_shards = shards_query.paginate(page: page, per_page: per_page)
+    total_count = shards_query.select_count
+    offset_value = (page - 1) * per_page
+
+    paginated_shards = shards_query
+      .limit(per_page)
+      .offset(offset_value)
 
     json({
       shards: paginated_shards.map do |shard|
@@ -36,7 +41,7 @@ class Api::Shards::Index < ApiAction
       meta: {
         page:     page,
         per_page: per_page,
-        total:    paginated_shards.total,
+        total:    total_count,
       },
     })
   end
