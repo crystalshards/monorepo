@@ -6,9 +6,10 @@ resource "helm_release" "external_dns" {
   version    = "1.14.3"
   namespace  = "infrastructure"
 
-  # Increase timeout for initial installation
-  timeout = 600  # 10 minutes
-  wait    = true
+  # Increase timeout for initial installation (GKE Autopilot can be slow)
+  # Disable wait to avoid blocking deployment - external-dns can start async
+  timeout = 900  # 15 minutes
+  wait    = false
 
   set {
     name  = "provider"
