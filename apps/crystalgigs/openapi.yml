@@ -1,0 +1,384 @@
+openapi: 3.0.3
+info:
+  title: CrystalGigs API
+  description: |
+    CrystalGigs is a job board for Crystal language developers.
+
+    This API allows you to:
+    - Browse and search for Crystal developer jobs
+    - Post new job listings
+    - Filter jobs by location, type, and remote status
+  version: 1.0.0
+  contact:
+    name: CrystalGigs
+    url: https://crystalgigs.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://crystalgigs.com
+    description: Production server
+  - url: http://localhost:3002
+    description: Local development server
+
+tags:
+  - name: jobs
+    description: Job listing operations
+  - name: health
+    description: Health check endpoints
+
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      description: Check if the API is running and connected to dependencies
+      tags:
+        - health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/jobs:
+    get:
+      summary: List all jobs
+      description: Get a paginated list of job postings with optional filters
+      tags:
+        - jobs
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: location
+          in: query
+          description: Filter by location
+          required: false
+          schema:
+            type: string
+        - name: remote
+          in: query
+          description: Filter for remote jobs only
+          required: false
+          schema:
+            type: boolean
+        - name: job_type
+          in: query
+          description: Filter by job type
+          required: false
+          schema:
+            type: string
+            enum: [full_time, part_time, contract, freelance, internship]
+        - name: query
+          in: query
+          description: Search query to filter jobs by title or description
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JobSummary'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+    post:
+      summary: Create a new job listing
+      description: Post a new job to the board
+      tags:
+        - jobs
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobRequest'
+      responses:
+        '201':
+          description: Job created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Job created successfully
+                  job:
+                    $ref: '#/components/schemas/JobDetail'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/jobs/{id}:
+    get:
+      summary: Get job details
+      description: Get detailed information about a specific job
+      tags:
+        - jobs
+      parameters:
+        - name: id
+          in: path
+          description: Job ID
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobDetail'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT token or API key
+
+  schemas:
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          properties:
+            database:
+              type: string
+              example: connected
+
+    JobSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+          example: Senior Crystal Developer
+        company:
+          type: string
+          example: Acme Corp
+        location:
+          type: string
+          example: San Francisco, CA
+        remote:
+          type: boolean
+          example: true
+        job_type:
+          type: string
+          enum: [full_time, part_time, contract, freelance, internship]
+          example: full_time
+        salary_min:
+          type: integer
+          nullable: true
+          example: 120000
+        salary_max:
+          type: integer
+          nullable: true
+          example: 180000
+        salary_currency:
+          type: string
+          nullable: true
+          example: USD
+        published_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    JobDetail:
+      allOf:
+        - $ref: '#/components/schemas/JobSummary'
+        - type: object
+          properties:
+            description:
+              type: string
+            requirements:
+              type: string
+              nullable: true
+            benefits:
+              type: string
+              nullable: true
+            company_description:
+              type: string
+              nullable: true
+            company_website:
+              type: string
+              format: uri
+              nullable: true
+            company_logo_url:
+              type: string
+              format: uri
+              nullable: true
+            apply_url:
+              type: string
+              format: uri
+              nullable: true
+            apply_email:
+              type: string
+              format: email
+              nullable: true
+            tags:
+              type: array
+              items:
+                type: string
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    CreateJobRequest:
+      type: object
+      required:
+        - title
+        - company
+        - location
+        - job_type
+        - description
+      properties:
+        title:
+          type: string
+          example: Senior Crystal Developer
+        company:
+          type: string
+          example: Acme Corp
+        location:
+          type: string
+          example: San Francisco, CA
+        remote:
+          type: boolean
+          default: false
+        job_type:
+          type: string
+          enum: [full_time, part_time, contract, freelance, internship]
+        description:
+          type: string
+        requirements:
+          type: string
+        benefits:
+          type: string
+        company_description:
+          type: string
+        company_website:
+          type: string
+          format: uri
+        company_logo_url:
+          type: string
+          format: uri
+        salary_min:
+          type: integer
+        salary_max:
+          type: integer
+        salary_currency:
+          type: string
+          default: USD
+        apply_url:
+          type: string
+          format: uri
+        apply_email:
+          type: string
+          format: email
+        tags:
+          type: array
+          items:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 150
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    ValidationError:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: array
+            items:
+              oneOf:
+                - type: string
+                - type: string
+            minItems: 2
+            maxItems: 2

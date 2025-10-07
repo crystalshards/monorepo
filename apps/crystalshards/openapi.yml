@@ -1,0 +1,499 @@
+openapi: 3.0.3
+info:
+  title: CrystalShards API
+  description: |
+    CrystalShards is a package registry for Crystal language shards.
+
+    This API allows you to:
+    - Browse and search for Crystal shards
+    - Publish new shards and versions
+    - Download packages
+    - Track download statistics
+  version: 1.0.0
+  contact:
+    name: CrystalShards
+    url: https://crystalshards.org
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://crystalshards.org
+    description: Production server
+  - url: http://localhost:3000
+    description: Local development server
+
+tags:
+  - name: shards
+    description: Crystal shard operations
+  - name: versions
+    description: Shard version operations
+  - name: downloads
+    description: Download tracking
+  - name: health
+    description: Health check endpoints
+
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      description: Check if the API is running and connected to dependencies
+      tags:
+        - health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+                  services:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                        example: connected
+                      redis:
+                        type: string
+                        example: connected
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/shards:
+    get:
+      summary: List all shards
+      description: Get a paginated list of all Crystal shards
+      tags:
+        - shards
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: query
+          in: query
+          description: Search query to filter shards by name
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shards:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ShardSummary'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+    post:
+      summary: Create a new shard
+      description: Publish a new Crystal shard to the registry
+      tags:
+        - shards
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateShardRequest'
+      responses:
+        '201':
+          description: Shard created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Shard created successfully, indexing started
+                  shard:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        format: int64
+                      name:
+                        type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/shards/{name}:
+    get:
+      summary: Get shard details
+      description: Get detailed information about a specific shard
+      tags:
+        - shards
+      parameters:
+        - name: name
+          in: path
+          description: Shard name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShardDetail'
+        '404':
+          description: Shard not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/shards/{name}/versions:
+    get:
+      summary: List shard versions
+      description: Get all versions of a specific shard
+      tags:
+        - versions
+      parameters:
+        - name: name
+          in: path
+          description: Shard name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shard:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                  versions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ShardVersion'
+        '404':
+          description: Shard not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/shards/{name}/{version}:
+    get:
+      summary: Get specific version
+      description: Get detailed information about a specific version of a shard
+      tags:
+        - versions
+      parameters:
+        - name: name
+          in: path
+          description: Shard name
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          description: Version string (e.g., 1.0.0)
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shard:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                  version:
+                    $ref: '#/components/schemas/ShardVersionDetail'
+        '404':
+          description: Shard or version not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/shards/{name}/{version}/download:
+    post:
+      summary: Track download
+      description: Record a download of a specific shard version
+      tags:
+        - downloads
+      parameters:
+        - name: name
+          in: path
+          description: Shard name
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          description: Version string (e.g., 1.0.0)
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Download tracked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Download tracked
+                  download_url:
+                    type: string
+                    format: uri
+                    description: Presigned URL for downloading the package
+        '404':
+          description: Shard or version not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT token or API key
+
+  schemas:
+    ShardSummary:
+      type: object
+      properties:
+        name:
+          type: string
+          example: kemal
+        description:
+          type: string
+          example: Fast, Effective, Simple web framework for Crystal
+        repository_url:
+          type: string
+          format: uri
+          example: https://github.com/kemalcr/kemal
+        homepage_url:
+          type: string
+          format: uri
+          nullable: true
+        documentation_url:
+          type: string
+          format: uri
+          nullable: true
+        license:
+          type: string
+          example: MIT
+          nullable: true
+        total_downloads:
+          type: integer
+          format: int64
+          example: 15000
+        github_stars:
+          type: integer
+          nullable: true
+          example: 3500
+        github_forks:
+          type: integer
+          nullable: true
+          example: 250
+        latest_version:
+          type: string
+          nullable: true
+          example: 1.4.0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ShardDetail:
+      allOf:
+        - $ref: '#/components/schemas/ShardSummary'
+        - type: object
+          properties:
+            versions:
+              type: array
+              items:
+                $ref: '#/components/schemas/ShardVersion'
+            dependencies:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version_constraint:
+                    type: string
+
+    ShardVersion:
+      type: object
+      properties:
+        version:
+          type: string
+          example: 1.4.0
+        released_at:
+          type: string
+          format: date-time
+        downloads:
+          type: integer
+          format: int64
+        yanked:
+          type: boolean
+          default: false
+
+    ShardVersionDetail:
+      allOf:
+        - $ref: '#/components/schemas/ShardVersion'
+        - type: object
+          properties:
+            crystal_version_constraint:
+              type: string
+              nullable: true
+              example: '>= 1.0.0'
+            dependencies:
+              type: array
+              items:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version_constraint:
+                    type: string
+                    nullable: true
+            authors:
+              type: array
+              items:
+                type: string
+            readme:
+              type: string
+              nullable: true
+            checksum:
+              type: string
+              nullable: true
+            package_url:
+              type: string
+              format: uri
+              nullable: true
+
+    CreateShardRequest:
+      type: object
+      required:
+        - name
+        - repository_url
+        - version
+      properties:
+        name:
+          type: string
+          example: my-shard
+          pattern: '^[a-z0-9_-]+$'
+        description:
+          type: string
+          example: A useful Crystal shard
+        repository_url:
+          type: string
+          format: uri
+          example: https://github.com/user/my-shard
+        homepage_url:
+          type: string
+          format: uri
+        documentation_url:
+          type: string
+          format: uri
+        license:
+          type: string
+          example: MIT
+        version:
+          type: string
+          example: 1.0.0
+          pattern: '^\d+\.\d+\.\d+.*$'
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 150
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    ValidationError:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: array
+            items:
+              oneOf:
+                - type: string
+                - type: string
+            minItems: 2
+            maxItems: 2

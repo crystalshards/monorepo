@@ -1,0 +1,314 @@
+openapi: 3.0.3
+info:
+  title: CrystalBits API
+  description: |
+    CrystalBits is a blog and newsletter platform for Crystal language news and articles.
+
+    This API allows you to:
+    - Browse and read blog posts
+    - Search posts by tags or content
+    - Track post views
+    - Publish new posts
+  version: 1.0.0
+  contact:
+    name: CrystalBits
+    url: https://crystalbits.org
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://crystalbits.org
+    description: Production server
+  - url: http://localhost:3003
+    description: Local development server
+
+tags:
+  - name: posts
+    description: Blog post operations
+  - name: health
+    description: Health check endpoints
+
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      description: Check if the API is running and connected to dependencies
+      tags:
+        - health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/posts:
+    get:
+      summary: List all posts
+      description: Get a paginated list of blog posts with optional filters
+      tags:
+        - posts
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: featured
+          in: query
+          description: Filter for featured posts only
+          required: false
+          schema:
+            type: boolean
+        - name: tag
+          in: query
+          description: Filter by tag
+          required: false
+          schema:
+            type: string
+        - name: query
+          in: query
+          description: Search query to filter posts by title or content
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  posts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PostSummary'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+    post:
+      summary: Create a new post
+      description: Publish a new blog post
+      tags:
+        - posts
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePostRequest'
+      responses:
+        '201':
+          description: Post created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Post created successfully
+                  post:
+                    $ref: '#/components/schemas/PostDetail'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+
+  /api/posts/{slug}:
+    get:
+      summary: Get post details
+      description: Get detailed information about a specific post (increments view count)
+      tags:
+        - posts
+      parameters:
+        - name: slug
+          in: path
+          description: Post slug
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostDetail'
+        '404':
+          description: Post not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: JWT token or API key
+
+  schemas:
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          properties:
+            database:
+              type: string
+              example: connected
+
+    PostSummary:
+      type: object
+      properties:
+        slug:
+          type: string
+          example: crystal-1-12-released
+        title:
+          type: string
+          example: Crystal 1.12 Released
+        excerpt:
+          type: string
+          example: A summary of new features and improvements in Crystal 1.12
+        author:
+          type: string
+          example: John Doe
+        tags:
+          type: array
+          items:
+            type: string
+          example: [releases, crystal]
+        featured:
+          type: boolean
+          default: false
+        view_count:
+          type: integer
+          format: int64
+          example: 1523
+        published_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    PostDetail:
+      allOf:
+        - $ref: '#/components/schemas/PostSummary'
+        - type: object
+          properties:
+            content:
+              type: string
+              description: Full post content in Markdown format
+            updated_at:
+              type: string
+              format: date-time
+
+    CreatePostRequest:
+      type: object
+      required:
+        - title
+        - content
+        - author
+      properties:
+        title:
+          type: string
+          example: Crystal 1.12 Released
+        slug:
+          type: string
+          example: crystal-1-12-released
+          description: Optional - will be auto-generated from title if not provided
+        content:
+          type: string
+          description: Post content in Markdown format
+        excerpt:
+          type: string
+        author:
+          type: string
+          example: John Doe
+        tags:
+          type: array
+          items:
+            type: string
+          example: [releases, crystal]
+        featured:
+          type: boolean
+          default: false
+        published_at:
+          type: string
+          format: date-time
+          description: Optional - defaults to current time if not provided
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 150
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    ValidationError:
+      type: object
+      properties:
+        errors:
+          type: array
+          items:
+            type: array
+            items:
+              oneOf:
+                - type: string
+                - type: string
+            minItems: 2
+            maxItems: 2

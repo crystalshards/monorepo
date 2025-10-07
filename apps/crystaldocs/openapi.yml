@@ -1,0 +1,250 @@
+openapi: 3.0.3
+info:
+  title: CrystalDocs API
+  description: |
+    CrystalDocs is a documentation hosting platform for Crystal language shards.
+
+    This API allows you to:
+    - Browse documentation for Crystal shards
+    - Access different versions of documentation
+    - Get presigned URLs for documentation files
+  version: 1.0.0
+  contact:
+    name: CrystalDocs
+    url: https://crystaldocs.org
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://crystaldocs.org
+    description: Production server
+  - url: http://localhost:3001
+    description: Local development server
+
+tags:
+  - name: docs
+    description: Documentation operations
+  - name: health
+    description: Health check endpoints
+
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      description: Check if the API is running and connected to dependencies
+      tags:
+        - health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/docs:
+    get:
+      summary: List all documentation packages
+      description: Get a paginated list of all documented shards
+      tags:
+        - docs
+      parameters:
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  docs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DocSummary'
+                  meta:
+                    $ref: '#/components/schemas/PaginationMeta'
+
+  /api/docs/{package_name}:
+    get:
+      summary: Get package documentation details
+      description: Get detailed information about a package's documentation including all versions
+      tags:
+        - docs
+      parameters:
+        - name: package_name
+          in: path
+          description: Package name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocDetail'
+        '404':
+          description: Package not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/docs/{package_name}/{version}:
+    get:
+      summary: Get specific version documentation
+      description: Get documentation details for a specific version of a package
+      tags:
+        - docs
+      parameters:
+        - name: package_name
+          in: path
+          description: Package name
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          description: Version string (e.g., 1.0.0)
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocVersionDetail'
+        '404':
+          description: Package or version not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        timestamp:
+          type: string
+          format: date-time
+        services:
+          type: object
+          properties:
+            database:
+              type: string
+              example: connected
+            storage:
+              type: string
+              example: connected
+
+    DocSummary:
+      type: object
+      properties:
+        package_name:
+          type: string
+          example: kemal
+        description:
+          type: string
+          example: Fast, Effective, Simple web framework for Crystal
+        latest_version:
+          type: string
+          example: 1.4.0
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DocDetail:
+      allOf:
+        - $ref: '#/components/schemas/DocSummary'
+        - type: object
+          properties:
+            versions:
+              type: array
+              items:
+                $ref: '#/components/schemas/DocVersion'
+
+    DocVersion:
+      type: object
+      properties:
+        version:
+          type: string
+          example: 1.4.0
+        published_at:
+          type: string
+          format: date-time
+        is_latest:
+          type: boolean
+
+    DocVersionDetail:
+      allOf:
+        - $ref: '#/components/schemas/DocVersion'
+        - type: object
+          properties:
+            package_name:
+              type: string
+            doc_url:
+              type: string
+              format: uri
+              description: Presigned URL to access the documentation
+            file_count:
+              type: integer
+            total_size:
+              type: integer
+              format: int64
+              description: Total size in bytes
+
+    PaginationMeta:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 150
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
