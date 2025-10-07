@@ -6,6 +6,10 @@ resource "helm_release" "external_dns" {
   version    = "1.14.3"
   namespace  = "infrastructure"
 
+  # Increase timeout for initial installation
+  timeout = 600  # 10 minutes
+  wait    = true
+
   set {
     name  = "provider"
     value = "google"

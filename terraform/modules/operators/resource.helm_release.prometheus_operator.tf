@@ -7,6 +7,8 @@ resource "helm_release" "prometheus_operator" {
   namespace  = "monitoring"
 
   create_namespace = true
+  timeout          = 600  # 10 minutes
+  wait             = true
 
   # GKE Autopilot-compatible configuration
   # Autopilot restricts access to kube-system namespace and control plane components
