@@ -45,6 +45,9 @@
   - Comprehensive endpoint documentation with schemas
   - Request/response examples and validation rules
   - Authentication requirements documented
+  - CrystalBits blog endpoints added (POST /api/posts, GET /api/posts, GET /api/posts/:slug)
+  - ValidationError and RateLimitError schemas added
+  - OpenAPI spec validated successfully ✅
   - Ready for Swagger UI integration
 - [x] Rate limiting on all POST endpoints ✅
   - CrystalShards: 10 req/hr for shard creation, 100 req/hr for downloads
