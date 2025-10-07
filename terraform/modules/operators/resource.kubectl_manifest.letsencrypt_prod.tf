@@ -18,7 +18,6 @@ resource "kubectl_manifest" "letsencrypt_prod" {
   YAML
 
   depends_on = [
-    helm_release.cert_manager,
-    null_resource.wait_for_cert_manager_crds
+    helm_release.cert_manager
   ]
 }
