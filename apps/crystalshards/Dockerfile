@@ -13,7 +13,9 @@ COPY shard.yml shard.lock ./
 RUN shards install --production
 
 # Apply Avram nilability fix
-RUN sed -i 's/{{ column\[:name\] }}.eq(value)/{{ column[:name] }}.nilable_eq(value)/g' lib/avram/src/avram/base_query_template.cr
+RUN apk add --no-cache patch
+COPY patches/avram-nilable-fix.patch /tmp/
+RUN cd lib/avram && patch -p1 < /tmp/avram-nilable-fix.patch
 
 # Copy source code
 COPY . .

@@ -1,0 +1,11 @@
+--- a/src/avram/base_query_template.cr
++++ b/src/avram/base_query_template.cr
+@@ -41,7 +41,7 @@ class Avram::BaseQueryTemplate
+
+       {% for column in columns %}
+         def {{ column[:name] }}(value)
+-          {{ column[:name] }}.eq(value)
++          {{ column[:name] }}.nilable_eq(value)
+         end
+
+         generate_criteria_method({{ column[:name] }}, {{ column[:type] }})
