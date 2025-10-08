@@ -13,3 +13,9 @@ variable "image_tag" {
   type        = string
   # No default - must be explicitly set to prevent accidental 'latest' deployments
 }
+
+variable "resend_key" {
+  description = "Resend API key for email functionality"
+  type        = string
+  sensitive   = true
+}

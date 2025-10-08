@@ -13,3 +13,21 @@ variable "image_tag" {
   type        = string
   # No default - must be explicitly set to prevent accidental 'latest' deployments
 }
+
+variable "resend_key" {
+  description = "Resend API key for email functionality"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_secret_key" {
+  description = "Stripe secret key for payment processing"
+  type        = string
+  sensitive   = true
+}
+
+variable "stripe_publishable_key" {
+  description = "Stripe publishable key for payment processing"
+  type        = string
+  sensitive   = true
+}
