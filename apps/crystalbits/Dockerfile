@@ -27,11 +27,13 @@ RUN apk add --no-cache \
     libgcc \
     libstdc++ \
     libc6-compat \
-    pcre \
+    pcre2 \
     gc \
     libevent \
     yaml \
-    openssl
+    libxml2 \
+    openssl \
+    gmp
 
 # Create non-root user (UID 1000 to match Kubernetes security context)
 RUN addgroup -g 1000 appuser && \
