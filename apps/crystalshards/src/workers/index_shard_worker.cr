@@ -27,13 +27,13 @@ class IndexShardWorker < BaseJob
     extract_metadata(shard, shard_version)
 
     UpdateDependenciesWorker.new(
-      shard_name: @shard_name,
-      version: @version
+      shard_name: @shard_name.not_nil!,
+      version: @version.not_nil!
     ).enqueue
 
     BuildDocsWorker.new(
-      shard_name: @shard_name,
-      version: @version
+      shard_name: @shard_name.not_nil!,
+      version: @version.not_nil!
     ).enqueue
 
     log_info "Successfully indexed #{@shard_name}@#{@version}"
