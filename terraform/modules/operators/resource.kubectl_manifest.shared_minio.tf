@@ -36,6 +36,9 @@ resource "kubectl_manifest" "shared_minio" {
 
       requestAutoCert: false
 
+      configuration:
+        name: shared-storage-env-configuration
+
       s3:
         bucketDNS: false
 

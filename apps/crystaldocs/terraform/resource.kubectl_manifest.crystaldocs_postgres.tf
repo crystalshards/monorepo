@@ -20,8 +20,6 @@ resource "kubectl_manifest" "crystaldocs_postgres" {
         initdb:
           database: crystaldocs_production
           owner: crystaldocs
-          secret:
-            name: crystaldocs-postgres-auth
 
       storage:
         size: 10Gi

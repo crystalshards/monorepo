@@ -20,8 +20,6 @@ resource "kubectl_manifest" "crystalshards_postgres" {
         initdb:
           database: crystalshards_production
           owner: crystalshards
-          secret:
-            name: crystalshards-postgres-auth
 
       storage:
         size: 10Gi

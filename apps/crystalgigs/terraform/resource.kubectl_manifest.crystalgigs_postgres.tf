@@ -20,8 +20,6 @@ resource "kubectl_manifest" "crystalgigs_postgres" {
         initdb:
           database: crystalgigs_production
           owner: crystalgigs
-          secret:
-            name: crystalgigs-postgres-auth
 
       storage:
         size: 10Gi
