@@ -7,12 +7,6 @@ import {
   id = "projects/crystalshards-org/locations/us/repositories/crystalshards"
 }
 
-# Import GKE cluster
-import {
-  to = module.cluster.google_container_cluster.primary
-  id = "projects/crystalshards-org/locations/us-central1/clusters/crystalshards-cluster"
-}
-
 # Import VPC network
 import {
   to = module.networking.google_compute_network.vpc
@@ -41,12 +35,6 @@ import {
 import {
   to = module.cluster.google_project_service.artifact_registry_api
   id = "crystalshards-org/artifactregistry.googleapis.com"
-}
-
-# Import BigQuery dataset for GKE usage metering
-import {
-  to = module.cluster.google_bigquery_dataset.usage
-  id = "projects/crystalshards-org/datasets/gke_usage_metering"
 }
 
 # Import firewall rules

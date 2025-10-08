@@ -19,6 +19,11 @@ resource "google_container_cluster" "primary" {
   # Note: resource_usage_export_config is not supported for Autopilot clusters
   # GCP automatically provides cost monitoring for Autopilot
 
+  # Release channel - use STABLE to avoid potential issues with REGULAR channel
+  release_channel {
+    channel = "STABLE"
+  }
+
   # Security configurations
   master_auth {
     client_certificate_config {
