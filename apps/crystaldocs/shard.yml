@@ -5,6 +5,7 @@ targets:
   crystaldocs:
     main: src/crystaldocs.cr
 crystal: '>= 1.17.1'
+
 dependencies:
   lucky:
     github: luckyframework/lucky

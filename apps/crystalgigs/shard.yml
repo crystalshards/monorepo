@@ -5,6 +5,7 @@ targets:
   crystalgigs:
     main: src/crystalgigs.cr
 crystal: '>= 1.17.1'
+
 dependencies:
   lucky:
     github: luckyframework/lucky

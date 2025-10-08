@@ -9,6 +9,9 @@ COPY shard.yml shard.lock ./
 # Install dependencies
 RUN shards install --production
 
+# Apply Avram nilability fix
+RUN sed -i 's/{{ column\[:name\] }}.eq(value)/{{ column[:name] }}.nilable_eq(value)/g' lib/avram/src/avram/base_query_template.cr
+
 # Copy source code
 COPY . .
 
