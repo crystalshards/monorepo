@@ -76,4 +76,16 @@ resource "helm_release" "external_dns" {
     name  = "resources.limits.memory"
     value = "128Mi"
   }
+
+  # Workload Identity configuration
+  set {
+    name  = "serviceAccount.annotations.iam\\.gke\\.io/gcp-service-account"
+    value = google_service_account.external_dns.email
+  }
+
+  depends_on = [
+    google_service_account.external_dns,
+    google_service_account_iam_member.external_dns_workload_identity,
+    google_project_iam_member.external_dns_dns_admin
+  ]
 }
