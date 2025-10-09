@@ -1,11 +1,40 @@
 # CrystalShards Development
 
-Build the Crystal language ecosystem infrastructure:
 
-1. **crystalshards.org** - Package registry (like hex.pm / rubygems.org)
-2. **crystaldocs.org** - Documentation hosting (like hexdocs.pm)
-3. **crystalgigs.com** - Job board (like elixirdevs.com)
-4. **crystalbits.org** - Newsletter/blog
+
+## CrystalShards.org Ecosystem
+
+  The Vision: A comprehensive package registry and developer platform for the Crystal programming language, similar to what NPM is to Node.js or RubyGems is to Ruby.
+
+  The Four Applications:
+
+  1. CrystalShards.org (Main Registry)
+  - Package registry for Crystal shards (libraries)
+  - Developers can publish and discover Crystal packages
+  - Tracks versions, dependencies, downloads
+  - Background workers index shard metadata from GitHub
+  - Automatically builds and hosts documentation
+  - The core of the ecosystem
+
+  1. CrystalDocs.org (Documentation Host)
+  - Hosts auto-generated documentation for all published shards
+  - Supports multiple versions per package
+  - Integrates with MinIO for static file storage
+  - Provides version-switching for docs
+  - Makes Crystal library documentation searchable and accessible
+
+  1. CrystalGigs.com (Job Board)
+  - Job board specifically for Crystal developers
+  - Companies can post Crystal-related jobs (paid feature via Stripe)
+  - Helps grow the Crystal developer community
+  - Job search and filtering
+
+  1. CrystalBits.org (Blog/News)
+  - Blog platform for Crystal-related content
+  - News, tutorials, community updates
+  - Post tracking (view counts)
+  - Auto-generates slugs
+  - Community engagement platform
 
 ## Current State
 
@@ -40,7 +69,7 @@ terraform/
 - **Database**: CloudNativePG (in-cluster PostgreSQL operator)
 - **Cache/Queue**: Redis operator (in-cluster)
 - **Storage**: MinIO operator (for packages & docs)
-- **Jobs**: Mosquito (background workers in crystalshards)
+- **Jobs**: JoobQ (Redis-backed background workers in crystalshards)
 - **Ingress**: Traefik
 - **Platform**: GKE Autopilot
 - **IaC**: Terraform (one resource per file)
@@ -72,13 +101,27 @@ Shared:
 
 ## Background Workers (crystalshards only)
 
-Mosquito workers in `apps/crystalshards/src/workers/`:
+JoobQ workers in `apps/crystalshards/src/workers/` (Redis-backed job queue):
 
 - **IndexShardWorker** - Parse shard.yml, extract metadata, update search index
 - **BuildDocsWorker** - Run `crystal docs` in sandbox, upload to MinIO
 - **UpdateDependenciesWorker** - Update dependency graph
 
 Worker deployment separate from API deployment (scales independently).
+
+### Multi-Provider Support
+
+Workers should support multiple Git hosting providers with provider-specific implementations:
+
+- **GitHub** - Primary provider with API integration
+- **GitLab** - Self-hosted and gitlab.com support
+- **Bitbucket** - Cloud and server versions
+- **Codeberg** - Open-source alternative
+- **Generic Git** - Any Git repository URL
+- **Mercurial** - Alternative VCS support
+- **Fossil** - Alternative VCS support
+
+Each provider has independent worker implementations to handle provider-specific APIs, authentication, and webhooks.
 
 ## Current Focus: Continuous Production Readiness
 
@@ -87,14 +130,16 @@ Worker deployment separate from API deployment (scales independently).
 **Agent Directive**: Continue iterating toward full production readiness. See "Autonomous Iteration Workflow" section below for work discovery process.
 
 **Current Priorities** (work on these in order):
-1. Monitor CI/CD - fix any failures immediately
-2. Address open GitHub issues
-3. Complete Production Readiness Checklist items (see workflow section)
-4. Improve monitoring and observability
-5. Seed production data
-6. Enhance documentation
-7. Performance optimization
-8. Security improvements
+1. **Migrate from Mosquito to JoobQ** - Replace background job system with JoobQ (https://github.com/azutoolkit/joobq)
+2. **Implement Multi-Provider Support** - Add support for GitHub, GitLab, Bitbucket, Codeberg, generic Git, Mercurial, and Fossil
+3. Monitor CI/CD - fix any failures immediately
+4. Address open GitHub issues
+5. Complete Production Readiness Checklist items (see workflow section)
+6. Improve monitoring and observability
+7. Seed production data
+8. Enhance documentation
+9. Performance optimization
+10. Security improvements
 
 **Completed Phases** (for reference):
 - ✅ Phase 1: Infrastructure deployment (GKE, operators, networking)
@@ -140,7 +185,7 @@ Required:
 
 crystalshards also needs:
 
-- `REDIS_URL=redis://...` (for Mosquito workers)
+- `REDIS_URL=redis://...` (for JoobQ workers)
 
 ## Autonomous Iteration Workflow
 
