@@ -46,7 +46,52 @@ Successfully completed two major priorities from the project roadmap:
 - Created comprehensive documentation and verification script
 - Committed across multiple commits (see Git history)
 
-### Terraform State Lock Incident (Resolved ✅)
+### Terraform State Lock Incident #2 (In Progress ⏳)
+**Incident**: Multiple simultaneous deployment workflows caused state lock conflict
+- Error: "state blob is already locked" (Lock ID: 1760020100905736)
+- Lock held by: runner@runnervmwhb2z
+- Lock created: 2025-10-09 14:28:20 UTC
+- Affected workflows: 18379638497, 18379697706 (both failed with lock error)
+- Hung workflow: 18379587131 (still showing in_progress but all jobs completed)
+- Time: 2025-10-09 14:25-14:50 UTC
+
+**Root Cause**:
+- Multiple deployment workflows triggered simultaneously (14:25:47, 14:27:28, 14:29:25)
+- No concurrency controls in deploy.yml allowed parallel terraform runs
+- Workflow 18379587131 holds the lock but appears hung (all jobs completed at 14:38:25)
+- GitHub Actions shows workflow as "in_progress" despite all jobs being done
+
+**Actions Taken**:
+1. ✅ Analyzed workflow 18379587131 - confirmed all jobs completed (last at 14:38:25)
+2. ✅ Attempted to cancel hung workflow (GitHub API returned 500 error)
+3. ✅ Triggered force-unlock workflow (18379942362) with Lock ID: 1760020100905736
+4. ⏳ Unlock workflow queued, waiting for production environment approval
+5. ✅ Added concurrency controls to deploy.yml to prevent future simultaneous runs
+
+**Preventive Measures Implemented**:
+- ✅ Added concurrency group to deploy.yml:
+  ```yaml
+  concurrency:
+    group: terraform-deploy
+    cancel-in-progress: false
+  ```
+- This ensures only ONE deployment can run at a time
+- Subsequent deployments will queue until the current one completes
+
+**Current Status**:
+- ⏳ Force-unlock workflow 18379942362 queued (waiting for approval)
+- ⏳ Original workflow 18379587131 still shows "in_progress" (GitHub bug)
+- ✅ Concurrency controls added to prevent recurrence
+- ⏳ Waiting for lock release or timeout before next deployment
+
+**Lessons Learned**:
+- ALWAYS add concurrency controls to workflows that use Terraform
+- GitHub Actions can show workflows as "in_progress" even when all jobs are complete
+- Multiple CI success triggers can cause simultaneous deployments
+- Force-unlock workflow requires production environment approval (manual step)
+- Consider automatic lock timeout in Terraform backend configuration
+
+### Terraform State Lock Incident #1 (Resolved ✅)
 **Incident**: Deployment workflow 18368089930 failed with Terraform state lock error
 - Error: "state blob is already locked" (Lock ID: 0f93ad67-67bf-1f4b-af84-c68ae5b2abe9)
 - Affected workflow: Deploy to Production (manual trigger)
@@ -58,7 +103,7 @@ Successfully completed two major priorities from the project roadmap:
 - GCS backend retained the lock, blocking subsequent deployments
 
 **Resolution**:
-1. Created force-unlock GitHub Actions workflow (`.github/workflows/force-unlock.yml`)
+1. Created force-unlock GitHub Actions workflow (`.github/workflows/terraform-unlock.yml`)
 2. Triggered force-unlock workflow with Lock ID: 0f93ad67-67bf-1f4b-af84-c68ae5b2abe9
 3. Successfully released lock in GCS backend
 4. Verified unlock with `terraform force-unlock` command

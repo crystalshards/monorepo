@@ -10,6 +10,10 @@ on:
   # Allow manual deployment with approval
   workflow_dispatch:
 
+concurrency:
+  group: terraform-deploy
+  cancel-in-progress: false
+
 jobs:
   # Step 1: Deploy cluster module to create Artifact Registry
   deploy-cluster:
