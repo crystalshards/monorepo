@@ -316,7 +316,7 @@ gh auth login                         # Login to GitHub
 5. Implement the specific task – don't forget to write unit/integration tests
 6. Test the implementation – always write e2e tests that excercise the browser
 7. **Commit working code immediately** (with issue reference if applicable)
-8. Update PROMPT.md with results
+8. Update PROMPT.md with results, and add any additional tasks
 9. Handle any errors appropriately
 10. **Push to remote repository after completing logical work units**
 11. Prepare notes for next iteration

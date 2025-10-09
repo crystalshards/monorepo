@@ -80,53 +80,29 @@ Mosquito workers in `apps/crystalshards/src/workers/`:
 
 Worker deployment separate from API deployment (scales independently).
 
-## Next Tasks
+## Current Focus: Continuous Production Readiness
 
-**Phase 1: Make Deployable** ✅ COMPLETE
+**All initial phases complete!** ✅ Infrastructure deployed, all apps live with HTTPS.
 
-1. ✅ Create deployments for all 4 apps
-2. ✅ Create services for all 4 apps
-3. ✅ Create PostgreSQL clusters for all 4 apps
-4. ✅ Create shared Redis cluster
-5. ✅ Create secrets for all 4 apps
-6. ✅ Test `terraform plan` succeeds
+**Agent Directive**: Continue iterating toward full production readiness. See "Autonomous Iteration Workflow" section below for work discovery process.
 
-**Phase 2: Implement crystalshards** ✅ COMPLETE
+**Current Priorities** (work on these in order):
+1. Monitor CI/CD - fix any failures immediately
+2. Address open GitHub issues
+3. Complete Production Readiness Checklist items (see workflow section)
+4. Improve monitoring and observability
+5. Seed production data
+6. Enhance documentation
+7. Performance optimization
+8. Security improvements
 
-1. ✅ Models: Shard, ShardVersion, Dependency, Download, Owner
-2. ✅ Migrations for database schema
-3. ✅ API endpoints: GET /shards, POST /shards, GET /shards/:name
-4. ✅ Worker implementation (actual indexing logic)
-5. ✅ MinIO integration for package storage
-
-**Phase 3: Deploy Infrastructure** ⏳ IN PROGRESS
-
-1. ⏳ Apply Terraform (requires GCP credentials)
-2. ⏳ Build and push Docker images to Artifact Registry
-3. ⏳ Verify all pods running
-4. ⏳ Test ingress routing
-5. ⏳ Validate database connections
-
-**Phase 4: Implement crystaldocs** ✅ COMPLETE
-
-1. ✅ Doc and DocVersion models with migrations
-2. ✅ API endpoints (list, show, version details)
-3. ✅ MinIO integration via DocsStorageService
-4. ✅ Comprehensive specs and factories
-5. Future: Version switcher UI, Search within docs
-
-**Phase 5: Other Apps** ✅ COMPLETE
-
-1. ✅ crystalgigs MVP (Job model, API endpoints, comprehensive specs)
-2. ✅ crystalbits MVP (Post model, API endpoints, view tracking, auto-slug)
-
-**Phase 6: Production Hardening** ✅ COMPLETE
-
-1. ✅ OpenAPI 3.0 specifications for all 4 apps
-2. ✅ Rate limiting on all POST endpoints (Redis-backed)
-3. ✅ Comprehensive rate limiting documentation
-4. ✅ Security hardening (non-root containers, read-only filesystems)
-5. ✅ All CI tests passing
+**Completed Phases** (for reference):
+- ✅ Phase 1: Infrastructure deployment (GKE, operators, networking)
+- ✅ Phase 2: CrystalShards implementation (models, API, workers)
+- ✅ Phase 3: Production deployment (all 4 apps live)
+- ✅ Phase 4: CrystalDocs implementation
+- ✅ Phase 5: CrystalGigs and CrystalBits MVPs
+- ✅ Phase 6: Production hardening (OpenAPI, rate limiting, security)
 
 ## Important Conventions
 
@@ -166,16 +142,111 @@ crystalshards also needs:
 
 - `REDIS_URL=redis://...` (for Mosquito workers)
 
-## Workflow
+## Autonomous Iteration Workflow
 
-1. **Before continuing**: Check CI status with `gh run list`, fix any failures
-2. **Find work**: Check `.agent/STATUS.md` or `gh issue list`
-3. **Make changes**: Follow conventions above
-4. **Validate**: `terraform validate` must pass
-5. **Verify deployment**: Ensure resources can actually deploy (run `terraform plan`)
-6. **Commit**: Descriptive message, push frequently
-7. **Watch CI**: Fix any failures immediately - CI MUST be passing
-8. **Confirm deployment**: After merge, verify resources are deployed and healthy
+**GOAL**: Build a fully functional, production-ready system. Never idle - always iterate toward completion.
+
+### Core Principle: Continuous Work
+
+The agent should ALWAYS have work to do. Follow this priority order to find tasks:
+
+1. **Active Tasks in PROMPT.md** → Work on current phase tasks
+2. **CI Failures** → Fix immediately (`gh run list`, check logs)
+3. **GitHub Issues** → Check for open issues (`gh issue list`)
+4. **STATUS.md Remaining Items** → Review `.agent/STATUS.md` for incomplete work
+5. **Codebase TODOs** → Search for `TODO`, `FIXME`, `XXX` comments
+6. **Production Readiness Improvements**:
+   - Add monitoring dashboards (Grafana)
+   - Set up alerting rules (Prometheus)
+   - Implement log aggregation
+   - Seed production data
+   - Performance testing and optimization
+   - Security hardening improvements
+   - Documentation gaps
+   - E2E test coverage
+   - Error handling improvements
+   - User experience polish
+
+### Iteration Steps
+
+1. **Find Work** (use priority order above - NEVER idle)
+2. **Before Starting**:
+   - Check CI status: `gh run list`
+   - Fix any failures immediately
+   - Self-assign GitHub issue if working on one: `gh issue edit <number> --add-assignee @me`
+3. **Make Changes**: Follow conventions in this file
+4. **Validate**: Run appropriate validation (`terraform validate`, `crystal spec`, etc)
+5. **Test**: Write and run tests for new code
+6. **Commit**: Descriptive message with issue reference if applicable (`refs #123`)
+7. **Push**: Push frequently (at least every 30 minutes of work)
+8. **Watch CI**: Monitor for failures and fix immediately
+9. **Update Status**: Update `.agent/STATUS.md` with progress
+10. **Close Issues**: If complete, close with `gh issue close <number> --comment "Completed in <commit-sha>"`
+11. **Find Next Work**: Immediately return to step 1 - no idle time
+
+### Production Readiness Checklist
+
+Continue iterating until ALL of these are complete:
+
+**Infrastructure & Deployment:**
+- [x] GKE cluster deployed
+- [x] All operators configured (cert-manager, CNPG, Redis, MinIO, Prometheus)
+- [x] All 4 applications deployed with HTTPS
+- [x] DNS configured and working
+- [ ] Grafana dashboards configured
+- [ ] Prometheus alerting rules set up
+- [ ] Log aggregation configured
+- [ ] Backup schedules configured
+- [ ] Disaster recovery tested
+
+**Application Features:**
+- [x] All core APIs implemented
+- [x] All tests passing (84 tests)
+- [x] OpenAPI specs complete
+- [x] Rate limiting enabled
+- [ ] Production data seeded
+- [ ] E2E tests for critical paths
+- [ ] Performance benchmarks established
+- [ ] Load testing completed
+
+**Monitoring & Observability:**
+- [x] Health endpoints working
+- [x] ServiceMonitors configured
+- [ ] Application metrics exposed
+- [ ] Custom dashboards created
+- [ ] Alert rules defined
+- [ ] On-call runbooks written
+- [ ] Log queries documented
+
+**Documentation:**
+- [x] API documentation complete
+- [x] Deployment runbook written
+- [ ] Operational runbooks for common incidents
+- [ ] User guides for each application
+- [ ] Contributing guide
+- [ ] Architecture decision records
+
+### Work Discovery Commands
+
+```bash
+# Check CI status
+gh run list --limit 5
+
+# Find GitHub issues
+gh issue list --state open
+gh issue list --label "ready" --assignee=""
+gh issue list --label "good-first-issue"
+
+# Search for TODOs
+grep -r "TODO" apps/
+grep -r "FIXME" apps/
+
+# Check deployment status
+kubectl get pods --all-namespaces
+
+# Review monitoring gaps
+kubectl get servicemonitors --all-namespaces
+```
 
 ## Error Handling
 
@@ -193,4 +264,20 @@ Common fixes:
 - Missing files: Check paths, create if needed
 
 ---
-**Current Focus**: Infrastructure code complete. Awaiting Terraform apply with GCP credentials.
+
+## Remember: Never Idle
+
+This is an autonomous agent operating continuously toward production excellence. When you start a session:
+
+1. ✅ Check CI status first (`gh run list`)
+2. ✅ Look for active tasks in this file
+3. ✅ If no active tasks, check GitHub issues
+4. ✅ If no GitHub issues, review STATUS.md for remaining items
+5. ✅ If nothing there, search for TODOs in code
+6. ✅ If no TODOs, work on Production Readiness Checklist
+7. ✅ ALWAYS be working toward a better, more complete system
+
+**The goal is a fully production-ready platform, not just "deployed code."**
+
+---
+**Current Status**: All apps deployed and live. Continue iterating on monitoring, observability, data seeding, and production polish.
