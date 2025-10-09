@@ -48,15 +48,12 @@ class BitbucketProvider < BaseProvider
 
     data = JSON.parse(response.body)
 
-    homepage_url = data["links"]?.try { |links| links["html"]? }.try { |html| html["href"]? }.try(&.as_s?)
-    default_branch_name = data["mainbranch"]?.try { |mb| mb["name"]? }.try(&.as_s?)
-
     RepositoryMetadata.new(
       stars: nil,
       forks: nil,
       description: data["description"]?.try(&.as_s?),
-      homepage: homepage_url,
-      default_branch: default_branch_name,
+      homepage: data["links"]?.try(&.["html"])?.try(&.["href"])?.try(&.as_s?),
+      default_branch: data["mainbranch"]?.try(&.["name"])?.try(&.as_s?),
       latest_commit_sha: nil
     )
   rescue ex : Exception

@@ -31,7 +31,7 @@ abstract class BaseProvider
       @description = nil,
       @homepage = nil,
       @default_branch = nil,
-      @latest_commit_sha = nil
+      @latest_commit_sha = nil,
     )
     end
   end
