@@ -1,3 +1,12 @@
 ./.claude/*.local.*
 .terraform/
 terraform.tfstate*
+
+# Compiled binaries
+apps/*/crystalshards
+apps/*/crystaldocs
+apps/*/crystalgigs
+apps/*/crystalbits
+
+# Test logs and temporary files
+apps/*/tmp/
