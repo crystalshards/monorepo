@@ -11,3 +11,6 @@ apps/*/crystalbits
 
 # Test logs and temporary files
 apps/*/tmp/
+
+# Deprecated tracking files (GitHub Projects is now single source of truth)
+.agent/STATUS.md

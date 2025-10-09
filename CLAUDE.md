@@ -16,7 +16,7 @@ Building CrystalShards.org and CrystalDocs.org - a comprehensive Crystal languag
 - Focus on building, not planning
 - Self-regulate scope - know when to stop
 - Let the simple prompt guide you
-- Track progress in .agent/STATUS.md
+- Track progress in GitHub issues and project comments
 
 ### 2. Code Style & Conventions
 
@@ -67,7 +67,7 @@ Building CrystalShards.org and CrystalDocs.org - a comprehensive Crystal languag
   - If API fails, use fallback methods or retry with backoff
   - If file locked, wait and retry (max 3 attempts)
   - If permission denied, try sudo or alternative paths
-- Document workarounds in `.agent/STATUS.md`
+- Document workarounds in GitHub issue comments
 - Provide meaningful error messages to users
 - Implement proper HTTP status codes
 - Use Lucky's error handling mechanisms
@@ -115,13 +115,95 @@ rm -rf /tmp/* && docker system prune -f
 
 ### 10. Progress Tracking
 
-- Update task checkboxes in PROMPT.md
-- Update GitHub Project status (via web UI): Ready → In Progress → In Review → Done
-- Log all actions with timestamps in .agent/STATUS.md
-- Commit and Push working code frequently
-- Use descriptive commit messages with issue references
-- Track blockers and dependencies in GitHub issues
-- Link commits, PRs, and issues to project items for full traceability
+GitHub Projects is the single source of truth for all task tracking and progress:
+
+- **GitHub Projects**: Track all tasks and their status (Ready → In Progress → In Review → Done)
+- **Issue Comments**: Document progress, blockers, and updates
+- **PROMPT.md**: High-level phase tracking only (production readiness checklist)
+- **Commit Messages**: Link to issues with `refs #<number>`
+- **PR Descriptions**: Close issues with `Closes #<number>`
+- **Push Frequently**: Commit and push working code regularly
+- **Full Traceability**: Project Item → Issue → Commits → PR → Merged Code
+
+This enables parallel agent execution since GitHub provides coordination.
+
+### 11. Parallel Agent Execution
+
+GitHub Projects as the single source of truth enables multiple agents to work simultaneously without conflicts. This architecture supports true asynchronous, parallel development.
+
+#### How It Works
+
+1. **Issue-Based Coordination**: Each agent self-assigns distinct GitHub issues
+2. **Project Visibility**: All agents see current status in real-time via GitHub Projects
+3. **Comment Communication**: Agents coordinate through issue comments (not STATUS.md files)
+4. **Automatic Conflict Avoidance**: Work on different issues, preferably different applications
+
+#### Parallel Work Guidelines
+
+- **Different Issues**: Each agent must work on separate GitHub issues
+- **Self-Assignment**: Use `gh issue edit <number> --add-assignee @me` to claim work
+- **Status Updates**: Update project status to "In Progress" when starting (via web UI)
+- **Progress Comments**: Regular comments ensure visibility across agents
+- **Different Apps Preferred**: Minimize conflicts by working on different applications
+- **No STATUS.md**: All tracking happens in GitHub - no shared file conflicts
+
+#### Example Parallel Workflow
+
+Agent 1 working on CrystalShards:
+```bash
+# Find and claim work
+gh issue list --label "crystalshards" --assignee=""
+gh issue edit 15 --add-assignee @me
+gh issue comment 15 --body "Starting: Implement shard publishing API"
+# Update project status to "In Progress" via web UI
+# Work on apps/crystalshards/
+```
+
+Agent 2 working on CrystalDocs (simultaneously, no conflicts):
+```bash
+# Find and claim different work
+gh issue list --label "crystaldocs" --assignee=""
+gh issue edit 18 --add-assignee @me
+gh issue comment 18 --body "Starting: Implement documentation search"
+# Update project status to "In Progress" via web UI
+# Work on apps/crystaldocs/ (different app, different files)
+```
+
+Agent 3 working on infrastructure (simultaneously):
+```bash
+# Work on cross-cutting concern
+gh issue edit 22 --add-assignee @me
+gh issue comment 22 --body "Starting: Add Prometheus alerting rules"
+# Work on terraform/modules/operators/ (different area)
+```
+
+#### Coordination Through GitHub
+
+All coordination happens through GitHub, not shared files:
+
+- **Check assigned issues**: `gh issue list --assignee @me`
+- **View in-progress work**: `gh project item-list <num> --owner crystalshards`
+- **See who's working on what**: Check issue assignments and comments
+- **No file locks**: No STATUS.md means no merge conflicts
+- **Real-time visibility**: GitHub Projects shows current state instantly
+
+#### Conflict Prevention
+
+To avoid merge conflicts when multiple agents work in parallel:
+
+1. **Work on different applications** (crystalshards vs crystaldocs vs crystalgigs vs crystalbits)
+2. **Work on different modules** within the same app (models vs actions vs workers)
+3. **Communicate via comments** if working in same area
+4. **Push frequently** to make changes visible to other agents
+5. **Pull before starting** new work to get latest changes
+
+#### Benefits
+
+- **Faster Development**: Multiple agents work simultaneously
+- **No Bottlenecks**: No waiting for STATUS.md file locks
+- **Better Tracking**: GitHub provides superior audit trail
+- **Natural Coordination**: Issue assignments prevent duplicate work
+- **Scalable**: Can add more agents without coordination overhead
 
 ## Lucky Framework Specifics
 
@@ -606,11 +688,10 @@ This creates a transparent audit trail and enables async coordination without co
 9. **Commit frequently**: With issue reference (`refs #<number>` in commit body)
 10. **Progress comments**: Update issue with progress every few hours or at milestones
 11. **Push regularly**: Push to remote after completing logical units
-12. **Update docs**: Update PROMPT.md and .agent/STATUS.md with results
-13. **Handle errors**: Document errors in issue comments (see Task Lifecycle section)
-14. **Create PR**: When complete, create PR with `Closes #<number>` in description
-15. **Comment completion**: Add completion comment to issue with summary
-16. **Update project**: Move to "In Review" then "Done" after merge
+12. **Handle errors**: Document errors in issue comments (see Task Lifecycle section)
+13. **Create PR**: When complete, create PR with `Closes #<number>` in description
+14. **Comment completion**: Add completion comment to issue with summary
+15. **Update project**: Move to "In Review" then "Done" after merge
 
 ### Commit Checkpoints
 
@@ -627,7 +708,8 @@ This creates a transparent audit trail and enables async coordination without co
 - All tests are passing
 - Code is properly formatted
 - **All changes are committed and pushed**
-- PROMPT.md is updated with latest status
+- Issue comments document completion and results
+- GitHub Project status updated to "In Review" or "Done"
 - No uncommitted work remains
 - Branch is ready for PR if feature complete
 

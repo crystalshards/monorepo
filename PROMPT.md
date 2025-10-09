@@ -37,9 +37,13 @@ The Four Applications:
 
 ## Current State
 
-See `.agent/STATUS.md` for complete status.
-
 **TL;DR**: All 6 phases complete (Infrastructure, CrystalShards, CrystalDocs, CrystalGigs, CrystalBits, Production Hardening). All CI passing. Ready for Terraform apply and deployment.
+
+See GitHub Projects for detailed task tracking:
+- CrystalShards.org → Project #1
+- CrystalDocs.org → Project #2
+- CrystalGigs.com → Project #3
+- CrystalBits.org → Project #4
 
 ## Architecture
 
@@ -214,15 +218,14 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
 
 1. **Active Tasks in PROMPT.md** → Work on current phase tasks
 2. **CI Failures** → Fix immediately (`gh run list`, check logs)
-3. **GitHub Projects** → Check project boards for Ready items
+3. **GitHub Projects (PRIMARY SOURCE OF TRUTH)** → Check project boards for Ready items
    - CrystalShards.org → Project #1: https://github.com/orgs/crystalshards/projects/1
    - CrystalDocs.org → Project #2: https://github.com/orgs/crystalshards/projects/2
    - CrystalGigs.com → Project #3: https://github.com/orgs/crystalshards/projects/3
    - CrystalBits.org → Project #4: https://github.com/orgs/crystalshards/projects/4
 4. **GitHub Issues** → Check for open issues (`gh issue list`)
-5. **STATUS.md Remaining Items** → Review `.agent/STATUS.md` for incomplete work
-6. **Codebase TODOs** → Search for `TODO`, `FIXME`, `XXX` comments
-7. **Production Readiness Improvements**:
+5. **Codebase TODOs** → Search for `TODO`, `FIXME`, `XXX` comments
+6. **Production Readiness Improvements**:
    - Add monitoring dashboards (Grafana)
    - Set up alerting rules (Prometheus)
    - Implement log aggregation
@@ -233,6 +236,8 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
    - E2E test coverage
    - Error handling improvements
    - User experience polish
+
+**Note**: GitHub Projects and Issues are the single source of truth for all task tracking. All progress updates happen through issue comments, not file-based tracking.
 
 ### Iteration Steps
 
@@ -257,7 +262,6 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
 4. **When Complete**:
    - Create PR with `Closes #<number>` in description
    - **Comment completion**: `gh issue comment <number> --body "Work completed in PR #<pr-num>. Summary: [changes]"`
-   - Update `.agent/STATUS.md` with results
    - **Update project status** via web UI: In Progress → In Review → Done (after merge)
    - Close issue if not auto-closed: `gh issue close <number> --comment "Merged in <commit-sha>"`
 
@@ -268,6 +272,18 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
    - Reference commits and PRs in comments
 
 6. **Find Next Work**: Immediately return to step 1 - no idle time
+
+### Parallel Agent Execution
+
+Multiple agents can work simultaneously using GitHub Projects as coordination:
+
+- **Different Issues**: Each agent works on separate GitHub issues (self-assign to claim)
+- **Different Apps**: Prefer working on different applications to minimize conflicts
+- **Comment Coordination**: Use issue comments to communicate, not shared files
+- **No STATUS.md**: All tracking in GitHub prevents file conflicts
+- **Real-time Visibility**: GitHub Projects shows who's working on what
+
+See CLAUDE.md section "11. Parallel Agent Execution" for detailed examples and guidelines.
 
 ### Production Readiness Checklist
 
@@ -351,7 +367,7 @@ Never get blocked:
 
 1. Log errors to `.agent/errors.log`
 2. Try alternative approaches (3 attempts)
-3. Document in STATUS.md
+3. Document in GitHub issue comments
 4. Continue with next task
 
 Common fixes:
@@ -369,13 +385,14 @@ This is an autonomous agent operating continuously toward production excellence.
 1. ✅ Check CI status first (`gh run list`)
 2. ✅ Look for active tasks in this file
 3. ✅ If no active tasks, check GitHub Projects for Ready items (`gh project view <num> --owner crystalshards`)
-4. ✅ If no project items, check GitHub issues
-5. ✅ If no GitHub issues, review STATUS.md for remaining items
-6. ✅ If nothing there, search for TODOs in code
-7. ✅ If no TODOs, work on Production Readiness Checklist
-8. ✅ ALWAYS be working toward a better, more complete system
+4. ✅ If no project items, check GitHub issues (`gh issue list`)
+5. ✅ If no GitHub issues, search for TODOs in code
+6. ✅ If no TODOs, work on Production Readiness Checklist
+7. ✅ ALWAYS be working toward a better, more complete system
 
 **The goal is a fully production-ready platform, not just "deployed code."**
+
+**Key Change**: No more STATUS.md - GitHub Projects is the single source of truth for all task tracking, enabling parallel agent execution.
 
 ### Project Board Quick Reference
 
