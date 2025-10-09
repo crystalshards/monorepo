@@ -19,6 +19,22 @@ resource "kubernetes_network_policy" "allow_infrastructure_access" {
       }
     }
 
+    # Allow PostgreSQL access within same namespace
+    # CRITICAL: Without this, app pods cannot connect to CNPG database
+    egress {
+      to {
+        pod_selector {
+          match_labels = {
+            "cnpg.io/cluster" = "crystalbits-postgres"
+          }
+        }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "5432"
+      }
+    }
+
     # Allow DNS resolution
     egress {
       to {
