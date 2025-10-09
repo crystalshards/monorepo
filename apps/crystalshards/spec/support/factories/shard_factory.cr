@@ -4,5 +4,7 @@ class ShardFactory < Avram::Factory
     repository_url "https://github.com/crystal-lang/sample-shard"
     description "A sample Crystal shard"
     total_downloads 0
+    provider "github"
+    repository_type "git"
   end
 end
