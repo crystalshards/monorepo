@@ -7,4 +7,4 @@ start_server
 *.dwarf
 *.local.cr
 .env
-/tmp
+/tmpcrystalshards

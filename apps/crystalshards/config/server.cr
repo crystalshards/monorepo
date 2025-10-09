@@ -41,6 +41,8 @@ Lucky::Server.configure do |settings|
   settings.asset_host = "" # Lucky will serve assets
 end
 
+Lucky::AssetHelpers.load_manifest
+
 Lucky::ForceSSLHandler.configure do |settings|
   # To force SSL in production, uncomment the lines below.
   # This will cause http requests to be redirected to https:
