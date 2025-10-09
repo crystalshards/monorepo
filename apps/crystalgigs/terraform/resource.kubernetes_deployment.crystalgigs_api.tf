@@ -120,10 +120,10 @@ resource "kubernetes_deployment" "crystalgigs_api" {
               path = "/api/health"
               port = 3000
             }
-            initial_delay_seconds = 60  # Increased for GKE Autopilot startup
+            initial_delay_seconds = 120  # Increased for GKE Autopilot startup and DB connection
             period_seconds        = 10
-            timeout_seconds       = 5
-            failure_threshold     = 3
+            timeout_seconds       = 10   # Increased timeout for health check
+            failure_threshold     = 6    # Allow more failures before restart
           }
 
           readiness_probe {
@@ -131,10 +131,10 @@ resource "kubernetes_deployment" "crystalgigs_api" {
               path = "/api/health"
               port = 3000
             }
-            initial_delay_seconds = 30  # Increased for GKE Autopilot startup
-            period_seconds        = 5
-            timeout_seconds       = 3
-            failure_threshold     = 3
+            initial_delay_seconds = 60   # Increased for GKE Autopilot startup and DB connection
+            period_seconds        = 10   # Less frequent checks
+            timeout_seconds       = 10   # Increased timeout for health check
+            failure_threshold     = 6    # Allow more failures before restart
           }
         }
 

@@ -171,8 +171,9 @@ resource "kubernetes_deployment" "crystalshards_worker" {
             exec {
               command = ["pgrep", "-f", "worker"]
             }
-            initial_delay_seconds = 60  # Increased for GKE Autopilot startup
+            initial_delay_seconds = 120  # Increased for GKE Autopilot startup and DB connection
             period_seconds        = 30
+            failure_threshold     = 5    # Allow more failures before restart
           }
         }
 
