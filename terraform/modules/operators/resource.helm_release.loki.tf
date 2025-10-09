@@ -6,8 +6,9 @@ resource "helm_release" "loki" {
   version    = "~> 5.0"
   namespace  = "monitoring"
 
-  timeout = 900 # 15 minutes - increased for GKE Autopilot provisioning
-  wait    = true
+  timeout       = 900 # 15 minutes - increased for GKE Autopilot provisioning
+  wait          = false # Don't wait for pods to be ready - let Kubernetes handle deployment asynchronously
+  wait_for_jobs = false # Don't wait for jobs to complete
 
   values = [
     yamlencode({
