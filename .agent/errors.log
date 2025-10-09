@@ -53,11 +53,33 @@ Investigation revealed that workflow run 18367998644 started at 06:49:49 UTC and
 - Consider adding lock file age checks before deployment
 
 ### Status
-**RESOLVED** - Lock released via workflow cancellation. Safe to retry deployment.
+**RESOLVED** - Lock manually force-unlocked via dedicated workflow. Deployment now proceeding successfully.
+
+### Resolution Timeline
+- 06:56:57 - Cancelled stuck workflow 18367998644
+- 06:58:29 - Automatic retry deployment 18368172805 failed (lock still present)
+- 07:00:00 - Created force-unlock workflow
+- 07:00:24 - Triggered force-unlock workflow with Lock ID 1759992760848132
+- 07:00:38 - **Lock successfully removed by Terraform force-unlock**
+- 07:01:24 - New deployment 18368229149 triggered
+- 07:01:49 - **Deployment successfully acquired lock and completed cluster deployment**
+
+### Key Findings
+1. **Cancelling a workflow does NOT automatically release Terraform state locks**
+2. **Stale locks must be manually force-unlocked using `terraform force-unlock`**
+3. GCS backend doesn't have automatic lock expiration/cleanup
+
+### Workflow Improvements Implemented
+1. Added dedicated force-unlock workflow (`.github/workflows/terraform-unlock.yml`)
+2. Added job-level timeouts to prevent future hangs:
+   - deploy-cluster: 15 minutes
+   - build-images: 30 minutes
+   - deploy-full: 20 minutes
 
 ### Next Steps
-1. Monitor next deployment attempt for success
-2. If lock persists, may need to use `terraform force-unlock` from authenticated environment
-3. Review workflow logs to understand why "Deploy Full Infrastructure" job hung
+1. ✅ Monitor deployment 18368229149 for full completion
+2. Consider adding automated lock monitoring/alerting
+3. Review why "Deploy Full Infrastructure" job hung (investigate GKE cluster provisioning)
+4. Document force-unlock procedure in runbook
 
 ---
