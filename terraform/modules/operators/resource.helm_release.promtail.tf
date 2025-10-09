@@ -103,13 +103,23 @@ resource "helm_release" "promtail" {
       # Priority class for critical log collection
       priorityClassName = "system-node-critical"
 
-      # Mount host logs
+      # GKE Autopilot compatibility: Override default volumes
+      # Default chart tries to mount /var/lib/docker/containers which is prohibited
+      # Only /var/log is allowed in Autopilot
+      defaultVolumes = []
+      defaultVolumeMounts = []
+
+      # Mount only /var/log (read-only, allowed in Autopilot)
       extraVolumes = [
         {
           name = "varlog"
           hostPath = {
             path = "/var/log"
           }
+        },
+        {
+          name = "varlibdockercontainers"
+          emptyDir = {}
         }
       ]
 
@@ -117,6 +127,11 @@ resource "helm_release" "promtail" {
         {
           name      = "varlog"
           mountPath = "/var/log"
+          readOnly  = true
+        },
+        {
+          name      = "varlibdockercontainers"
+          mountPath = "/var/lib/docker/containers"
           readOnly  = true
         }
       ]
