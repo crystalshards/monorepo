@@ -1,7 +1,36 @@
-class Home::Index < ApiAction
-  include Api::Auth::SkipRequireAuthToken
-
+class Home::Index < BrowserAction
   get "/" do
-    json({hello: "Hello World from Home::Index"})
+    featured_jobs = JobQuery.new
+      .active_only
+      .published_only
+      .not_expired
+      .featured_only
+      .recent
+      .limit(6)
+
+    recent_jobs = JobQuery.new
+      .active_only
+      .published_only
+      .not_expired
+      .recent
+      .limit(10)
+
+    total_jobs = JobQuery.new
+      .active_only
+      .published_only
+      .not_expired
+      .select_count
+
+    total_companies = JobQuery.new
+      .active_only
+      .published_only
+      .not_expired
+      .select_count(:company_name, distinct: true)
+
+    html Home::IndexPage,
+      featured_jobs: featured_jobs,
+      recent_jobs: recent_jobs,
+      total_jobs: total_jobs,
+      total_companies: total_companies
   end
 end

@@ -31,4 +31,6 @@ dependencies:
   jwt:
     github: crystal-community/jwt
     version: ~> 1.6.1
+  stripe:
+    github: confact/stripe.cr
 development_dependencies: {}

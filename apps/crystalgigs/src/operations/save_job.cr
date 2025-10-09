@@ -3,11 +3,14 @@ class SaveJob < Job::SaveOperation
     :job_type, :salary_min, :salary_max, :salary_currency, :apply_url, :apply_email,
     :tags, :published_at, :expires_at, :featured, :active
 
+  attribute tags_string : String
+
   before_save do
     validate_required title, description, company_name, job_type
     validate_presence_of_at_least_one_of apply_url, apply_email
     validate_job_type
     validate_salary_range
+    parse_tags
   end
 
   private def validate_job_type
@@ -30,6 +33,13 @@ class SaveJob < Job::SaveOperation
   private def validate_presence_of_at_least_one_of(field1, field2)
     if field1.value.nil? && field2.value.nil?
       field1.add_error("must have either apply URL or apply email")
+    end
+  end
+
+  private def parse_tags
+    if tag_string = tags_string.value
+      parsed_tags = tag_string.split(",").map(&.strip).reject(&.empty?)
+      tags.value = parsed_tags
     end
   end
 end

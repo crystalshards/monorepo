@@ -96,6 +96,10 @@ shards:
     git: https://github.com/wyhaines/splay_tree_map.cr.git
     version: 0.3.0
 
+  stripe:
+    git: https://github.com/confact/stripe.cr.git
+    version: 1.5.0
+
   wordsmith:
     git: https://github.com/luckyframework/wordsmith.git
     version: 0.5.0
