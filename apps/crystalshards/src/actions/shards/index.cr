@@ -13,8 +13,10 @@ class Shards::Index < BrowserAction
 
     # Apply search filter
     if search_query = query
-      shards_query = shards_query.name.ilike("%#{search_query}%")
-        .or(&.description.ilike("%#{search_query}%"))
+      shards_query = shards_query.where do |q|
+        q.name.ilike("%#{search_query}%")
+          .or(&.description.ilike("%#{search_query}%"))
+      end
     end
 
     # Apply license filter
