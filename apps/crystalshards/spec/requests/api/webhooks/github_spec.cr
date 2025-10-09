@@ -8,6 +8,19 @@ def generate_webhook_signature(payload : String) : String
   "sha256=#{hmac}"
 end
 
+# Helper to send webhook requests with proper signature
+def send_webhook(payload : String, event_type : String, signature : String? = nil)
+  sig = signature || generate_webhook_signature(payload)
+
+  client = ApiClient.new
+  client.headers(
+    "X-Hub-Signature-256": sig,
+    "X-GitHub-Event": event_type,
+    "Content-Type": "application/json"
+  )
+  client.exec_raw(Api::Webhooks::Github, body: payload)
+end
+
 describe Api::Webhooks::Github do
   describe "POST /api/webhooks/github" do
     it "processes valid release.published event" do
@@ -25,17 +38,7 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      signature = generate_webhook_signature(payload)
-
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-Hub-Signature-256" => signature,
-          "X-GitHub-Event"      => "release",
-          "Content-Type"        => "application/json",
-        }
-      )
+      response = send_webhook(payload, "release")
 
       response.should send_json(200)
       json = JSON.parse(response.body)
@@ -58,17 +61,7 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      signature = generate_webhook_signature(payload)
-
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-Hub-Signature-256" => signature,
-          "X-GitHub-Event"      => "release",
-          "Content-Type"        => "application/json",
-        }
-      )
+      response = send_webhook(payload, "release")
 
       response.should send_json(200)
     end
@@ -86,17 +79,7 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      signature = generate_webhook_signature(payload)
-
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-Hub-Signature-256" => signature,
-          "X-GitHub-Event"      => "create",
-          "Content-Type"        => "application/json",
-        }
-      )
+      response = send_webhook(payload, "create")
 
       response.should send_json(200)
     end
@@ -112,15 +95,7 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-Hub-Signature-256" => "sha256=invalid_signature",
-          "X-GitHub-Event"      => "release",
-          "Content-Type"        => "application/json",
-        }
-      )
+      response = send_webhook(payload, "release", signature: "sha256=invalid_signature")
 
       response.should send_json(400)
       json = JSON.parse(response.body)
@@ -135,14 +110,13 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-GitHub-Event" => "release",
-          "Content-Type"   => "application/json",
-        }
+      # Send without signature header
+      client = ApiClient.new
+      client.headers(
+        "X-GitHub-Event": "release",
+        "Content-Type": "application/json"
       )
+      response = client.exec_raw(Api::Webhooks::Github, body: payload)
 
       response.should send_json(400)
       json = JSON.parse(response.body)
@@ -161,17 +135,7 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      signature = generate_webhook_signature(payload)
-
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-Hub-Signature-256" => signature,
-          "X-GitHub-Event"      => "release",
-          "Content-Type"        => "application/json",
-        }
-      )
+      response = send_webhook(payload, "release")
 
       response.should send_json(404)
       json = JSON.parse(response.body)
@@ -197,17 +161,7 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      signature = generate_webhook_signature(payload)
-
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-Hub-Signature-256" => signature,
-          "X-GitHub-Event"      => "release",
-          "Content-Type"        => "application/json",
-        }
-      )
+      response = send_webhook(payload, "release")
 
       response.should send_json(422)
       json = JSON.parse(response.body)
@@ -223,17 +177,7 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      signature = generate_webhook_signature(payload)
-
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-Hub-Signature-256" => signature,
-          "X-GitHub-Event"      => "create",
-          "Content-Type"        => "application/json",
-        }
-      )
+      response = send_webhook(payload, "create")
 
       response.should send_json(422)
       json = JSON.parse(response.body)
@@ -251,17 +195,7 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      signature = generate_webhook_signature(payload)
-
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-Hub-Signature-256" => signature,
-          "X-GitHub-Event"      => "release",
-          "Content-Type"        => "application/json",
-        }
-      )
+      response = send_webhook(payload, "release")
 
       response.should send_json(422)
       json = JSON.parse(response.body)
@@ -283,17 +217,7 @@ describe Api::Webhooks::Github do
         },
       }.to_json
 
-      signature = generate_webhook_signature(payload)
-
-      response = ApiClient.exec(
-        Api::Webhooks::Github,
-        body: payload,
-        headers: HTTP::Headers{
-          "X-Hub-Signature-256" => signature,
-          "X-GitHub-Event"      => "release",
-          "Content-Type"        => "application/json",
-        }
-      )
+      response = send_webhook(payload, "release")
 
       response.should send_json(200)
       # Verify the version was normalized (should be "1.2.3" without 'v')
