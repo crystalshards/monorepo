@@ -2,7 +2,10 @@ require "./base_worker"
 require "../services/storage_service"
 
 struct BuildDocsWorker < BaseJob
-  def initialize(@shard_name : String, @version : String)
+  @[JSON::Field(ignore: true)]
+  @storage_service : CrystalShards::StorageService?
+
+  def initialize(@shard_name : String, @version : String, @storage_service : CrystalShards::StorageService? = nil, @skip_clone : Bool = false)
     @queue = "docs"
   end
 
@@ -116,7 +119,7 @@ struct BuildDocsWorker < BaseJob
   end
 
   private def upload_to_storage(shard : Shard, shard_version : ShardVersion, docs_dir : String) : String
-    storage = CrystalShards::StorageService.new
+    storage = @storage_service || CrystalShards::StorageService.new
     uploaded_keys = storage.upload_docs(shard.name, shard_version.version, docs_dir)
 
     log_info "Uploaded #{uploaded_keys.size} documentation files to MinIO"

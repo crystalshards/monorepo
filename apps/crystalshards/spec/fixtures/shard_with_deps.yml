@@ -1,0 +1,16 @@
+name: test-shard
+version: 1.0.0
+description: A test shard with dependencies
+license: MIT
+
+dependencies:
+  kemal:
+    github: kemalcr/kemal
+    version: ~> 1.0.0
+  db:
+    github: crystal-lang/crystal-db
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    version: ~> 1.0.0

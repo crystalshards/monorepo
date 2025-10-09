@@ -1,0 +1,25 @@
+name: kemal
+version: 1.4.0
+description: Lightning Fast, Super Simple web framework for Crystal
+license: MIT
+crystal: ">= 1.0.0"
+homepage: https://kemalcr.com
+
+authors:
+  - Serdar Dogruyol <dogruyolserdar@gmail.com>
+
+dependencies:
+  radix:
+    github: luislavena/radix
+    version: ~> 0.4.1
+  exception_page:
+    github: crystal-loot/exception_page
+    version: ~> 0.3.0
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba
+    version: ~> 1.0.0
+  spec-kemal:
+    github: kemalcr/spec-kemal
+    version: ~> 1.0.0

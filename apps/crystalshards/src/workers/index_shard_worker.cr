@@ -2,7 +2,10 @@ require "./base_worker"
 require "../providers/provider_factory"
 
 struct IndexShardWorker < BaseJob
-  def initialize(@shard_name : String, @version : String)
+  @[JSON::Field(ignore: true)]
+  @provider : BaseProvider?
+
+  def initialize(@shard_name : String, @version : String, @provider : BaseProvider? = nil)
     @queue = "index"
   end
 
@@ -44,7 +47,7 @@ struct IndexShardWorker < BaseJob
   end
 
   private def fetch_and_parse_shard_yml(shard : Shard, shard_version : ShardVersion)
-    provider = ProviderFactory.create(shard.repository_url)
+    provider = @provider || ProviderFactory.create(shard.repository_url)
 
     shard_yml = provider.fetch_shard_yml(shard_version.version)
     unless shard_yml
