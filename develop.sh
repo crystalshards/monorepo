@@ -47,6 +47,7 @@ echo ""
 # Simple loop
 while true; do
     echo "🤖 Starting next loop..."
+    git pull origin main
     cat PROMPT.md | claude --dangerously-skip-permissions --print --include-partial-messages --output-format=stream-json --verbose | tools/claude-render
     sleep 5
 done

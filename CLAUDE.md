@@ -205,6 +205,442 @@ To avoid merge conflicts when multiple agents work in parallel:
 - **Natural Coordination**: Issue assignments prevent duplicate work
 - **Scalable**: Can add more agents without coordination overhead
 
+### 12. UI/UX Verification with Playwright
+
+Use the Playwright MCP server to verify deployed applications provide a pleasant user experience. This ensures that deployed apps are not just functional but also human-readable, accessible, and visually appealing.
+
+#### When to Use Playwright Verification
+
+**ALWAYS verify UI/UX after:**
+- Deploying or updating any web application
+- Implementing new UI features or pages
+- Making CSS or layout changes
+- Updating frontend components
+- Completing user-facing features
+- Before marking a task as complete
+
+**Use as part of:**
+- Production readiness checks
+- E2E testing workflow
+- UI implementation tasks
+- Bug fix verification
+- Release validation
+
+#### Available Playwright Tools
+
+Key MCP tools for verification (all prefixed with `mcp__playwright__`):
+
+**Navigation & Inspection:**
+- `browser_navigate` - Visit application URLs
+- `browser_snapshot` - Capture accessibility tree (PREFERRED - faster and more informative than screenshots)
+- `browser_take_screenshot` - Visual verification (use when snapshot isn't enough)
+- `browser_console_messages` - Check for JavaScript errors
+
+**Interaction Testing:**
+- `browser_click` - Click buttons, links, and interactive elements
+- `browser_type` - Fill in text inputs
+- `browser_fill_form` - Fill multiple form fields at once
+- `browser_select_option` - Select dropdown options
+- `browser_hover` - Test hover states
+- `browser_drag` - Test drag-and-drop functionality
+
+**Advanced Inspection:**
+- `browser_evaluate` - Run JavaScript to inspect page state
+- `browser_network_requests` - Check network traffic and API calls
+- `browser_resize` - Test responsive design at different viewport sizes
+- `browser_press_key` - Test keyboard navigation
+
+**Browser Management:**
+- `browser_tabs` - Manage multiple tabs
+- `browser_navigate_back` - Test navigation flow
+- `browser_wait_for` - Wait for content to load
+
+#### UI/UX Verification Checklist
+
+When verifying a live application, check all of the following:
+
+**Visual & Layout:**
+- [ ] Page renders correctly without broken layouts
+- [ ] No visual glitches or overlapping elements
+- [ ] Images load properly with appropriate alt text
+- [ ] Consistent spacing and alignment
+- [ ] Responsive design works at different viewport sizes (mobile, tablet, desktop)
+- [ ] Typography is readable with proper font sizes and line heights
+- [ ] Color contrast meets accessibility standards
+
+**Navigation & Usability:**
+- [ ] All links work and navigate to correct pages
+- [ ] Navigation menu is intuitive and accessible
+- [ ] Breadcrumbs or path indicators work correctly
+- [ ] Back button works as expected
+- [ ] Search functionality works and returns relevant results
+
+**Interactive Elements:**
+- [ ] Buttons respond to clicks with visual feedback
+- [ ] Forms accept input and validate correctly
+- [ ] Form submission works and shows success/error states
+- [ ] Dropdowns and selects function properly
+- [ ] Modals/dialogs open and close correctly
+- [ ] Interactive elements have visible hover states
+
+**Accessibility:**
+- [ ] Semantic HTML structure (headings, landmarks, lists)
+- [ ] Proper ARIA labels on interactive elements
+- [ ] Keyboard navigation works (Tab, Enter, Escape)
+- [ ] Focus indicators are visible
+- [ ] Screen reader compatibility (check accessibility tree)
+
+**Performance & Errors:**
+- [ ] Page loads quickly (no long spinners)
+- [ ] No JavaScript console errors
+- [ ] No failed network requests (check 404s, 500s)
+- [ ] Loading states display appropriately
+- [ ] Error messages are clear and actionable
+
+**Content:**
+- [ ] Text is readable and grammatically correct
+- [ ] Placeholder content replaced with real data
+- [ ] Empty states handled gracefully
+- [ ] Date/time formatting is correct
+- [ ] Numbers formatted appropriately (currency, percentages, etc.)
+
+#### Example Verification Workflow
+
+**Verify CrystalShards.org Homepage:**
+
+```bash
+# 1. Navigate to the site
+mcp__playwright__browser_navigate --url "https://crystalshards.org"
+
+# 2. Take accessibility snapshot (ALWAYS DO THIS FIRST)
+mcp__playwright__browser_snapshot
+
+# 3. Check for console errors
+mcp__playwright__browser_console_messages --onlyErrors true
+
+# 4. Test search functionality
+mcp__playwright__browser_type \
+  --element "search input" \
+  --ref "[search-input-ref-from-snapshot]" \
+  --text "http client"
+
+mcp__playwright__browser_press_key --key "Enter"
+
+# 5. Wait for results and verify
+mcp__playwright__browser_wait_for --text "results"
+mcp__playwright__browser_snapshot
+
+# 6. Test navigation to package detail
+mcp__playwright__browser_click \
+  --element "first search result" \
+  --ref "[result-ref-from-snapshot]"
+
+# 7. Verify package detail page
+mcp__playwright__browser_snapshot
+mcp__playwright__browser_take_screenshot --filename "crystalshards-package-detail.png"
+
+# 8. Test responsive design
+mcp__playwright__browser_resize --width 375 --height 667  # iPhone size
+mcp__playwright__browser_snapshot
+mcp__playwright__browser_take_screenshot --filename "crystalshards-mobile.png"
+
+# 9. Check network requests for errors
+mcp__playwright__browser_network_requests
+```
+
+**Verify CrystalDocs.org Documentation:**
+
+```bash
+# Navigate to docs site
+mcp__playwright__browser_navigate --url "https://crystaldocs.org"
+mcp__playwright__browser_snapshot
+
+# Search for a package
+mcp__playwright__browser_type \
+  --element "search input" \
+  --ref "[search-ref]" \
+  --text "lucky"
+
+mcp__playwright__browser_press_key --key "Enter"
+mcp__playwright__browser_snapshot
+
+# Click on a documentation page
+mcp__playwright__browser_click \
+  --element "Lucky framework docs" \
+  --ref "[docs-link-ref]"
+
+# Verify version switcher works
+mcp__playwright__browser_click \
+  --element "version dropdown" \
+  --ref "[version-dropdown-ref]"
+
+mcp__playwright__browser_snapshot
+```
+
+**Verify CrystalGigs.com Job Board:**
+
+```bash
+# Navigate to job board
+mcp__playwright__browser_navigate --url "https://crystalgigs.com"
+mcp__playwright__browser_snapshot
+mcp__playwright__browser_console_messages
+
+# Test job listing browsing
+mcp__playwright__browser_click \
+  --element "first job listing" \
+  --ref "[job-ref]"
+
+mcp__playwright__browser_snapshot
+
+# Test job posting form
+mcp__playwright__browser_navigate --url "https://crystalgigs.com/jobs/new"
+
+mcp__playwright__browser_fill_form --fields '[
+  {
+    "name": "Job title",
+    "type": "textbox",
+    "ref": "[title-ref]",
+    "value": "Senior Crystal Developer"
+  },
+  {
+    "name": "Company name",
+    "type": "textbox",
+    "ref": "[company-ref]",
+    "value": "Test Company"
+  }
+]'
+
+mcp__playwright__browser_snapshot
+mcp__playwright__browser_take_screenshot --filename "crystalgigs-form.png"
+```
+
+**Verify CrystalBits.org Blog:**
+
+```bash
+# Navigate to blog
+mcp__playwright__browser_navigate --url "https://crystalbits.org"
+mcp__playwright__browser_snapshot
+
+# Check blog post listing
+mcp__playwright__browser_click \
+  --element "first blog post" \
+  --ref "[post-ref]"
+
+# Verify post content is readable
+mcp__playwright__browser_snapshot
+mcp__playwright__browser_take_screenshot --filename "crystalbits-post.png"
+
+# Test newsletter signup
+mcp__playwright__browser_type \
+  --element "email input" \
+  --ref "[email-ref]" \
+  --text "test@example.com"
+
+mcp__playwright__browser_click \
+  --element "subscribe button" \
+  --ref "[subscribe-ref]"
+
+mcp__playwright__browser_snapshot
+```
+
+#### Verification Best Practices
+
+**Snapshot First, Screenshot Second:**
+- Always start with `browser_snapshot` - it's faster and provides semantic structure
+- Only use `browser_take_screenshot` when visual verification is essential
+- Accessibility snapshots show semantic HTML structure and ARIA labels
+
+**Check Console for Errors:**
+- Always run `browser_console_messages --onlyErrors true` on each page
+- JavaScript errors indicate broken functionality
+- Document any errors found as GitHub issues
+
+**Test Key User Journeys:**
+- **CrystalShards**: Browse → Search → View Package → Install Instructions
+- **CrystalDocs**: Search → View Docs → Switch Version
+- **CrystalGigs**: Browse Jobs → View Detail → Post Job (with Stripe)
+- **CrystalBits**: Browse Posts → Read Post → Subscribe to Newsletter
+
+**Verify Responsive Design:**
+- Test at multiple viewport sizes:
+  - Mobile: 375×667 (iPhone SE)
+  - Tablet: 768×1024 (iPad)
+  - Desktop: 1920×1080
+- Ensure layout adapts gracefully
+- Check that interactive elements remain usable
+
+**Document Issues as GitHub Issues:**
+```bash
+# If you find a UX issue during verification
+gh issue create \
+  --title "UI Issue: Search input not visible on mobile" \
+  --body "$(cat <<'EOF'
+## Description
+Search input on CrystalShards.org homepage is not visible on mobile viewport (375px width).
+
+## Steps to Reproduce
+1. Navigate to https://crystalshards.org
+2. Resize viewport to 375×667
+3. Search input is hidden or cut off
+
+## Expected Behavior
+Search input should be fully visible and functional on all screen sizes.
+
+## Screenshots
+[Attach screenshot from Playwright verification]
+
+## Browser
+Playwright (Chromium)
+
+## Priority
+Medium - affects mobile users
+EOF
+)" \
+  --label "bug,ui,mobile"
+```
+
+**Create Evidence Trail:**
+- Take screenshots of issues found
+- Include console error messages in issue reports
+- Reference verification in issue comments
+- Link to specific pages or user flows that have problems
+
+**Verify After Fixes:**
+- After fixing UI issues, re-run verification workflow
+- Confirm the issue is resolved
+- Update the GitHub issue with verification results
+- Close issue only after verification passes
+
+#### Integration with Task Workflow
+
+**UI verification should be part of every task that touches user-facing code:**
+
+1. **After Implementation** (step 8 in "For Each Task"):
+   - Write and run E2E tests that exercise the browser
+   - **NEW**: Run Playwright verification on deployed app
+
+2. **Before Creating PR** (step 13):
+   - Ensure Playwright verification passes
+   - Include verification results or screenshots in PR description
+
+3. **In PR Description**:
+   ```markdown
+   ## UI/UX Verification
+   - [x] Verified on https://crystalshards.org
+   - [x] Accessibility snapshot reviewed
+   - [x] No console errors
+   - [x] Responsive design tested (mobile, tablet, desktop)
+   - [x] Interactive elements functioning
+   - [x] Screenshots attached (if applicable)
+   ```
+
+#### Common Issues to Watch For
+
+**Layout Issues:**
+- Overlapping elements
+- Content overflowing containers
+- Broken grid layouts
+- Inconsistent spacing
+
+**Interactive Issues:**
+- Buttons that don't respond to clicks
+- Forms that don't submit
+- Links that navigate to 404s
+- Hover states that don't work
+
+**Accessibility Issues:**
+- Missing alt text on images
+- No focus indicators on interactive elements
+- Poor color contrast
+- Missing ARIA labels
+- Non-semantic HTML
+
+**Performance Issues:**
+- Slow page loads
+- Long-running JavaScript
+- Failed network requests
+- Large image files not optimized
+
+**Content Issues:**
+- Lorem ipsum placeholder text
+- Broken image links
+- Incorrect or missing data
+- Poorly formatted text
+
+#### Production URL Reference
+
+Always verify against these live URLs:
+
+- **CrystalShards.org**: https://crystalshards.org
+  - Homepage, search, package detail, user dashboard
+- **CrystalDocs.org**: https://crystaldocs.org
+  - Documentation browser, version switcher, search
+- **CrystalGigs.com**: https://crystalgigs.com
+  - Job listings, job detail, job posting form
+- **CrystalBits.org**: https://crystalbits.org
+  - Blog homepage, post listing, individual posts, newsletter signup
+
+#### Automated Verification Script
+
+Create a verification script for comprehensive checks:
+
+```bash
+#!/bin/bash
+# verify-all-uis.sh - Comprehensive UI verification
+
+apps=(
+  "crystalshards.org:CrystalShards"
+  "crystaldocs.org:CrystalDocs"
+  "crystalgigs.com:CrystalGigs"
+  "crystalbits.org:CrystalBits"
+)
+
+for app_info in "${apps[@]}"; do
+  IFS=':' read -r url name <<< "$app_info"
+
+  echo "=== Verifying $name ==="
+
+  # Navigate
+  mcp__playwright__browser_navigate --url "https://$url"
+
+  # Snapshot
+  mcp__playwright__browser_snapshot
+
+  # Check errors
+  mcp__playwright__browser_console_messages --onlyErrors true
+
+  # Screenshot
+  mcp__playwright__browser_take_screenshot \
+    --filename "$name-desktop.png"
+
+  # Mobile check
+  mcp__playwright__browser_resize --width 375 --height 667
+  mcp__playwright__browser_snapshot
+  mcp__playwright__browser_take_screenshot \
+    --filename "$name-mobile.png"
+
+  # Reset viewport
+  mcp__playwright__browser_resize --width 1920 --height 1080
+
+  echo "✓ $name verification complete"
+  echo ""
+done
+
+echo "All UI verifications complete!"
+```
+
+#### Remember
+
+**UI/UX verification is NOT optional** - it's a critical part of delivering quality software:
+
+- Users interact with UIs, not APIs
+- A broken UI means a broken product
+- Accessibility matters for all users
+- Pleasant UX drives adoption
+- Visual bugs damage credibility
+
+**Always verify before closing issues or merging PRs that touch user-facing code.**
+
 ## Lucky Framework Specifics
 
 ### Setup Commands
@@ -685,13 +1121,21 @@ This creates a transparent audit trail and enables async coordination without co
 6. **Check prerequisites**: Verify dependencies and requirements
 7. **Implement**: Build the feature – include unit/integration tests
 8. **Test**: Write and run E2E tests that exercise the browser
-9. **Commit frequently**: With issue reference (`refs #<number>` in commit body)
-10. **Progress comments**: Update issue with progress every few hours or at milestones
-11. **Push regularly**: Push to remote after completing logical units
-12. **Handle errors**: Document errors in issue comments (see Task Lifecycle section)
-13. **Create PR**: When complete, create PR with `Closes #<number>` in description
-14. **Comment completion**: Add completion comment to issue with summary
-15. **Update project**: Move to "In Review" then "Done" after merge
+9. **Verify UI/UX**: Use Playwright MCP to check deployed app for pleasant UX (see section 12)
+   - Navigate to live site
+   - Take accessibility snapshot
+   - Check console for errors
+   - Test interactive elements
+   - Verify responsive design
+   - Document any issues found as GitHub issues
+10. **Commit frequently**: With issue reference (`refs #<number>` in commit body)
+11. **Progress comments**: Update issue with progress every few hours or at milestones
+12. **Push regularly**: Push to remote after completing logical units
+13. **Handle errors**: Document errors in issue comments (see Task Lifecycle section)
+14. **Create PR**: When complete, create PR with `Closes #<number>` in description
+    - Include UI/UX verification results in PR description
+15. **Comment completion**: Add completion comment to issue with summary
+16. **Update project**: Move to "In Review" then "Done" after merge
 
 ### Commit Checkpoints
 

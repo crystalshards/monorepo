@@ -44,6 +44,7 @@ See GitHub Projects for detailed task tracking:
 - CrystalDocs.org → Project #2
 - CrystalGigs.com → Project #3
 - CrystalBits.org → Project #4
+- Agent → Project #5
 
 ## Architecture
 
@@ -84,7 +85,6 @@ terraform/
 - `crystalgigs` - Job board app
 - `crystalbits` - Newsletter app
 - `infrastructure` - Shared operators (cert-manager, CNPG, Redis, MinIO, Prometheus)
-- `traefik-system` - Ingress controller
 
 ## Infrastructure Status
 
@@ -147,10 +147,18 @@ Each provider has independent worker implementations to handle provider-specific
    - Responsive design with clean, modern CSS
    - Wire up to existing Shard/ShardVersion models and API actions
    - This is the core product - focus here first before other apps
+   - **After UI implementation, verify with Playwright MCP** (see CLAUDE.md section 12):
+     * Navigate to https://crystalshards.org
+     * Check accessibility and layout with `browser_snapshot`
+     * Test interactive elements (search, navigation, forms)
+     * Verify responsive design (mobile, tablet, desktop)
+     * Check console for JavaScript errors
+     * Document any UI issues as GitHub issues
 2. **Other Application UIs** - After CrystalShards is complete:
    - CrystalDocs.org: Documentation browser, version switcher, search
    - CrystalGigs.org: Job listing page, job detail, job posting form (with Stripe integration)
    - CrystalBits.org: Blog homepage, post listing, individual post pages, newsletter signup
+   - **Verify each UI with Playwright after implementation**
 3. **Migrate from Mosquito to JoobQ** - Replace background job system with JoobQ (https://github.com/azutoolkit/joobq)
 4. **Implement Multi-Provider Support** - Add support for GitHub, GitLab, Bitbucket, Codeberg, generic Git, Mercurial, and Fossil
 5. Monitor CI/CD - fix any failures immediately
@@ -254,6 +262,13 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
    - Make changes following conventions in this file
    - Validate: `terraform validate`, `crystal spec`, etc
    - Test: Write and run tests for new code
+   - **Verify UI/UX**: For user-facing changes, use Playwright MCP (see CLAUDE.md section 12):
+     * Navigate to deployed site
+     * Take accessibility snapshot with `browser_snapshot`
+     * Check console for errors with `browser_console_messages`
+     * Test interactive elements
+     * Verify responsive design at multiple viewport sizes
+     * Document any issues found as GitHub issues
    - **Commit frequently** with issue reference (`refs #123` in commit body)
    - **Push regularly** (at least every 30 minutes of work)
    - **Progress comments** every few hours: `gh issue comment <number> --body "Progress: [completed items]"`
@@ -261,6 +276,15 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
 
 4. **When Complete**:
    - Create PR with `Closes #<number>` in description
+   - **Include UI/UX verification results** in PR description (if applicable):
+     ```markdown
+     ## UI/UX Verification
+     - [x] Verified on https://[app-url]
+     - [x] Accessibility snapshot reviewed
+     - [x] No console errors
+     - [x] Responsive design tested (mobile, tablet, desktop)
+     - [x] Interactive elements functioning
+     ```
    - **Comment completion**: `gh issue comment <number> --body "Work completed in PR #<pr-num>. Summary: [changes]"`
    - **Update project status** via web UI: In Progress → In Review → Done (after merge)
    - Close issue if not auto-closed: `gh issue close <number> --comment "Merged in <commit-sha>"`
@@ -305,6 +329,11 @@ Continue iterating until ALL of these are complete:
 - [x] All tests passing (84 tests)
 - [x] OpenAPI specs complete
 - [x] Rate limiting enabled
+- [ ] All UIs verified with Playwright for pleasant UX (see CLAUDE.md section 12)
+  - [ ] CrystalShards.org: Homepage, search, package detail
+  - [ ] CrystalDocs.org: Documentation browser, version switcher
+  - [ ] CrystalGigs.com: Job listings, job detail, job posting
+  - [ ] CrystalBits.org: Blog posts, newsletter signup
 - [ ] Production data seeded
 - [ ] E2E tests for critical paths
 - [ ] Performance benchmarks established
@@ -344,6 +373,7 @@ gh project item-list 1 --owner crystalshards
 gh project item-list 2 --owner crystalshards
 gh project item-list 3 --owner crystalshards
 gh project item-list 4 --owner crystalshards
+gh project item-list 5 --owner crystalshards
 
 # Find GitHub issues
 gh issue list --state open
