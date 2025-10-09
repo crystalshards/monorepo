@@ -5,7 +5,7 @@ describe IndexShardWorker do
     it "successfully indexes a shard from repository" do
       shard = ShardFactory.create &.name("kemal")
         .repository_url("https://github.com/kemalcr/kemal")
-        .description("Lightning Fast, Super Simple web framework")
+        .description("Initial description")
 
       shard_version = ShardVersionFactory.create &.shard_id(shard.id)
         .version("1.0.0")
@@ -105,6 +105,7 @@ describe IndexShardWorker do
     it "handles missing shard.yml gracefully" do
       shard = ShardFactory.create &.name("broken-shard")
         .repository_url("https://github.com/user/broken")
+        .description(nil)
 
       shard_version = ShardVersionFactory.create &.shard_id(shard.id)
         .version("1.0.0")

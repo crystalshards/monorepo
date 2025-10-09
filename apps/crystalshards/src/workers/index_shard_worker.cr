@@ -69,13 +69,13 @@ struct IndexShardWorker < BaseJob
     metadata = provider.fetch_metadata
     return unless metadata
 
-    SaveShard.update(shard) do |operation|
-      operation.github_stars.value = metadata.stars if metadata.stars
-      operation.github_forks.value = metadata.forks if metadata.forks
-      operation.provider.value = provider.provider_name
-      operation.repository_type.value = provider.repository_type
-      operation.last_synced_at.value = Time.utc
-    end
+    SaveShard.update!(shard,
+      github_stars: metadata.stars,
+      github_forks: metadata.forks,
+      provider: provider.provider_name,
+      repository_type: provider.repository_type,
+      last_synced_at: Time.utc
+    )
 
     log_info "Updated provider metadata for #{shard.name}"
   rescue ex : Exception
@@ -88,13 +88,15 @@ struct IndexShardWorker < BaseJob
     homepage = shard_yml["homepage"]?.try(&.as_s?)
     crystal = shard_yml["crystal"]?.try(&.as_s?)
 
-    SaveShard.update(shard) do |operation|
+    # Update shard metadata from shard.yml
+    SaveShard.update!(shard) do |operation|
       operation.description.value = description if description
       operation.license.value = license if license
       operation.homepage_url.value = homepage if homepage
     end
 
-    SaveShardVersion.update(shard_version) do |operation|
+    # Update shard version with crystal version and full metadata
+    SaveShardVersion.update!(shard_version) do |operation|
       operation.crystal_version.value = crystal if crystal
       operation.metadata.value = JSON.parse(shard_yml.to_json)
     end
