@@ -1,5 +1,6 @@
 class Posts::Index < BrowserAction
   param page : Int32 = 1
+  param per_page : Int32 = 20
   param tag : String?
   param search : String?
 
@@ -14,11 +15,19 @@ class Posts::Index < BrowserAction
       query = query.search(search_value)
     end
 
-    posts = query.paginate(page: page, per_page: 20)
+    total_count = query.select_count
+    offset_value = (page - 1) * per_page
+
+    posts = query
+      .limit(per_page)
+      .offset(offset_value)
+      .to_a
 
     html Posts::IndexPage,
       posts: posts,
       current_page: page,
+      per_page: per_page,
+      total_count: total_count,
       tag: tag,
       search: search
   end

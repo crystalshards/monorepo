@@ -1,6 +1,8 @@
 class Posts::IndexPage < MainLayout
-  needs posts : PostQuery
+  needs posts : Array(Post)
   needs current_page : Int32
+  needs per_page : Int32
+  needs total_count : Int64
   needs tag : String?
   needs search : String?
 
@@ -57,20 +59,34 @@ class Posts::IndexPage < MainLayout
   end
 
   private def render_pagination
+    total_pages = (@total_count.to_f / @per_page).ceil.to_i
+
+    return if total_pages <= 1
+
     div class: "pagination" do
       if @current_page > 1
-        a href: "/posts?page=#{@current_page - 1}", class: "pagination-link" do
+        a href: build_pagination_url(@current_page - 1), class: "pagination-link" do
           text "← Previous"
         end
       end
 
       span class: "pagination-current" do
-        text "Page #{@current_page}"
+        text "Page #{@current_page} of #{total_pages}"
       end
 
-      a href: "/posts?page=#{@current_page + 1}", class: "pagination-link" do
-        text "Next →"
+      if @current_page < total_pages
+        a href: build_pagination_url(@current_page + 1), class: "pagination-link" do
+          text "Next →"
+        end
       end
     end
+  end
+
+  private def build_pagination_url(page : Int32) : String
+    params = [] of String
+    params << "page=#{page}"
+    params << "search=#{@search}" if @search
+    params << "tag=#{@tag}" if @tag
+    "/posts?#{params.join("&")}"
   end
 end

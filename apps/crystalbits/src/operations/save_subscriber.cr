@@ -1,5 +1,5 @@
 class SaveSubscriber < Subscriber::SaveOperation
-  permit_columns email
+  permit_columns email, confirmed, confirmed_at, confirmation_token, unsubscribed_at
 
   before_save do
     validate_required email

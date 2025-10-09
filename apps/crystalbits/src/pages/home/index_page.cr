@@ -1,6 +1,6 @@
 class Home::IndexPage < MainLayout
   needs featured_post : Post?
-  needs recent_posts : PostQuery
+  needs recent_posts : Array(Post)
 
   def page_title
     "Home"

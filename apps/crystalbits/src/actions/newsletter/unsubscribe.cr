@@ -3,8 +3,7 @@ class Newsletter::Unsubscribe < BrowserAction
     subscriber = SubscriberQuery.new.by_confirmation_token(token).first?
 
     if subscriber && subscriber.unsubscribed_at.nil?
-      subscriber.unsubscribed_at = Time.utc
-      subscriber.save
+      SaveSubscriber.update!(subscriber, unsubscribed_at: Time.utc)
 
       flash.success = "You've been unsubscribed from our newsletter."
       html UnsubscribedPage, subscriber: subscriber

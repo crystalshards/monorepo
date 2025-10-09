@@ -3,10 +3,11 @@ class Newsletter::Confirm < BrowserAction
     subscriber = SubscriberQuery.new.by_confirmation_token(token).first?
 
     if subscriber && !subscriber.confirmed
-      subscriber.confirmed = true
-      subscriber.confirmed_at = Time.utc
-      subscriber.confirmation_token = nil
-      subscriber.save
+      SaveSubscriber.update!(subscriber,
+        confirmed: true,
+        confirmed_at: Time.utc,
+        confirmation_token: nil
+      )
 
       flash.success = "Your subscription is confirmed! Thank you for subscribing."
       html ConfirmedPage, subscriber: subscriber
