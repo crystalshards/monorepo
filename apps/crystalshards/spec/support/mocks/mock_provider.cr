@@ -14,9 +14,10 @@ class MockProvider < BaseProvider
   def fetch_shard_yml(version : String?) : YAML::Any?
     fetch_shard_yml_calls << version.to_s
     return nil if simulate_fetch_error
-    return nil unless @shard_yml_content
+    content = @shard_yml_content
+    return nil unless content
 
-    YAML.parse(@shard_yml_content)
+    YAML.parse(content)
   rescue ex : YAML::ParseException
     nil
   end
