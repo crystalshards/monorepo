@@ -129,7 +129,13 @@ Each provider has independent worker implementations to handle provider-specific
 **Agent Directive**: Continue iterating toward full production readiness. See "Autonomous Iteration Workflow" section below for work discovery process.
 
 **Current Priorities** (work on these in order):
-1. **CrystalShards.org User Interface (TOP PRIORITY)** - Build the main package registry web interface:
+1. **CrystalShards.org User Interface & Workers (TOP PRIORITY)** - Build the main package registry web interface and ensure background workers are functioning:
+   - **Workers (CRITICAL)**: Ensure all JoobQ workers are operational for the UI to be useful:
+     * IndexShardWorker - Parse shard.yml, extract metadata, update search index
+     * BuildDocsWorker - Run `crystal docs` in sandbox, upload to MinIO
+     * UpdateDependenciesWorker - Update dependency graph
+     * Workers must actually process jobs from Redis queue
+     * Test with real shard indexing workflow
    - **Homepage**: Hero section, search bar, featured/popular shards, recent updates
    - **Browse/Search Page**: Paginated list of all shards with search and filter capabilities
    - **Package Detail Page**: Show package info, versions, installation instructions, dependencies, README, download stats, link to docs
