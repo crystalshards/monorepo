@@ -4,6 +4,7 @@
 /.shards/
 *.dwarf
 start_server
+lucky_tasks
 *.dwarf
 *.local.cr
 .env
