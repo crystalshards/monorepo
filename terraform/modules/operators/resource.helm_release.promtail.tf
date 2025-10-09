@@ -105,17 +105,15 @@ resource "helm_release" "promtail" {
 
       # GKE Autopilot compatibility: Override default volumes
       # Default chart tries to mount /var/lib/docker/containers which is prohibited in Autopilot
-      # Only /var/log/* paths are allowed for hostPath volumes
+      # Only /var/log/* paths are allowed for hostPath volumes, and ONLY in read-only mode
       # Reference: https://cloud.google.com/kubernetes-engine/docs/concepts/autopilot-security#file-system
       defaultVolumes = [
-        # Keep /run/promtail for position tracking (uses hostPath)
+        # Use emptyDir for position tracking instead of hostPath (write access needed)
         {
-          name = "run"
-          hostPath = {
-            path = "/var/log/promtail" # Use /var/log prefix instead of /run
-          }
+          name     = "run"
+          emptyDir = {}
         },
-        # Keep /var/log/pods (allowed in Autopilot)
+        # Keep /var/log/pods (allowed in Autopilot, read-only)
         {
           name = "pods"
           hostPath = {
@@ -129,6 +127,7 @@ resource "helm_release" "promtail" {
         {
           name      = "run"
           mountPath = "/run/promtail"
+          # Write access allowed with emptyDir
         },
         {
           name      = "pods"
