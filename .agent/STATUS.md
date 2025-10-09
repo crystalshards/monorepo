@@ -46,6 +46,38 @@ Successfully completed two major priorities from the project roadmap:
 - Created comprehensive documentation and verification script
 - Committed across multiple commits (see Git history)
 
+### Terraform State Lock Incident (Resolved ✅)
+**Incident**: Deployment workflow 18368089930 failed with Terraform state lock error
+- Error: "state blob is already locked" (Lock ID: 0f93ad67-67bf-1f4b-af84-c68ae5b2abe9)
+- Affected workflow: Deploy to Production (manual trigger)
+- Time: 2025-10-09 ~07:15 UTC
+
+**Root Cause**:
+- Previous workflow run 18367998644 hung during terraform plan/apply
+- Workflow was manually cancelled but did not release the state lock
+- GCS backend retained the lock, blocking subsequent deployments
+
+**Resolution**:
+1. Created force-unlock GitHub Actions workflow (`.github/workflows/force-unlock.yml`)
+2. Triggered force-unlock workflow with Lock ID: 0f93ad67-67bf-1f4b-af84-c68ae5b2abe9
+3. Successfully released lock in GCS backend
+4. Verified unlock with `terraform force-unlock` command
+
+**Preventive Measures Implemented**:
+- Added 60-minute job timeout to deploy.yml workflow
+- Ensures hung jobs automatically cancel and release locks
+- Added documentation to troubleshooting guide
+
+**Current Status**:
+- ✅ State lock released successfully
+- ✅ Deployment workflow 18368229149 proceeding without errors
+- ✅ Infrastructure deployment in progress
+
+**Lessons Learned**:
+- Always set timeouts on long-running Terraform jobs
+- Keep force-unlock workflow available for emergency recovery
+- GCS state locks require explicit unlock when workflows fail
+
 ### Bug Fixes
 - Fixed Crystal syntax error in bitbucket_provider.cr (unterminated call)
 - Applied formatting to base_provider.cr
