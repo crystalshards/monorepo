@@ -1,0 +1,32 @@
+domainFilters:
+- crystalshards.org
+- crystaldocs.org
+- crystalgigs.com
+- crystalbits.org
+
+google:
+  project: crystalshards-org
+
+policy: sync
+provider: google
+registry: txt
+
+resources:
+  limits:
+    cpu: 50m
+    memory: 128Mi
+  requests:
+    cpu: 25m
+    memory: 64Mi
+
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: external-dns@crystalshards-org.iam.gserviceaccount.com
+
+txtOwnerId: crystalshards-k8s
+
+# Enable Gateway API support
+sources:
+- service
+- ingress
+- gateway-httproute
