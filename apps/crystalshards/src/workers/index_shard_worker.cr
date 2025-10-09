@@ -1,4 +1,5 @@
 require "./base_worker"
+require "../providers/provider_factory"
 
 struct IndexShardWorker < BaseJob
   def initialize(@shard_name : String, @version : String)
@@ -25,7 +26,6 @@ struct IndexShardWorker < BaseJob
     end
 
     fetch_and_parse_shard_yml(shard, shard_version)
-    extract_metadata(shard, shard_version)
 
     UpdateDependenciesWorker.enqueue(
       shard_name: @shard_name.not_nil!,
@@ -44,51 +44,36 @@ struct IndexShardWorker < BaseJob
   end
 
   private def fetch_and_parse_shard_yml(shard : Shard, shard_version : ShardVersion)
-    repo_url = shard.repository_url
+    provider = ProviderFactory.create(shard.repository_url)
 
-    temp_dir = File.tempname("shard_index")
-    Dir.mkdir_p(temp_dir)
+    shard_yml = provider.fetch_shard_yml(shard_version.version)
+    unless shard_yml
+      log_error "Could not fetch shard.yml from repository"
+      return
+    end
 
-    begin
-      clone_repository(repo_url, temp_dir)
-      checkout_version(temp_dir, shard_version)
+    update_from_shard_yml(shard, shard_version, shard_yml)
 
-      shard_yml_path = File.join(temp_dir, "shard.yml")
-      unless File.exists?(shard_yml_path)
-        log_error "shard.yml not found in repository"
-        return
-      end
-
-      shard_yml = YAML.parse(File.read(shard_yml_path))
-      update_from_shard_yml(shard, shard_version, shard_yml)
-    ensure
-      FileUtils.rm_rf(temp_dir) if Dir.exists?(temp_dir)
+    if provider.supports_api?
+      update_provider_metadata(shard, provider)
     end
   end
 
-  private def clone_repository(repo_url : String, target_dir : String)
-    cmd = "git clone --depth 1 #{repo_url} #{target_dir}"
-    output = `#{cmd} 2>&1`
+  private def update_provider_metadata(shard : Shard, provider : BaseProvider)
+    metadata = provider.fetch_metadata
+    return unless metadata
 
-    unless $?.success?
-      raise "Failed to clone repository: #{output}"
+    SaveShard.update(shard) do |operation|
+      operation.github_stars.value = metadata.stars if metadata.stars
+      operation.github_forks.value = metadata.forks if metadata.forks
+      operation.provider.value = provider.provider_name
+      operation.repository_type.value = provider.repository_type
+      operation.last_synced_at.value = Time.utc
     end
 
-    log_info "Cloned repository: #{repo_url}"
-  end
-
-  private def checkout_version(repo_dir : String, shard_version : ShardVersion)
-    if commit_sha = shard_version.commit_sha
-      cmd = "cd #{repo_dir} && git fetch --depth 1 origin #{commit_sha} && git checkout #{commit_sha}"
-    else
-      cmd = "cd #{repo_dir} && git fetch --depth 1 origin tag #{shard_version.version} && git checkout #{shard_version.version}"
-    end
-
-    output = `#{cmd} 2>&1`
-
-    unless $?.success?
-      log_info "Could not checkout specific version, using HEAD"
-    end
+    log_info "Updated provider metadata for #{shard.name}"
+  rescue ex : Exception
+    log_error "Failed to update provider metadata", ex
   end
 
   private def update_from_shard_yml(shard : Shard, shard_version : ShardVersion, shard_yml : YAML::Any)
@@ -109,39 +94,5 @@ struct IndexShardWorker < BaseJob
     end
 
     log_info "Updated shard metadata from shard.yml"
-  end
-
-  private def extract_metadata(shard : Shard, shard_version : ShardVersion)
-    if shard.repository_url.includes?("github.com")
-      fetch_github_metadata(shard)
-    end
-  end
-
-  private def fetch_github_metadata(shard : Shard)
-    repo_path = extract_github_repo_path(shard.repository_url)
-    return unless repo_path
-
-    github_api_url = "https://api.github.com/repos/#{repo_path}"
-
-    response = HTTP::Client.get(github_api_url)
-    return unless response.status_code == 200
-
-    data = JSON.parse(response.body)
-
-    SaveShard.update(shard) do |operation|
-      operation.github_stars.value = data["stargazers_count"]?.try(&.as_i?)
-      operation.github_forks.value = data["forks_count"]?.try(&.as_i?)
-      operation.last_synced_at.value = Time.utc
-    end
-
-    log_info "Updated GitHub metadata for #{shard.name}"
-  rescue ex : Exception
-    log_error "Failed to fetch GitHub metadata", ex
-  end
-
-  private def extract_github_repo_path(url : String) : String?
-    if match = url.match(/github\.com[\/:]([^\/]+\/[^\/\.]+)/)
-      match[1]
-    end
   end
 end

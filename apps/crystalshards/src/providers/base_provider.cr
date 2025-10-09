@@ -1,3 +1,5 @@
+require "yaml"
+
 abstract class BaseProvider
   getter repository_url : String
 
@@ -15,6 +17,14 @@ abstract class BaseProvider
 
   def supports_api? : Bool
     false
+  end
+
+  def repository_type : String
+    "git"
+  end
+
+  def provider_name : String
+    self.class.name.underscore.sub("_provider", "")
   end
 
   class RepositoryMetadata

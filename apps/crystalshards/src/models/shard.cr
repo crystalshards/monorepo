@@ -10,6 +10,8 @@ class Shard < BaseModel
     column github_stars : Int32?
     column github_forks : Int32?
     column last_synced_at : Time?
+    column provider : String
+    column repository_type : String
 
     has_many shard_versions : ShardVersion
     has_many dependencies : Dependency
