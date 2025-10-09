@@ -1,0 +1,80 @@
+class Posts::ShowPage < MainLayout
+  needs post : Post
+
+  def page_title
+    @post.title
+  end
+
+  def content
+    article class: "post-content" do
+      render_header
+      render_body
+      render_tags
+      render_newsletter_cta
+    end
+  end
+
+  private def render_header
+    header class: "post-header" do
+      h1 class: "post-title" do
+        text @post.title
+      end
+
+      div class: "post-meta" do
+        span class: "post-author" do
+          text "By #{@post.author_name}"
+        end
+        span class: "post-separator" do
+          text "•"
+        end
+        span class: "post-date" do
+          text format_date(@post.published_at)
+        end
+        span class: "post-separator" do
+          text "•"
+        end
+        span class: "post-views" do
+          text "#{@post.view_count} views"
+        end
+      end
+    end
+  end
+
+  private def render_body
+    div class: "post-body" do
+      raw markdown_to_html(@post.content)
+    end
+  end
+
+  private def render_tags
+    return if @post.tags.empty?
+
+    div class: "post-tags-section" do
+      h3 "Tags"
+      div class: "post-tags" do
+        @post.tags.each do |tag|
+          a href: "/posts?tag=#{tag}", class: "tag" do
+            text tag
+          end
+        end
+      end
+    end
+  end
+
+  private def render_newsletter_cta
+    div class: "newsletter-cta" do
+      h3 "Enjoyed this post?"
+      para "Subscribe to our newsletter for more Crystal tutorials and updates."
+      mount NewsletterSignupForm, inline: false
+    end
+  end
+
+  private def format_date(date : Time?) : String
+    return "Draft" unless date
+    date.to_s("%B %-d, %Y")
+  end
+
+  private def markdown_to_html(content : String) : String
+    Markd.to_html(content)
+  end
+end

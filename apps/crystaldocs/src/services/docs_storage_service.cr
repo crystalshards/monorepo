@@ -12,8 +12,8 @@ module CrystalDocs
       key = docs_key(package_name, version, file_path)
       begin
         response = @client.get_object(
-          bucket: MinIOConfig.settings.docs_bucket,
-          key: key
+          MinIOConfig.settings.docs_bucket,
+          key
         )
         response.body
       rescue ex : Awscr::S3::Exception
@@ -28,8 +28,8 @@ module CrystalDocs
 
       begin
         response = @client.list_objects(
-          bucket: MinIOConfig.settings.docs_bucket,
-          prefix: prefix
+          MinIOConfig.settings.docs_bucket,
+          prefix
         )
 
         response.contents.each do |object|
@@ -47,8 +47,8 @@ module CrystalDocs
       key = docs_key(package_name, version, "index.html")
       begin
         @client.head_object(
-          bucket: MinIOConfig.settings.docs_bucket,
-          key: key
+          MinIOConfig.settings.docs_bucket,
+          key
         )
         true
       rescue ex : Awscr::S3::Exception
