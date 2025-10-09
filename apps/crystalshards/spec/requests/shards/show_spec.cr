@@ -520,4 +520,113 @@ describe Shards::Show do
       response.body.should contain("awesome-shard")
     end
   end
+
+  describe "new features" do
+    it "shows copy button for installation instructions" do
+      shard = ShardFactory.create &.name("test-shard")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+
+      response.body.should contain("copy-button")
+      response.body.should contain("copyToClipboard")
+    end
+
+    it "shows version badge in header" do
+      shard = ShardFactory.create &.name("test-shard")
+      ShardVersionFactory.create &.shard_id(shard.id).version("2.5.0")
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+
+      response.body.should contain("shard-version-badge")
+      response.body.should contain("v2.5.0")
+    end
+
+    it "shows GitHub forks count" do
+      shard = ShardFactory.create &.name("test-shard")
+        .github_forks(123)
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+
+      response.body.should contain("🍴 123")
+      response.body.should contain("forks")
+    end
+
+    it "shows updated timestamp in header" do
+      shard = ShardFactory.create &.name("test-shard")
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+
+      response.body.should contain("Updated")
+      response.body.should contain("ago")
+    end
+
+    it "shows README content when available" do
+      readme_content = "# Test Shard\n\nThis is a test shard for Crystal."
+      shard = ShardFactory.create &.name("test-shard")
+        .readme_content(readme_content)
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+
+      response.body.should contain("README")
+      response.body.should contain("This is a test shard for Crystal")
+    end
+
+    it "hides README section when not available" do
+      shard = ShardFactory.create &.name("test-shard")
+        .readme_content(nil)
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+
+      response.body.should_not contain("README")
+    end
+
+    it "shows metadata section with created and updated dates" do
+      shard = ShardFactory.create &.name("test-shard")
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+
+      response.body.should contain("Metadata")
+      response.body.should contain("Created:")
+      response.body.should contain("Updated:")
+      response.body.should contain("Provider:")
+    end
+
+    it "shows dependents section when other shards depend on it" do
+      main_shard = ShardFactory.create &.name("main-shard")
+      dependent_shard = ShardFactory.create &.name("dependent-shard")
+      dependent_version = ShardVersionFactory.create &.shard_id(dependent_shard.id)
+        .version("1.0.0")
+
+      DependencyFactory.create &.shard_version_id(dependent_version.id)
+        .name("main-shard")
+        .version_requirement("~> 1.0")
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "main-shard"))
+
+      response.body.should contain("Dependents")
+      response.body.should contain("dependent-shard")
+      response.body.should contain("1 shard")
+    end
+
+    it "hides dependents section when no dependents" do
+      shard = ShardFactory.create &.name("lonely-shard")
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "lonely-shard"))
+
+      response.body.should_not contain("Dependents")
+    end
+
+    it "shows total version count in sidebar" do
+      shard = ShardFactory.create &.name("test-shard")
+      3.times do |i|
+        ShardVersionFactory.create &.shard_id(shard.id)
+          .version("1.#{i}.0")
+      end
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+
+      response.body.should contain("Versions (3)")
+    end
+  end
 end

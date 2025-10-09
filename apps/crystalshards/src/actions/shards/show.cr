@@ -1,7 +1,7 @@
 class Shards::Show < BrowserAction
   get "/shards/:shard_name" do
     shard = ShardQuery.new
-      .preload_shard_versions
+      .preload_shard_versions(ShardVersionQuery.new.preload_downloads)
       .name(shard_name)
       .first?
 
@@ -20,10 +20,26 @@ class Shards::Show < BrowserAction
                      [] of Dependency
                    end
 
+    dependents = find_dependents(shard.name)
+
     html Shards::ShowPage,
       shard: shard,
       versions: versions,
       dependencies: dependencies,
-      latest_version: latest_version
+      latest_version: latest_version,
+      dependents: dependents
+  end
+
+  private def find_dependents(shard_name : String) : Array(Shard)
+    dependencies = DependencyQuery.new
+      .name(shard_name)
+      .preload_shard_version
+      .to_a
+
+    shard_ids = dependencies.map(&.shard_version.shard_id).uniq
+
+    ShardQuery.new
+      .id.in(shard_ids)
+      .to_a
   end
 end

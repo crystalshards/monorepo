@@ -12,6 +12,7 @@ class Shard < BaseModel
     column last_synced_at : Time?
     column provider : String
     column repository_type : String
+    column readme_content : String?
 
     has_many shard_versions : ShardVersion
     has_many dependencies : Dependency
