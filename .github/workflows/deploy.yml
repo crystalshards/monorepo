@@ -15,6 +15,7 @@ jobs:
   deploy-cluster:
     name: Deploy Cluster & Artifact Registry
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: production
     # Only deploy if CI passed or manual trigger
     if: >
@@ -68,6 +69,7 @@ jobs:
     name: Build and Push Docker Images
     needs: deploy-cluster
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -149,6 +151,7 @@ jobs:
     name: Deploy Full Infrastructure
     needs: build-images
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     environment: production
 
     steps:

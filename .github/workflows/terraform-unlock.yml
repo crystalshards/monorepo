@@ -1,0 +1,62 @@
+name: Force Unlock Terraform State
+
+on:
+  workflow_dispatch:
+    inputs:
+      lock_id:
+        description: 'Lock ID to force unlock'
+        required: true
+        type: string
+
+jobs:
+  force-unlock:
+    name: Force Unlock Terraform State
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: 1.6.0
+        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+    - name: Force Unlock State
+      working-directory: ./terraform
+      env:
+        TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
+        TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
+        TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
+        TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+      run: |
+        echo "Initializing Terraform..."
+        terraform init
+
+        echo "Force unlocking state with Lock ID: ${{ inputs.lock_id }}"
+        terraform force-unlock -force ${{ inputs.lock_id }}
+
+        echo "✅ Lock successfully removed"
+
+    - name: Verify State Accessible
+      working-directory: ./terraform
+      run: |
+        echo "Verifying state is now accessible..."
+        terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+                      -var="region=us-central1" \
+                      -detailed-exitcode || EXIT_CODE=$?
+
+        # Exit code 0 = no changes, 2 = changes present, both are success
+        if [ "$EXIT_CODE" = "1" ]; then
+          echo "❌ State verification failed"
+          exit 1
+        fi
+
+        echo "✅ State is accessible and valid"
