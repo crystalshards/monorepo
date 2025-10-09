@@ -4,13 +4,14 @@ resource "kubernetes_ingress_v1" "crystalbits" {
     name      = "crystalbits-ingress"
     namespace = kubernetes_namespace.crystalbits.metadata[0].name
     annotations = {
-      "kubernetes.io/ingress.class"               = "nginx"
       "external-dns.alpha.kubernetes.io/hostname" = "crystalbits.org,www.crystalbits.org"
       "cert-manager.io/cluster-issuer"            = "letsencrypt-prod"
     }
   }
 
   spec {
+    ingress_class_name = "traefik"
+
     tls {
       hosts = [
         "crystalbits.org",
@@ -27,7 +28,7 @@ resource "kubernetes_ingress_v1" "crystalbits" {
           path_type = "Prefix"
           backend {
             service {
-              name = "crystalbits-service"
+              name = kubernetes_service.crystalbits.metadata[0].name
               port {
                 number = 80
               }
@@ -45,7 +46,7 @@ resource "kubernetes_ingress_v1" "crystalbits" {
           path_type = "Prefix"
           backend {
             service {
-              name = "crystalbits-service"
+              name = kubernetes_service.crystalbits.metadata[0].name
               port {
                 number = 80
               }

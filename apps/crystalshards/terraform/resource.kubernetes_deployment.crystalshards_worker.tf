@@ -143,6 +143,16 @@ resource "kubernetes_deployment" "crystalshards_worker" {
             }
           }
 
+          env {
+            name  = "SEND_GRID_KEY"
+            value = "unused"
+          }
+
+          env {
+            name  = "APP_DOMAIN"
+            value = "crystalshards.org"
+          }
+
           # Resource limits for Autopilot
           resources {
             requests = {

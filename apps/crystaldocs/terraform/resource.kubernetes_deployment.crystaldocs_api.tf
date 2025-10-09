@@ -93,6 +93,66 @@ resource "kubernetes_deployment" "crystaldocs_api" {
             }
           }
 
+          env {
+            name  = "SEND_GRID_KEY"
+            value = "unused"
+          }
+
+          env {
+            name  = "APP_DOMAIN"
+            value = "crystaldocs.org"
+          }
+
+          env {
+            name = "MINIO_ENDPOINT"
+            value_from {
+              secret_key_ref {
+                name = "crystaldocs-secrets"
+                key  = "minio_endpoint"
+              }
+            }
+          }
+
+          env {
+            name = "MINIO_ACCESS_KEY"
+            value_from {
+              secret_key_ref {
+                name = "crystaldocs-secrets"
+                key  = "minio_access_key"
+              }
+            }
+          }
+
+          env {
+            name = "MINIO_SECRET_KEY"
+            value_from {
+              secret_key_ref {
+                name = "crystaldocs-secrets"
+                key  = "minio_secret_key"
+              }
+            }
+          }
+
+          env {
+            name = "MINIO_REGION"
+            value_from {
+              secret_key_ref {
+                name = "crystaldocs-secrets"
+                key  = "minio_region"
+              }
+            }
+          }
+
+          env {
+            name = "MINIO_USE_SSL"
+            value_from {
+              secret_key_ref {
+                name = "crystaldocs-secrets"
+                key  = "minio_use_ssl"
+              }
+            }
+          }
+
           resources {
             requests = {
               cpu    = "250m"

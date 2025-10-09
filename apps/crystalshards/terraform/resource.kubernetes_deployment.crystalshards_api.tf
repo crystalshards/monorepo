@@ -153,6 +153,16 @@ resource "kubernetes_deployment" "crystalshards_api" {
             }
           }
 
+          env {
+            name  = "SEND_GRID_KEY"
+            value = "unused"
+          }
+
+          env {
+            name  = "APP_DOMAIN"
+            value = "crystalshards.org"
+          }
+
           resources {
             requests = {
               cpu    = "250m"

@@ -4,13 +4,14 @@ resource "kubernetes_ingress_v1" "crystalshards" {
     name      = "crystalshards-ingress"
     namespace = kubernetes_namespace.crystalshards.metadata[0].name
     annotations = {
-      "kubernetes.io/ingress.class"               = "nginx"
       "external-dns.alpha.kubernetes.io/hostname" = "crystalshards.org,www.crystalshards.org"
       "cert-manager.io/cluster-issuer"            = "letsencrypt-prod"
     }
   }
 
   spec {
+    ingress_class_name = "traefik"
+
     tls {
       hosts = [
         "crystalshards.org",
@@ -27,7 +28,7 @@ resource "kubernetes_ingress_v1" "crystalshards" {
           path_type = "Prefix"
           backend {
             service {
-              name = "crystalshards-service"
+              name = kubernetes_service.crystalshards.metadata[0].name
               port {
                 number = 80
               }
@@ -45,7 +46,7 @@ resource "kubernetes_ingress_v1" "crystalshards" {
           path_type = "Prefix"
           backend {
             service {
-              name = "crystalshards-service"
+              name = kubernetes_service.crystalshards.metadata[0].name
               port {
                 number = 80
               }

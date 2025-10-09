@@ -43,10 +43,11 @@ resource "helm_release" "traefik" {
       }
     }
 
-    # Access logs
+    # Access logs and provider configuration
     additionalArguments = [
       "--accesslog=true",
-      "--accesslog.format=json"
+      "--accesslog.format=json",
+      "--providers.kubernetesingress.publishedservice.enabled=true"
     ]
 
     # Resource limits for Autopilot

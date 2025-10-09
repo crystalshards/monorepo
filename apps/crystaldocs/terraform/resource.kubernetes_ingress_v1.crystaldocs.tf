@@ -4,13 +4,14 @@ resource "kubernetes_ingress_v1" "crystaldocs" {
     name      = "crystaldocs-ingress"
     namespace = kubernetes_namespace.crystaldocs.metadata[0].name
     annotations = {
-      "kubernetes.io/ingress.class"               = "nginx"
       "external-dns.alpha.kubernetes.io/hostname" = "crystaldocs.org,www.crystaldocs.org"
       "cert-manager.io/cluster-issuer"            = "letsencrypt-prod"
     }
   }
 
   spec {
+    ingress_class_name = "traefik"
+
     tls {
       hosts = [
         "crystaldocs.org",
@@ -27,7 +28,7 @@ resource "kubernetes_ingress_v1" "crystaldocs" {
           path_type = "Prefix"
           backend {
             service {
-              name = "crystaldocs-service"
+              name = kubernetes_service.crystaldocs.metadata[0].name
               port {
                 number = 80
               }
@@ -45,7 +46,7 @@ resource "kubernetes_ingress_v1" "crystaldocs" {
           path      = "/"
           backend {
             service {
-              name = "crystaldocs-service"
+              name = kubernetes_service.crystaldocs.metadata[0].name
               port {
                 number = 80
               }

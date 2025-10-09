@@ -93,6 +93,16 @@ resource "kubernetes_deployment" "crystalbits_api" {
             }
           }
 
+          env {
+            name  = "SEND_GRID_KEY"
+            value = "unused"
+          }
+
+          env {
+            name  = "APP_DOMAIN"
+            value = "crystalbits.org"
+          }
+
           resources {
             requests = {
               cpu    = "250m"
