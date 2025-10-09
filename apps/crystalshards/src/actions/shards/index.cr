@@ -21,7 +21,7 @@ class Shards::Index < BrowserAction
 
     # Apply license filter
     if filter_license = license
-      shards_query = shards_query.license.eq(filter_license)
+      shards_query = shards_query.license(filter_license)
     end
 
     # Apply minimum stars filter
