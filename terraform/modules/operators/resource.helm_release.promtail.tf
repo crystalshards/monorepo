@@ -104,36 +104,38 @@ resource "helm_release" "promtail" {
       priorityClassName = "system-node-critical"
 
       # GKE Autopilot compatibility: Override default volumes
-      # Default chart tries to mount /var/lib/docker/containers which is prohibited
-      # Only /var/log is allowed in Autopilot
-      defaultVolumes      = []
-      defaultVolumeMounts = []
-
-      # Mount only /var/log (read-only, allowed in Autopilot)
-      extraVolumes = [
+      # Default chart tries to mount /var/lib/docker/containers which is prohibited in Autopilot
+      # Only /var/log/* paths are allowed for hostPath volumes
+      # Reference: https://cloud.google.com/kubernetes-engine/docs/concepts/autopilot-security#file-system
+      defaultVolumes = [
+        # Keep /run/promtail for position tracking (uses hostPath)
         {
-          name = "varlog"
+          name = "run"
           hostPath = {
-            path = "/var/log"
+            path = "/var/log/promtail" # Use /var/log prefix instead of /run
           }
         },
+        # Keep /var/log/pods (allowed in Autopilot)
         {
-          name     = "varlibdockercontainers"
-          emptyDir = {}
+          name = "pods"
+          hostPath = {
+            path = "/var/log/pods"
+          }
         }
+        # Remove /var/lib/docker/containers - not allowed in Autopilot
       ]
 
-      extraVolumeMounts = [
+      defaultVolumeMounts = [
         {
-          name      = "varlog"
-          mountPath = "/var/log"
-          readOnly  = true
+          name      = "run"
+          mountPath = "/run/promtail"
         },
         {
-          name      = "varlibdockercontainers"
-          mountPath = "/var/lib/docker/containers"
+          name      = "pods"
+          mountPath = "/var/log/pods"
           readOnly  = true
         }
+        # Remove /var/lib/docker/containers mount
       ]
     })
   ]
