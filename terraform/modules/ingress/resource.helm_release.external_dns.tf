@@ -3,7 +3,7 @@ resource "helm_release" "external_dns" {
   name       = "external-dns"
   repository = "https://kubernetes-sigs.github.io/external-dns/"
   chart      = "external-dns"
-  version    = "1.14.3"
+  version    = "1.19.0"
   namespace  = "infrastructure"
 
   # Increase timeout for initial installation (GKE Autopilot can be slow)
@@ -81,6 +81,22 @@ resource "helm_release" "external_dns" {
   set {
     name  = "serviceAccount.annotations.iam\\.gke\\.io/gcp-service-account"
     value = google_service_account.external_dns.email
+  }
+
+  # Enable Gateway API support
+  set {
+    name  = "sources[0]"
+    value = "service"
+  }
+
+  set {
+    name  = "sources[1]"
+    value = "ingress"
+  }
+
+  set {
+    name  = "sources[2]"
+    value = "gateway-httproute"
   }
 
   depends_on = [
