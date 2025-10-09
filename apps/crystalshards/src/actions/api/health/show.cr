@@ -4,13 +4,22 @@ class Api::Health::Show < ApiAction
   include Api::Auth::SkipRequireAuthToken
 
   get "/api/health" do
+    db_status = check_database
+    redis_status = check_redis
+
+    # Return 503 Service Unavailable if any critical service is unhealthy
+    # This ensures Kubernetes health checks properly fail
+    all_healthy = !db_status.starts_with?("unhealthy") && !redis_status.starts_with?("unhealthy")
+
+    context.response.status_code = all_healthy ? 200 : 503
+
     json({
-      status:    "ok",
+      status:    all_healthy ? "ok" : "degraded",
       version:   "0.1.0",
       timestamp: Time.utc.to_rfc3339,
       services:  {
-        database: check_database,
-        redis:    check_redis,
+        database: db_status,
+        redis:    redis_status,
       },
     })
   end
