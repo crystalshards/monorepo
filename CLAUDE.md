@@ -404,6 +404,167 @@ for i in {1..4}; do
 done
 ```
 
+## Task Lifecycle and Comment-Based Communication
+
+GitHub issues and project items follow a structured lifecycle with transparent communication through comments. This ensures visibility and enables asynchronous coordination.
+
+### Task Lifecycle States
+
+Tasks flow through these states in GitHub Projects:
+
+1. **Backlog** → Not yet ready to work on, future work
+2. **Ready** → Actionable, all prerequisites met, can be picked up
+3. **In Progress** → Currently being worked on (assign to yourself)
+4. **In Review** → PR submitted and awaiting review
+5. **Done** → Completed and merged
+
+### Status Update Protocol
+
+**When starting work on a task:**
+
+```bash
+# Self-assign the issue
+gh issue edit <number> --add-assignee @me
+
+# Comment to indicate you're starting work
+gh issue comment <number> --body "Starting work on this issue now.
+
+Current plan:
+- Step 1
+- Step 2
+- Step 3
+
+Expected completion: [timeframe if relevant]"
+
+# Update project status to "In Progress" (via web UI or GraphQL API)
+# gh project item-edit requires complex GraphQL - use web UI for simplicity
+```
+
+**During active work (provide progress updates):**
+
+```bash
+# Regular progress updates (every few hours or at milestones)
+gh issue comment <number> --body "Progress update:
+
+Completed:
+- [x] Step 1
+- [x] Step 2
+
+In progress:
+- [ ] Step 3
+
+Next:
+- [ ] Step 4"
+
+# If you encounter blockers
+gh issue comment <number> --body "⚠️ Blocker encountered:
+
+Issue: [description of blocker]
+Impact: [what's blocked]
+Next steps: [what needs to happen to unblock]"
+```
+
+**When completing a task:**
+
+```bash
+# Create PR with issue reference
+gh pr create --title "feat(scope): description" --body "$(cat <<'EOF'
+## Summary
+[Brief description of changes]
+
+## Changes
+- Change 1
+- Change 2
+- Change 3
+
+## Testing
+- [x] Unit tests passing
+- [x] Integration tests passing
+- [x] Manual testing completed
+
+Closes #<number>
+EOF
+)"
+
+# Comment on issue with completion details
+gh issue comment <number> --body "Work completed in PR #<pr-number>
+
+Summary of changes:
+- [list key changes]
+
+Commit: <commit-sha>
+All tests passing: ✅"
+
+# After PR is merged, close issue (if not auto-closed by "Closes #")
+gh issue close <number> --comment "Merged in commit <sha>"
+
+# Update project status to "Done" via web UI
+```
+
+### Comment-Based Interaction Patterns
+
+**Asking Questions:**
+
+```bash
+gh issue comment <number> --body "Question about implementation:
+
+Context: [what you're working on]
+Question: [specific question]
+Options considered:
+1. [option A]
+2. [option B]
+
+Current thinking: [your proposed approach]"
+```
+
+**Reporting Errors:**
+
+```bash
+gh issue comment <number> --body "❌ Error encountered:
+
+Error: [error message or description]
+Context: [what you were doing]
+Attempted fixes:
+1. [fix 1] - [result]
+2. [fix 2] - [result]
+
+Current status: [blocked/investigating/found workaround]"
+```
+
+**Requesting Review or Help:**
+
+```bash
+gh issue comment <number> --body "@username Could you review this approach?
+
+Context: [brief context]
+Proposal: [what you're proposing]
+Questions:
+1. [specific question 1]
+2. [specific question 2]
+
+PR: #<pr-number> (if applicable)"
+```
+
+### Automated Status Transitions
+
+While gh CLI doesn't easily update project fields, you can:
+
+1. **Use web UI** - Click through Ready → In Progress → In Review → Done
+2. **Use GraphQL API** - For automation (complex, see GitHub Projects Integration section)
+3. **Use GitHub Actions** - Auto-transition on PR events (future enhancement)
+
+### Comment Requirements for Transparency
+
+Always comment when:
+- Starting work on an issue
+- Encountering blockers or errors
+- Making significant progress (every few hours)
+- Completing work or submitting PR
+- Needing input or review
+- Discovering new tasks or scope changes
+
+This creates a transparent audit trail and enables async coordination without constant monitoring.
+
 ## Development Workflow
 
 ### Finding Work
@@ -434,19 +595,22 @@ done
 
 ### For Each Task
 
-1. Read current state from PROMPT.md
-2. Check GitHub issues and projects if no active task
-3. Create/checkout appropriate git branch
-4. Check prerequisites and dependencies
-5. Implement the specific task – don't forget to write unit/integration tests
-6. Test the implementation – always write e2e tests that excercise the browser
-7. **Commit working code immediately** (with issue reference if applicable)
-8. Update PROMPT.md and .agent/STATUS.md with results
-9. Handle any errors appropriately
-10. **Push to remote repository after completing logical work units**
-11. Update project status if working from project board (via web UI)
-12. Prepare notes for next iteration
-13. Close issue if complete: `gh issue close <number> --comment "Completed in <commit-sha>"`
+1. **Pick up work**: Read current state from PROMPT.md or check GitHub Projects/Issues
+2. **Self-assign**: `gh issue edit <number> --add-assignee @me`
+3. **Comment start**: Announce you're starting work with your plan (see Task Lifecycle section)
+4. **Update project status**: Move to "In Progress" via web UI
+5. **Create branch**: `git checkout -b issue-<number>-<brief-description>`
+6. **Check prerequisites**: Verify dependencies and requirements
+7. **Implement**: Build the feature – include unit/integration tests
+8. **Test**: Write and run E2E tests that exercise the browser
+9. **Commit frequently**: With issue reference (`refs #<number>` in commit body)
+10. **Progress comments**: Update issue with progress every few hours or at milestones
+11. **Push regularly**: Push to remote after completing logical units
+12. **Update docs**: Update PROMPT.md and .agent/STATUS.md with results
+13. **Handle errors**: Document errors in issue comments (see Task Lifecycle section)
+14. **Create PR**: When complete, create PR with `Closes #<number>` in description
+15. **Comment completion**: Add completion comment to issue with summary
+16. **Update project**: Move to "In Review" then "Done" after merge
 
 ### Commit Checkpoints
 

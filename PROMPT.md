@@ -237,21 +237,37 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
 ### Iteration Steps
 
 1. **Find Work** (use priority order above - NEVER idle)
+
 2. **Before Starting**:
-   - Check CI status: `gh run list`
-   - Fix any failures immediately
-   - Self-assign GitHub issue if working on one: `gh issue edit <number> --add-assignee @me`
-   - Add issue to appropriate project if needed: `gh project item-add <project-num> --owner crystalshards --url <issue-url>`
-3. **Make Changes**: Follow conventions in this file
-4. **Validate**: Run appropriate validation (`terraform validate`, `crystal spec`, etc)
-5. **Test**: Write and run tests for new code
-6. **Commit**: Descriptive message with issue reference if applicable (`refs #123`)
-7. **Push**: Push frequently (at least every 30 minutes of work)
-8. **Watch CI**: Monitor for failures and fix immediately
-9. **Update Status**: Update `.agent/STATUS.md` with progress
-10. **Update Project**: If working from project board, update status via web UI (Ready → In Progress → In Review → Done)
-11. **Close Issues**: If complete, close with `gh issue close <number> --comment "Completed in <commit-sha>"`
-12. **Find Next Work**: Immediately return to step 1 - no idle time
+   - Check CI status: `gh run list` - fix any failures immediately
+   - Self-assign issue: `gh issue edit <number> --add-assignee @me`
+   - **Comment that you're starting**: `gh issue comment <number> --body "Starting work on this issue. Plan: [your plan]"`
+   - Add issue to project if needed: `gh project item-add <project-num> --owner crystalshards --url <issue-url>`
+   - **Update project status to "In Progress"** via web UI
+
+3. **During Work**:
+   - Make changes following conventions in this file
+   - Validate: `terraform validate`, `crystal spec`, etc
+   - Test: Write and run tests for new code
+   - **Commit frequently** with issue reference (`refs #123` in commit body)
+   - **Push regularly** (at least every 30 minutes of work)
+   - **Progress comments** every few hours: `gh issue comment <number> --body "Progress: [completed items]"`
+   - Watch CI: Monitor for failures and fix immediately
+
+4. **When Complete**:
+   - Create PR with `Closes #<number>` in description
+   - **Comment completion**: `gh issue comment <number> --body "Work completed in PR #<pr-num>. Summary: [changes]"`
+   - Update `.agent/STATUS.md` with results
+   - **Update project status** via web UI: In Progress → In Review → Done (after merge)
+   - Close issue if not auto-closed: `gh issue close <number> --comment "Merged in <commit-sha>"`
+
+5. **Communication Protocol**:
+   - **Always comment** when starting, making progress, encountering blockers, or completing work
+   - Use issue comments for transparency and async coordination
+   - Document errors and blockers in comments
+   - Reference commits and PRs in comments
+
+6. **Find Next Work**: Immediately return to step 1 - no idle time
 
 ### Production Readiness Checklist
 
