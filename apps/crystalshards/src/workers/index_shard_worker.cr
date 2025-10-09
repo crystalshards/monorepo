@@ -89,14 +89,14 @@ struct IndexShardWorker < BaseJob
     crystal = shard_yml["crystal"]?.try(&.as_s?)
 
     # Update shard metadata from shard.yml
-    SaveShard.update!(shard) do |operation|
+    SaveShard.update(shard) do |operation|
       operation.description.value = description if description
       operation.license.value = license if license
       operation.homepage_url.value = homepage if homepage
     end
 
     # Update shard version with crystal version and full metadata
-    SaveShardVersion.update!(shard_version) do |operation|
+    SaveShardVersion.update(shard_version) do |operation|
       operation.crystal_version.value = crystal if crystal
       operation.metadata.value = JSON.parse(shard_yml.to_json)
     end
