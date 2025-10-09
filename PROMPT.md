@@ -129,24 +129,28 @@ Each provider has independent worker implementations to handle provider-specific
 **Agent Directive**: Continue iterating toward full production readiness. See "Autonomous Iteration Workflow" section below for work discovery process.
 
 **Current Priorities** (work on these in order):
-1. **Build Web User Interfaces** - All 4 applications currently only return hello world / JSON API responses. Need full web UIs:
-   - CrystalShards.org: Homepage, package listing, package detail pages, search interface
+1. **CrystalShards.org User Interface (TOP PRIORITY)** - Build the main package registry web interface:
+   - **Homepage**: Hero section, search bar, featured/popular shards, recent updates
+   - **Browse/Search Page**: Paginated list of all shards with search and filter capabilities
+   - **Package Detail Page**: Show package info, versions, installation instructions, dependencies, README, download stats, link to docs
+   - Use Lucky framework's HTML rendering (no separate JS framework)
+   - Responsive design with clean, modern CSS
+   - Wire up to existing Shard/ShardVersion models and API actions
+   - This is the core product - focus here first before other apps
+2. **Other Application UIs** - After CrystalShards is complete:
    - CrystalDocs.org: Documentation browser, version switcher, search
    - CrystalGigs.org: Job listing page, job detail, job posting form (with Stripe integration)
    - CrystalBits.org: Blog homepage, post listing, individual post pages, newsletter signup
-   - Use Lucky framework's HTML rendering (no separate JS framework needed)
-   - Responsive design with clean, modern CSS
-   - Wire up to existing API endpoints and models
-2. **Migrate from Mosquito to JoobQ** - Replace background job system with JoobQ (https://github.com/azutoolkit/joobq)
-3. **Implement Multi-Provider Support** - Add support for GitHub, GitLab, Bitbucket, Codeberg, generic Git, Mercurial, and Fossil
-4. Monitor CI/CD - fix any failures immediately
-5. Address open GitHub issues
-6. Complete Production Readiness Checklist items (see workflow section)
-7. Improve monitoring and observability
-8. Seed production data
-9. Enhance documentation
-10. Performance optimization
-11. Security improvements
+3. **Migrate from Mosquito to JoobQ** - Replace background job system with JoobQ (https://github.com/azutoolkit/joobq)
+4. **Implement Multi-Provider Support** - Add support for GitHub, GitLab, Bitbucket, Codeberg, generic Git, Mercurial, and Fossil
+5. Monitor CI/CD - fix any failures immediately
+6. Address open GitHub issues
+7. Complete Production Readiness Checklist items (see workflow section)
+8. Improve monitoring and observability
+9. Seed production data
+10. Enhance documentation
+11. Performance optimization
+12. Security improvements
 
 **Completed Phases** (for reference):
 - ✅ Phase 1: Infrastructure deployment (GKE, operators, networking)
