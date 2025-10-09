@@ -6,8 +6,8 @@ resource "helm_release" "promtail" {
   version    = "~> 6.0"
   namespace  = "monitoring"
 
-  timeout = 600 # 10 minutes
-  wait    = true
+  timeout = 600   # 10 minutes
+  wait    = false # Disable wait - Promtail may take time to stabilize in Autopilot
 
   values = [
     yamlencode({
