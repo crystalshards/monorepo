@@ -129,16 +129,24 @@ Each provider has independent worker implementations to handle provider-specific
 **Agent Directive**: Continue iterating toward full production readiness. See "Autonomous Iteration Workflow" section below for work discovery process.
 
 **Current Priorities** (work on these in order):
-1. **Migrate from Mosquito to JoobQ** - Replace background job system with JoobQ (https://github.com/azutoolkit/joobq)
-2. **Implement Multi-Provider Support** - Add support for GitHub, GitLab, Bitbucket, Codeberg, generic Git, Mercurial, and Fossil
-3. Monitor CI/CD - fix any failures immediately
-4. Address open GitHub issues
-5. Complete Production Readiness Checklist items (see workflow section)
-6. Improve monitoring and observability
-7. Seed production data
-8. Enhance documentation
-9. Performance optimization
-10. Security improvements
+1. **Build Web User Interfaces** - All 4 applications currently only return hello world / JSON API responses. Need full web UIs:
+   - CrystalShards.org: Homepage, package listing, package detail pages, search interface
+   - CrystalDocs.org: Documentation browser, version switcher, search
+   - CrystalGigs.org: Job listing page, job detail, job posting form (with Stripe integration)
+   - CrystalBits.org: Blog homepage, post listing, individual post pages, newsletter signup
+   - Use Lucky framework's HTML rendering (no separate JS framework needed)
+   - Responsive design with clean, modern CSS
+   - Wire up to existing API endpoints and models
+2. **Migrate from Mosquito to JoobQ** - Replace background job system with JoobQ (https://github.com/azutoolkit/joobq)
+3. **Implement Multi-Provider Support** - Add support for GitHub, GitLab, Bitbucket, Codeberg, generic Git, Mercurial, and Fossil
+4. Monitor CI/CD - fix any failures immediately
+5. Address open GitHub issues
+6. Complete Production Readiness Checklist items (see workflow section)
+7. Improve monitoring and observability
+8. Seed production data
+9. Enhance documentation
+10. Performance optimization
+11. Security improvements
 
 **Completed Phases** (for reference):
 - ✅ Phase 1: Infrastructure deployment (GKE, operators, networking)
