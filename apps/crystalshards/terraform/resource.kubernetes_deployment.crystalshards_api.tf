@@ -12,6 +12,7 @@ resource "kubernetes_deployment" "crystalshards_api" {
 
   spec {
     replicas = 2
+    progress_deadline_seconds = 1200 # Allow 20 minutes for GKE Autopilot deployment
 
     selector {
       match_labels = {
@@ -179,7 +180,7 @@ resource "kubernetes_deployment" "crystalshards_api" {
               path = "/api/health"
               port = 3000
             }
-            initial_delay_seconds = 30
+            initial_delay_seconds = 60  # Increased for GKE Autopilot startup
             period_seconds        = 10
             timeout_seconds       = 5
             failure_threshold     = 3
@@ -190,7 +191,7 @@ resource "kubernetes_deployment" "crystalshards_api" {
               path = "/api/health"
               port = 3000
             }
-            initial_delay_seconds = 10
+            initial_delay_seconds = 30  # Increased for GKE Autopilot startup
             period_seconds        = 5
             timeout_seconds       = 3
             failure_threshold     = 3

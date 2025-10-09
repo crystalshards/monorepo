@@ -84,17 +84,17 @@ resource "helm_release" "prometheus_operator" {
         adminPassword = "admin" # Change in production
         sidecar = {
           dashboards = {
-            enabled                 = true
-            label                   = "grafana_dashboard"
-            labelValue              = "1"
-            searchNamespace         = "ALL"
-            folderAnnotation        = "grafana_folder"
+            enabled          = true
+            label            = "grafana_dashboard"
+            labelValue       = "1"
+            searchNamespace  = "ALL"
+            folderAnnotation = "grafana_folder"
             provider = {
               foldersFromFilesStructure = true
             }
           }
           datasources = {
-            enabled = true
+            enabled                  = true
             defaultDatasourceEnabled = true
           }
         }

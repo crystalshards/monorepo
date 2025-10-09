@@ -14,7 +14,7 @@ resource "kubectl_manifest" "crystalshards_alert_rules" {
     spec = {
       groups = [
         {
-          name = "application-alerts"
+          name     = "application-alerts"
           interval = "30s"
           rules = [
             {
@@ -56,7 +56,7 @@ resource "kubectl_manifest" "crystalshards_alert_rules" {
           ]
         },
         {
-          name = "database-alerts"
+          name     = "database-alerts"
           interval = "30s"
           rules = [
             {
@@ -98,7 +98,7 @@ resource "kubectl_manifest" "crystalshards_alert_rules" {
           ]
         },
         {
-          name = "redis-alerts"
+          name     = "redis-alerts"
           interval = "30s"
           rules = [
             {
@@ -140,7 +140,7 @@ resource "kubectl_manifest" "crystalshards_alert_rules" {
           ]
         },
         {
-          name = "pod-alerts"
+          name     = "pod-alerts"
           interval = "30s"
           rules = [
             {
@@ -170,7 +170,7 @@ resource "kubectl_manifest" "crystalshards_alert_rules" {
           ]
         },
         {
-          name = "minio-alerts"
+          name     = "minio-alerts"
           interval = "30s"
           rules = [
             {
