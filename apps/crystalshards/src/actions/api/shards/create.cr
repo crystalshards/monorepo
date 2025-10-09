@@ -25,10 +25,10 @@ class Api::Shards::Create < ApiAction
         if version_string
           # Enqueue worker to index the shard (parse shard.yml, create version, upload package)
           begin
-            IndexShardWorker.new(
+            IndexShardWorker.enqueue(
               shard_name: shard.name,
               version: version_string
-            ).enqueue
+            )
           rescue ex : Exception
             # Log error but don't fail the request
             # In test environments, the job queue may not be available

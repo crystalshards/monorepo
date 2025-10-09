@@ -1,8 +1,9 @@
 require "./base_worker"
 
-class UpdateDependenciesWorker < BaseJob
-  param shard_name : String
-  param version : String
+struct UpdateDependenciesWorker < BaseJob
+  def initialize(@shard_name : String, @version : String)
+    @queue = "deps"
+  end
 
   def perform
     log_info "Updating dependencies for: #{@shard_name}@#{@version}"

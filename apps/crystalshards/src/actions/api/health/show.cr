@@ -1,3 +1,5 @@
+require "redis"
+
 class Api::Health::Show < ApiAction
   include Api::Auth::SkipRequireAuthToken
 
@@ -23,9 +25,9 @@ class Api::Health::Show < ApiAction
   end
 
   private def check_redis : String
-    redis = Redis::Client.new(uri: URI.parse(ENV["REDIS_URL"]? || "redis://localhost:6379"))
+    redis = Redis.new(url: ENV["REDIS_URL"]? || "redis://localhost:6379")
     # Try a simple operation to check connection
-    redis.run({"PING"})
+    redis.ping
     "healthy"
   rescue ex
     "unhealthy: #{ex.message}"

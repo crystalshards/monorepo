@@ -1,9 +1,10 @@
 require "./base_worker"
 require "../services/storage_service"
 
-class BuildDocsWorker < BaseJob
-  param shard_name : String
-  param version : String
+struct BuildDocsWorker < BaseJob
+  def initialize(@shard_name : String, @version : String)
+    @queue = "docs"
+  end
 
   def perform
     log_info "Building docs for: #{@shard_name}@#{@version}"

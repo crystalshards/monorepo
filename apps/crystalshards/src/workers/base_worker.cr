@@ -1,6 +1,8 @@
-require "mosquito"
+require "joobq"
 
-abstract class BaseJob < Mosquito::QueuedJob
+abstract struct BaseJob
+  include JoobQ::Job
+
   protected def log_info(message : String)
     Log.info { "#{self.class.name}: #{message}" }
   end

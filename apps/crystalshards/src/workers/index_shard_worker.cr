@@ -1,8 +1,9 @@
 require "./base_worker"
 
-class IndexShardWorker < BaseJob
-  param shard_name : String
-  param version : String
+struct IndexShardWorker < BaseJob
+  def initialize(@shard_name : String, @version : String)
+    @queue = "index"
+  end
 
   def perform
     log_info "Indexing shard: #{@shard_name}@#{@version}"
@@ -26,15 +27,15 @@ class IndexShardWorker < BaseJob
     fetch_and_parse_shard_yml(shard, shard_version)
     extract_metadata(shard, shard_version)
 
-    UpdateDependenciesWorker.new(
+    UpdateDependenciesWorker.enqueue(
       shard_name: @shard_name.not_nil!,
       version: @version.not_nil!
-    ).enqueue
+    )
 
-    BuildDocsWorker.new(
+    BuildDocsWorker.enqueue(
       shard_name: @shard_name.not_nil!,
       version: @version.not_nil!
-    ).enqueue
+    )
 
     log_info "Successfully indexed #{@shard_name}@#{@version}"
   rescue ex : Exception

@@ -1,22 +1,37 @@
 require "./app"
 
 # Worker process entry point
-# This runs background jobs using Mosquito
+# This runs background jobs using JoobQ
 
 module CrystalShards
   class Worker
     def self.run
       Log.info { "Starting CrystalShards worker process..." }
 
-      # Configure Mosquito
-      Mosquito.configure do |settings|
-        settings.redis_url = ENV.fetch("REDIS_URL", "redis://localhost:6379")
+      # Configure JoobQ
+      JoobQ.configure do |config|
+        config.default_queue = "default"
+        config.retries = 3
+        config.expires = 1.day
       end
 
-      Log.info { "Mosquito configured with #{ENV.fetch("REDIS_URL", "redis://localhost:6379")}" }
+      # Register job types and create queues
+      JoobQ::QueueFactory.register_job_type(IndexShardWorker)
+      JoobQ::QueueFactory.register_job_type(BuildDocsWorker)
+      JoobQ::QueueFactory.register_job_type(UpdateDependenciesWorker)
+
+      # Populate schema registry
+      JoobQ::QueueFactory.populate_schema_registry(JoobQ.config.job_registry)
+
+      # Create queues manually
+      JoobQ.config.queues["index"] = JoobQ::Queue(IndexShardWorker).new("index", 5, nil)
+      JoobQ.config.queues["docs"] = JoobQ::Queue(BuildDocsWorker).new("docs", 3, nil)
+      JoobQ.config.queues["deps"] = JoobQ::Queue(UpdateDependenciesWorker).new("deps", 2, nil)
+
+      Log.info { "JoobQ configured with #{ENV.fetch("REDIS_URL", "redis://localhost:6379")}" }
 
       # Start processing jobs
-      Mosquito::Runner.start
+      JoobQ.forge
 
       Log.info { "Worker process started and ready to process jobs" }
     end

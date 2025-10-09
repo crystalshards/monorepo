@@ -32,9 +32,12 @@ dependencies:
   jwt:
     github: crystal-community/jwt
     version: ~> 1.6.1
-  mosquito:
-    github: mosquito-cr/mosquito
-    version: ~> 1.0
+  joobq:
+    github: azutoolkit/joobq
+    branch: master
+  redis:
+    github: stefanwille/crystal-redis
+    version: ~> 2.9
   awscr-s3:
     github: taylorfinnell/awscr-s3
     version: ~> 0.10.0

@@ -36,6 +36,10 @@ shards:
     git: https://github.com/luckyframework/carbon_sendgrid_adapter.git
     version: 0.6.0
 
+  cron_parser:
+    git: https://github.com/kostya/cron_parser.git
+    version: 0.4.0
+
   cry:
     git: https://github.com/luckyframework/cry.git
     version: 0.4.3
@@ -55,6 +59,10 @@ shards:
   habitat:
     git: https://github.com/luckyframework/habitat.git
     version: 0.4.9
+
+  joobq:
+    git: https://github.com/azutoolkit/joobq.git
+    version: 0.4.1+git.commit.a92a6235f6559c166050eba33750460f29a8a0e8
 
   jwt:
     git: https://github.com/crystal-community/jwt.git
@@ -84,10 +92,6 @@ shards:
     git: https://github.com/luckyframework/lucky_template.git
     version: 0.2.0
 
-  mosquito:
-    git: https://github.com/mosquito-cr/mosquito.git
-    version: 1.0.2
-
   openssl_ext:
     git: https://github.com/spider-gazelle/openssl_ext.git
     version: 2.4.4
@@ -96,13 +100,17 @@ shards:
     git: https://github.com/will/crystal-pg.git
     version: 0.29.0
 
+  pool:
+    git: https://github.com/ysbaddaden/pool.git
+    version: 0.2.4
+
   pulsar:
     git: https://github.com/luckyframework/pulsar.git
     version: 0.2.3
 
   redis:
-    git: https://github.com/jgaskins/redis.git
-    version: 0.7.1
+    git: https://github.com/stefanwille/crystal-redis.git
+    version: 2.9.1
 
   shell-table:
     git: https://github.com/luckyframework/shell-table.cr.git

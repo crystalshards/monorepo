@@ -1,4 +1,4 @@
-require "mosquito"
+require "joobq"
 require "../workers/*"
 
 module CrystalShards::Jobs
@@ -7,19 +7,19 @@ module CrystalShards::Jobs
   module JobEnqueuer
     # Enqueue a job to index a shard
     def enqueue_index_shard(shard_name : String, version : String)
-      Workers::IndexShardWorker.enqueue(shard_name: shard_name, version: version)
+      IndexShardWorker.enqueue(shard_name: shard_name, version: version)
       Log.info { "Enqueued IndexShardWorker for #{shard_name}@#{version}" }
     end
 
     # Enqueue a job to build documentation
     def enqueue_build_docs(shard_name : String, version : String)
-      Workers::BuildDocsWorker.enqueue(shard_name: shard_name, version: version)
+      BuildDocsWorker.enqueue(shard_name: shard_name, version: version)
       Log.info { "Enqueued BuildDocsWorker for #{shard_name}@#{version}" }
     end
 
     # Enqueue a job to update dependencies
     def enqueue_update_dependencies(shard_name : String, version : String)
-      Workers::UpdateDependenciesWorker.enqueue(shard_name: shard_name, version: version)
+      UpdateDependenciesWorker.enqueue(shard_name: shard_name, version: version)
       Log.info { "Enqueued UpdateDependenciesWorker for #{shard_name}@#{version}" }
     end
 
