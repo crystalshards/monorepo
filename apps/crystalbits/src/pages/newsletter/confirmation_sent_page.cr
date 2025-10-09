@@ -13,7 +13,9 @@ class Newsletter::ConfirmationSentPage < MainLayout
 
       para do
         text "Didn't receive the email? Check your spam folder or "
-        a href: "/", do: text("return to the homepage")
+        a href: "/" do
+          text "return to the homepage"
+        end
         text "."
       end
     end

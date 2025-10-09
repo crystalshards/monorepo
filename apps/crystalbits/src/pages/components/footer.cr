@@ -11,10 +11,18 @@ class Footer < Lucky::BaseComponent
           div class: "footer-section" do
             h3 "Quick Links"
             ul class: "footer-links" do
-              li { a href: "/", do: text("Home") }
-              li { a href: "/posts", do: text("All Posts") }
-              li { a href: "https://crystalshards.org", target: "_blank", do: text("CrystalShards") }
-              li { a href: "https://crystaldocs.org", target: "_blank", do: text("CrystalDocs") }
+              li { a href: "/" do
+                text "Home"
+              end }
+              li { a href: "/posts" do
+                text "All Posts"
+              end }
+              li { a href: "https://crystalshards.org", target: "_blank" do
+                text "CrystalShards"
+              end }
+              li { a href: "https://crystaldocs.org", target: "_blank" do
+                text "CrystalDocs"
+              end }
             end
           end
 
