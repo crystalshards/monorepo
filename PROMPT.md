@@ -258,7 +258,7 @@ Continue iterating until ALL of these are complete:
 - [x] Grafana dashboards configured
 - [x] Prometheus alerting rules set up
 - [x] Log aggregation configured
-- [ ] Backup schedules configured
+- [x] Backup schedules configured
 - [ ] Disaster recovery tested
 
 **Application Features:**

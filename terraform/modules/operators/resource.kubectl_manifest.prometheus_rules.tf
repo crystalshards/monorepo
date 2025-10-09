@@ -198,6 +198,72 @@ resource "kubectl_manifest" "crystalshards_alert_rules" {
               }
             }
           ]
+        },
+        {
+          name     = "backup-alerts"
+          interval = "1h"
+          rules = [
+            {
+              alert = "PostgreSQLBackupFailed"
+              expr  = "time() - cnpg_pg_backup_last_backup_timestamp_seconds{namespace=~\"crystalshards|crystaldocs|crystalgigs|crystalbits\"} > 172800"
+              for   = "1h"
+              labels = {
+                severity = "critical"
+              }
+              annotations = {
+                summary     = "PostgreSQL backup is overdue in {{ $labels.namespace }}"
+                description = "Last successful PostgreSQL backup was {{ $value | humanizeDuration }} ago in {{ $labels.namespace }} (threshold: 48 hours)"
+              }
+            },
+            {
+              alert = "RedisBackupFailed"
+              expr  = "time() - kube_job_status_completion_time{namespace=\"infrastructure\",job_name=~\"redis-backup-.*\"} > 172800"
+              for   = "1h"
+              labels = {
+                severity = "warning"
+              }
+              annotations = {
+                summary     = "Redis backup is overdue"
+                description = "Last successful Redis backup was {{ $value | humanizeDuration }} ago (threshold: 48 hours)"
+              }
+            },
+            {
+              alert = "MinIOBackupFailed"
+              expr  = "time() - kube_job_status_completion_time{namespace=\"infrastructure\",job_name=~\"minio-backup-.*\"} > 172800"
+              for   = "1h"
+              labels = {
+                severity = "warning"
+              }
+              annotations = {
+                summary     = "MinIO backup is overdue"
+                description = "Last successful MinIO backup was {{ $value | humanizeDuration }} ago (threshold: 48 hours)"
+              }
+            },
+            {
+              alert = "BackupJobFailed"
+              expr  = "kube_job_failed{namespace=\"infrastructure\",job_name=~\".*-backup-.*\"} > 0"
+              for   = "5m"
+              labels = {
+                severity = "warning"
+              }
+              annotations = {
+                summary     = "Backup job {{ $labels.job_name }} failed"
+                description = "Backup job {{ $labels.job_name }} in infrastructure namespace has failed"
+              }
+            },
+            {
+              alert = "BackupStorageQuotaExceeded"
+              expr  = "gcs_bucket_total_bytes{bucket=~\".*-backups\"} / gcs_bucket_quota_bytes{bucket=~\".*-backups\"} > 0.9"
+              for   = "1h"
+              labels = {
+                severity = "warning"
+              }
+              annotations = {
+                summary     = "Backup storage quota nearly exceeded for {{ $labels.bucket }}"
+                description = "Backup bucket {{ $labels.bucket }} is {{ $value | humanizePercentage }} full (threshold: 90%)"
+              }
+            }
+          ]
         }
       ]
     }

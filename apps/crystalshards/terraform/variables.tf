@@ -13,3 +13,18 @@ variable "image_tag" {
   type        = string
   # No default - must be explicitly set to prevent accidental 'latest' deployments
 }
+
+variable "postgres_backup_bucket" {
+  description = "GCS bucket for PostgreSQL backups"
+  type        = string
+}
+
+variable "redis_backup_bucket" {
+  description = "GCS bucket for Redis backups"
+  type        = string
+}
+
+variable "minio_backup_bucket" {
+  description = "GCS bucket for MinIO backups"
+  type        = string
+}

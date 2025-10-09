@@ -15,5 +15,10 @@ module "applications" {
   crystalgigs_stripe_secret_key      = var.crystalgigs_stripe_secret_key
   crystalgigs_stripe_publishable_key = var.crystalgigs_stripe_publishable_key
 
+  # Backup buckets
+  postgres_backup_bucket = module.cluster.postgres_backup_bucket
+  redis_backup_bucket    = module.cluster.redis_backup_bucket
+  minio_backup_bucket    = module.cluster.minio_backup_bucket
+
   depends_on = [module.ingress]
 }

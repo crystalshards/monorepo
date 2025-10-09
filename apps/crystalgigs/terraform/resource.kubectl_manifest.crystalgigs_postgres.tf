@@ -35,5 +35,18 @@ resource "kubectl_manifest" "crystalgigs_postgres" {
 
       monitoring:
         enablePodMonitor: true
+
+      backup:
+        barmanObjectStore:
+          destinationPath: "gs://${var.postgres_backup_bucket}/crystalgigs"
+          googleCredentials:
+            gkeEnvironment: true
+          wal:
+            compression: gzip
+            maxParallel: 2
+          data:
+            compression: gzip
+            jobs: 2
+        retentionPolicy: "30d"
   YAML
 }
