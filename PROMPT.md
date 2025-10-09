@@ -237,8 +237,8 @@ Continue iterating until ALL of these are complete:
 - [x] All operators configured (cert-manager, CNPG, Redis, MinIO, Prometheus)
 - [x] All 4 applications deployed with HTTPS
 - [x] DNS configured and working
-- [ ] Grafana dashboards configured
-- [ ] Prometheus alerting rules set up
+- [x] Grafana dashboards configured
+- [x] Prometheus alerting rules set up
 - [ ] Log aggregation configured
 - [ ] Backup schedules configured
 - [ ] Disaster recovery tested
@@ -257,8 +257,8 @@ Continue iterating until ALL of these are complete:
 - [x] Health endpoints working
 - [x] ServiceMonitors configured
 - [ ] Application metrics exposed
-- [ ] Custom dashboards created
-- [ ] Alert rules defined
+- [x] Custom dashboards created
+- [x] Alert rules defined
 - [ ] On-call runbooks written
 - [ ] Log queries documented
 
