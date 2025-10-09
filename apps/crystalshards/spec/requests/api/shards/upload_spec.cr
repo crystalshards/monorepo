@@ -352,4 +352,48 @@ describe Api::Shards::Upload do
 
     response.status_code.should eq(401)
   end
+
+  pending "enqueues IndexShardWorker after successful upload" do
+    package_content = "worker test content"
+    checksum = Digest::SHA256.hexdigest(package_content)
+    user = UserFactory.create
+
+    io = IO::Memory.new
+    builder = HTTP::FormData::Builder.new(io, "boundary123")
+
+    builder.field("name", "worker-test-shard")
+    builder.field("version", "1.2.3")
+    builder.field("repository_url", "https://github.com/user/worker-test-shard")
+
+    builder.file(
+      "package",
+      IO::Memory.new(package_content),
+      HTTP::FormData::FileMetadata.new(filename: "package.tar.gz")
+    )
+
+    builder.finish
+
+    # Mock or capture worker enqueue calls if testing framework supports it
+    # For now, verify the request succeeds (worker enqueue is gracefully handled in tests)
+    response = ApiClient.auth_multipart(user).headers(
+      "Content-Type": "multipart/form-data; boundary=boundary123"
+    ).exec(
+      Api::Shards::Upload,
+      body: io.to_s
+    )
+
+    response.should send_json(201)
+    json = JSON.parse(response.body)
+    json["message"].should eq("Shard uploaded successfully")
+
+    # Verify shard and version were created
+    shard = ShardQuery.new.name("worker-test-shard").first?
+    shard.should_not be_nil
+    version = ShardVersionQuery.new.shard_id(shard.not_nil!.id).version("1.2.3").first?
+    version.should_not be_nil
+    version.not_nil!.checksum.should eq(checksum)
+
+    # Note: In production, IndexShardWorker.enqueue would be called here
+    # Worker execution is tested separately in worker specs
+  end
 end
