@@ -423,6 +423,23 @@ describe Shards::Show do
       response.body.should contain("new-dep")
       response.body.should_not contain("old-dep")
     end
+
+    it "makes dependency names clickable links to their detail pages" do
+      shard = ShardFactory.create &.name("test-shard")
+      version = ShardVersionFactory.create &.shard_id(shard.id)
+        .version("1.0.0")
+      DependencyFactory.create &.shard_version_id(version.id)
+        .name("http-client")
+        .version_requirement("~> 1.0")
+        .scope("runtime")
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+
+      # Should contain a link to the dependency's detail page
+      response.body.should contain("<a href=\"/shards/http-client\"")
+      response.body.should contain("class=\"dependency-link\"")
+      response.body.should contain("<strong>http-client</strong>")
+    end
   end
 
   describe "edge cases" do
