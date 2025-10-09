@@ -2,8 +2,25 @@
 
 This directory contains comprehensive documentation for the CrystalShards platform.
 
+## User Guides
+
+**[User Guides](user-guides/)** - Complete guides for using all four CrystalShards platforms
+
+Essential guides for end users:
+- [User Guides Index](user-guides/README.md) - Overview of all user guides
+- [Ecosystem Overview](user-guides/overview.md) - How all platforms work together
+
+Platform-specific guides:
+- [CrystalShards.org User Guide](user-guides/crystalshards.md) - Package registry for Crystal libraries
+- [CrystalDocs.org User Guide](user-guides/crystaldocs.md) - Automated documentation hosting
+- [CrystalGigs.org User Guide](user-guides/crystalgigs.md) - Job board for Crystal developers
+- [CrystalBits.org User Guide](user-guides/crystalbits.md) - Blog and newsletter platform
+
+Whether you're a library author, job seeker, employer, or Crystal developer, these guides will help you get the most out of the ecosystem.
+
 ## Table of Contents
 
+- [User Guides](#user-guides)
 - [Operational Documentation](#operational-documentation)
 - [Technical Guides](#technical-guides)
 - [API Documentation](#api-documentation)
