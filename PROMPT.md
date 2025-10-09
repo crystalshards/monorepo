@@ -1,14 +1,12 @@
 # CrystalShards Development
 
-
-
 ## CrystalShards.org Ecosystem
 
-  The Vision: A comprehensive package registry and developer platform for the Crystal programming language, similar to what NPM is to Node.js or RubyGems is to Ruby.
+The Vision: A comprehensive package registry and developer platform for the Crystal programming language, similar to what NPM is to Node.js or RubyGems is to Ruby.
 
-  The Four Applications:
+The Four Applications:
 
-  1. CrystalShards.org (Main Registry)
+1. CrystalShards.org (Main Registry)
   - Package registry for Crystal shards (libraries)
   - Developers can publish and discover Crystal packages
   - Tracks versions, dependencies, downloads
@@ -16,21 +14,22 @@
   - Automatically builds and hosts documentation
   - The core of the ecosystem
 
-  1. CrystalDocs.org (Documentation Host)
+1. CrystalDocs.org (Documentation Host)
   - Hosts auto-generated documentation for all published shards
   - Supports multiple versions per package
   - Integrates with MinIO for static file storage
   - Provides version-switching for docs
   - Makes Crystal library documentation searchable and accessible
 
-  1. CrystalGigs.com (Job Board)
+1. CrystalGigs.com (Job Board)
   - Job board specifically for Crystal developers
   - Companies can post Crystal-related jobs (paid feature via Stripe)
   - Helps grow the Crystal developer community
   - Job search and filtering
 
-  1. CrystalBits.org (Blog/News)
+1. CrystalBits.org (Blog/Newsletter)
   - Blog platform for Crystal-related content
+  - Users get generated email newsletters in their inbox if they subscribe
   - News, tutorials, community updates
   - Post tracking (view counts)
   - Auto-generates slugs
