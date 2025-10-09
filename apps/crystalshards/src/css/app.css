@@ -449,6 +449,17 @@ a:hover {
   border-bottom: none;
 }
 
+.dependency-link {
+  color: var(--link-color);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.dependency-link:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
+}
+
 .badge {
   display: inline-block;
   padding: 0.2rem 0.5rem;

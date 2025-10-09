@@ -139,6 +139,18 @@ class Api::Shards::Upload < ApiAction
         yanked: false
       ) do |version_operation, shard_version|
         if shard_version
+          # Enqueue background job to index shard metadata
+          begin
+            IndexShardWorker.enqueue(
+              shard_name: shard.not_nil!.name,
+              version: version
+            )
+          rescue ex : Exception
+            # Log error but don't fail the request
+            # In test environments, the job queue may not be available
+            Log.warn { "Failed to enqueue IndexShardWorker: #{ex.message}" }
+          end
+
           json({
             message: "Shard uploaded successfully",
             shard:   {

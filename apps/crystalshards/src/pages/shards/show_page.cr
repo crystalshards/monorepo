@@ -94,8 +94,10 @@ class Shards::ShowPage < MainLayout
               ul class: "dependency-list" do
                 @dependencies.each do |dep|
                   li do
-                    strong do
-                      text dep.name
+                    a href: Shards::Show.with(dep.name).path, class: "dependency-link" do
+                      strong do
+                        text dep.name
+                      end
                     end
                     text " #{dep.version_requirement}"
                     if dep.scope == "development"
