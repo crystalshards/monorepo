@@ -41,6 +41,13 @@ resource "helm_release" "traefik" {
           enabled = true
         }
       }
+      traefik = {
+        port     = 9000
+        expose = {
+          default = true
+        }
+        protocol = "TCP"
+      }
     }
 
     # Access logs
