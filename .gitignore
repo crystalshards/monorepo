@@ -1,6 +1,7 @@
 ./.claude/*.local.*
 .terraform/
 terraform.tfstate*
+*.local.json
 
 # Compiled binaries
 apps/*/crystalshards

@@ -8,6 +8,11 @@ on:
         required: true
         type: string
 
+# Prevent concurrent unlock operations
+concurrency:
+  group: terraform-unlock
+  cancel-in-progress: false
+
 jobs:
   force-unlock:
     name: Force Unlock Terraform State

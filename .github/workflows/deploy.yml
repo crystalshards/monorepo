@@ -10,11 +10,11 @@ on:
   # Allow manual deployment with approval
   workflow_dispatch:
 
-# Temporarily disabled due to hung workflow 18379587131 - GitHub Actions bug
-# Will re-enable after hung workflow clears or after manual intervention
-# concurrency:
-#   group: terraform-deploy
-#   cancel-in-progress: false
+# Prevent concurrent Terraform operations that could conflict
+# Re-enabled with branch-specific grouping to resolve hung workflow 18379587131
+concurrency:
+  group: terraform-deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   # Step 1: Deploy cluster module to create Artifact Registry
