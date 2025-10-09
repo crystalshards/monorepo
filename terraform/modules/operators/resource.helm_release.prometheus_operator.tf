@@ -72,7 +72,31 @@ resource "helm_release" "prometheus_operator" {
           }
         }
         persistence = {
-          enabled = false
+          enabled = true
+          size    = "5Gi"
+        }
+        service = {
+          type = "LoadBalancer"
+          annotations = {
+            "cloud.google.com/l4-rbs" = "enabled"
+          }
+        }
+        adminPassword = "admin" # Change in production
+        sidecar = {
+          dashboards = {
+            enabled                 = true
+            label                   = "grafana_dashboard"
+            labelValue              = "1"
+            searchNamespace         = "ALL"
+            folderAnnotation        = "grafana_folder"
+            provider = {
+              foldersFromFilesStructure = true
+            }
+          }
+          datasources = {
+            enabled = true
+            defaultDatasourceEnabled = true
+          }
         }
       }
 
