@@ -10,7 +10,7 @@ cluster_name = "crystalshards-cluster"
 image_tag = "latest"
 
 # Application secrets (set to placeholder values for deployment)
-crystalbits_resend_key              = "unused"
-crystalgigs_resend_key              = "unused"
-crystalgigs_stripe_secret_key       = "unused"
-crystalgigs_stripe_publishable_key  = "unused"
+crystalbits_resend_key             = "unused"
+crystalgigs_resend_key             = "unused"
+crystalgigs_stripe_secret_key      = "unused"
+crystalgigs_stripe_publishable_key = "unused"
