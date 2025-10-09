@@ -6,7 +6,7 @@ resource "helm_release" "loki" {
   version    = "~> 5.0"
   namespace  = "monitoring"
 
-  timeout = 600 # 10 minutes
+  timeout = 900 # 15 minutes - increased for GKE Autopilot provisioning
   wait    = true
 
   values = [
@@ -59,6 +59,16 @@ resource "helm_release" "loki" {
           enabled      = true
           size         = "50Gi"
           storageClass = "standard-rwo"
+        }
+        # Disable anti-affinity rules (not needed for single replica)
+        affinity = {}
+        # Less aggressive readiness probe for GKE Autopilot
+        readinessProbe = {
+          initialDelaySeconds = 60
+          periodSeconds       = 10
+          timeoutSeconds      = 5
+          successThreshold    = 1
+          failureThreshold    = 10
         }
       }
 
