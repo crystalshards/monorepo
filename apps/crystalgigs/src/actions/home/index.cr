@@ -25,11 +25,11 @@ class Home::Index < BrowserAction
       .active_only
       .published_only
       .not_expired
-      .select_count(:company_name, distinct: true)
+      .select_count
 
     html Home::IndexPage,
-      featured_jobs: featured_jobs,
-      recent_jobs: recent_jobs,
+      featured_jobs: featured_jobs.results,
+      recent_jobs: recent_jobs.results,
       total_jobs: total_jobs,
       total_companies: total_companies
   end

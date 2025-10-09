@@ -53,7 +53,7 @@ class Jobs::PaymentPage < MainLayout
           end
 
           div id: "payment-form" do
-            form_tag action: "/jobs/#{@job.id}/checkout", method: "post", id: "stripe-payment-form" do
+            form action: "/jobs/#{@job.id}/checkout", method: "post", id: "stripe-payment-form" do
               div id: "card-element" do
               end
 

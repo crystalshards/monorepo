@@ -4,13 +4,15 @@ class SearchBar < Lucky::BaseComponent
   needs action : String = "/jobs"
 
   def render
-    form_tag action: @action, method: "get", class: search_form_class do
+    form action: @action, method: "get", class: search_form_class do
       div class: "search-input-group" do
-        input type: "text",
+        input(
+          type: "text",
           name: "query",
-          value: @query,
+          value: @query || "",
           placeholder: "Search for jobs, companies, or skills...",
           class: "search-input"
+        )
 
         button type: "submit", class: "search-button" do
           text "Search"

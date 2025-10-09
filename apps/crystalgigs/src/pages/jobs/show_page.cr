@@ -189,6 +189,8 @@ class Jobs::ShowPage < MainLayout
   end
 
   private def current_url : String
-    "#{context.request.scheme}://#{context.request.host_with_port}#{context.request.path}"
+    protocol = context.request.headers["X-Forwarded-Proto"]? || "http"
+    host = context.request.headers["Host"]? || "localhost"
+    "#{protocol}://#{host}#{context.request.path}"
   end
 end

@@ -13,7 +13,7 @@ abstract class MainLayout
       body do
         mount Header
         main class: "container" do
-          mount FlashMessages
+          mount FlashMessages, @context.flash
           content
         end
         mount Footer
