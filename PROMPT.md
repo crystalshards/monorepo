@@ -214,10 +214,15 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
 
 1. **Active Tasks in PROMPT.md** → Work on current phase tasks
 2. **CI Failures** → Fix immediately (`gh run list`, check logs)
-3. **GitHub Issues** → Check for open issues (`gh issue list`)
-4. **STATUS.md Remaining Items** → Review `.agent/STATUS.md` for incomplete work
-5. **Codebase TODOs** → Search for `TODO`, `FIXME`, `XXX` comments
-6. **Production Readiness Improvements**:
+3. **GitHub Projects** → Check project boards for Ready items
+   - CrystalShards.org → Project #1: https://github.com/orgs/crystalshards/projects/1
+   - CrystalDocs.org → Project #2: https://github.com/orgs/crystalshards/projects/2
+   - CrystalGigs.com → Project #3: https://github.com/orgs/crystalshards/projects/3
+   - CrystalBits.org → Project #4: https://github.com/orgs/crystalshards/projects/4
+4. **GitHub Issues** → Check for open issues (`gh issue list`)
+5. **STATUS.md Remaining Items** → Review `.agent/STATUS.md` for incomplete work
+6. **Codebase TODOs** → Search for `TODO`, `FIXME`, `XXX` comments
+7. **Production Readiness Improvements**:
    - Add monitoring dashboards (Grafana)
    - Set up alerting rules (Prometheus)
    - Implement log aggregation
@@ -236,6 +241,7 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
    - Check CI status: `gh run list`
    - Fix any failures immediately
    - Self-assign GitHub issue if working on one: `gh issue edit <number> --add-assignee @me`
+   - Add issue to appropriate project if needed: `gh project item-add <project-num> --owner crystalshards --url <issue-url>`
 3. **Make Changes**: Follow conventions in this file
 4. **Validate**: Run appropriate validation (`terraform validate`, `crystal spec`, etc)
 5. **Test**: Write and run tests for new code
@@ -243,8 +249,9 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
 7. **Push**: Push frequently (at least every 30 minutes of work)
 8. **Watch CI**: Monitor for failures and fix immediately
 9. **Update Status**: Update `.agent/STATUS.md` with progress
-10. **Close Issues**: If complete, close with `gh issue close <number> --comment "Completed in <commit-sha>"`
-11. **Find Next Work**: Immediately return to step 1 - no idle time
+10. **Update Project**: If working from project board, update status via web UI (Ready → In Progress → In Review → Done)
+11. **Close Issues**: If complete, close with `gh issue close <number> --comment "Completed in <commit-sha>"`
+12. **Find Next Work**: Immediately return to step 1 - no idle time
 
 ### Production Readiness Checklist
 
@@ -294,6 +301,18 @@ Continue iterating until ALL of these are complete:
 # Check CI status
 gh run list --limit 5
 
+# Check GitHub Projects for ready work
+gh project view 1 --owner crystalshards  # CrystalShards.org
+gh project view 2 --owner crystalshards  # CrystalDocs.org
+gh project view 3 --owner crystalshards  # CrystalGigs.com
+gh project view 4 --owner crystalshards  # CrystalBits.org
+
+# List items by project
+gh project item-list 1 --owner crystalshards
+gh project item-list 2 --owner crystalshards
+gh project item-list 3 --owner crystalshards
+gh project item-list 4 --owner crystalshards
+
 # Find GitHub issues
 gh issue list --state open
 gh issue list --label "ready" --assignee=""
@@ -333,13 +352,23 @@ This is an autonomous agent operating continuously toward production excellence.
 
 1. ✅ Check CI status first (`gh run list`)
 2. ✅ Look for active tasks in this file
-3. ✅ If no active tasks, check GitHub issues
-4. ✅ If no GitHub issues, review STATUS.md for remaining items
-5. ✅ If nothing there, search for TODOs in code
-6. ✅ If no TODOs, work on Production Readiness Checklist
-7. ✅ ALWAYS be working toward a better, more complete system
+3. ✅ If no active tasks, check GitHub Projects for Ready items (`gh project view <num> --owner crystalshards`)
+4. ✅ If no project items, check GitHub issues
+5. ✅ If no GitHub issues, review STATUS.md for remaining items
+6. ✅ If nothing there, search for TODOs in code
+7. ✅ If no TODOs, work on Production Readiness Checklist
+8. ✅ ALWAYS be working toward a better, more complete system
 
 **The goal is a fully production-ready platform, not just "deployed code."**
+
+### Project Board Quick Reference
+
+- **CrystalShards.org** (Project #1): Main package registry - highest priority
+- **CrystalDocs.org** (Project #2): Documentation hosting
+- **CrystalGigs.com** (Project #3): Job board
+- **CrystalBits.org** (Project #4): Blog/newsletter
+
+View any board: `gh project view <1-4> --owner crystalshards --web`
 
 ---
 **Current Status**: All apps deployed and live. Continue iterating on monitoring, observability, data seeding, and production polish.

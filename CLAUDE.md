@@ -116,10 +116,12 @@ rm -rf /tmp/* && docker system prune -f
 ### 10. Progress Tracking
 
 - Update task checkboxes in PROMPT.md
-- Log all actions with timestamps
+- Update GitHub Project status (via web UI): Ready → In Progress → In Review → Done
+- Log all actions with timestamps in .agent/STATUS.md
 - Commit and Push working code frequently
-- Use descriptive commit messages
-- Track blockers and dependencies
+- Use descriptive commit messages with issue references
+- Track blockers and dependencies in GitHub issues
+- Link commits, PRs, and issues to project items for full traceability
 
 ## Lucky Framework Specifics
 
@@ -193,6 +195,7 @@ lucky db.migrate
 3. **Descriptive Messages**: Use clear, concise commit messages
 4. **Feature Branches**: Create branches for each major feature
 5. **Push Frequently**: Push to remote after completing logical units of work
+6. **Link to Issues/Projects**: Reference issue numbers in commits and PRs
 
 ### Commit Message Format
 
@@ -200,6 +203,8 @@ lucky db.migrate
 <type>(<scope>): <subject>
 
 <body>
+
+refs #<issue-number>
 
 <footer>
 ```
@@ -217,16 +222,32 @@ git config --global user.email "bot@crystalshards.org"
 # Create feature branch
 git checkout -b feature/task-name
 
-# Stage and commit changes
+# Stage and commit changes with issue reference
 git add -A
-git commit -m "type(scope): description"
+git commit -m "type(scope): description
+
+refs #123"
 
 # Push to remote
 git push origin feature/task-name
 
-# Create PR when feature is complete
-gh pr create --title "Feature: Task Name" --body "Description of changes"
+# Create PR when feature is complete (links to issue automatically)
+gh pr create --title "Feature: Task Name" --body "Description of changes
+
+Closes #123"
 ```
+
+### Linking to GitHub Projects
+
+When working on items from GitHub Projects:
+
+1. **Create issue from project item** (or use existing issue)
+2. **Add issue to project**: `gh project item-add <project-num> --owner crystalshards --url <issue-url>`
+3. **Reference issue in commits**: Use `refs #123` in commit message body
+4. **Link PR to issue**: Use `Closes #123` in PR description
+5. **Update project status**: Move item through workflow (Ready → In Progress → In Review → Done) via web UI
+
+This creates a full audit trail: Project Item → Issue → Commits → PR → Merged Code
 
 ## GitHub CLI Tool Reference
 
@@ -243,10 +264,12 @@ gh issue --help
 gh pr --help
 gh repo --help
 gh workflow --help
+gh project --help
 
 # Specific command help
 gh issue create --help
 gh pr view --help
+gh project --help
 ```
 
 ### Common GitHub CLI Commands
@@ -292,35 +315,138 @@ gh auth login                         # Login to GitHub
 3. **Use JSON output for parsing**: Add `--json` flag for machine-readable output
 4. **Filter and format**: Use `--jq` for filtering JSON output
 
+## GitHub Projects Integration
+
+The monorepo uses GitHub Projects for visual task management across all four applications. Each app has its own project board with a Workflow Status field.
+
+### Project Boards
+
+- **CrystalShards.org Development** - Project #1 - https://github.com/orgs/crystalshards/projects/1
+- **CrystalDocs.org Development** - Project #2 - https://github.com/orgs/crystalshards/projects/2
+- **CrystalGigs.com Development** - Project #3 - https://github.com/orgs/crystalshards/projects/3
+- **CrystalBits.org Development** - Project #4 - https://github.com/orgs/crystalshards/projects/4
+
+### Workflow Status Field Values
+
+All projects use the same workflow status field:
+- **Backlog** - Not yet ready to work on
+- **Ready** - Ready to be picked up
+- **In Progress** - Currently being worked on
+- **In Review** - PR submitted, awaiting review
+- **Done** - Completed
+
+### Project Management Commands
+
+```bash
+# View project board
+gh project view 1 --owner crystalshards --web  # Open in browser
+gh project view 1 --owner crystalshards        # View in terminal
+
+# List project items (tasks)
+gh project item-list 1 --owner crystalshards
+gh project item-list 1 --owner crystalshards --format json
+
+# Add issue to project
+gh project item-add 1 --owner crystalshards --url https://github.com/crystalshards/crystalshards-claude/issues/123
+
+# Note: Status field updates via gh CLI are complex
+# Prefer using the web UI or API for field updates
+# Or use gh api directly:
+gh api graphql -f query='
+  mutation {
+    updateProjectV2ItemFieldValue(input: {
+      projectId: "PROJECT_ID"
+      itemId: "ITEM_ID"
+      fieldId: "FIELD_ID"
+      value: {singleSelectOptionId: "OPTION_ID"}
+    }) {
+      projectV2Item {
+        id
+      }
+    }
+  }
+'
+```
+
+### Mapping Apps to Projects
+
+When working on specific apps, use the corresponding project:
+
+```bash
+# CrystalShards.org → Project 1
+gh project view 1 --owner crystalshards
+
+# CrystalDocs.org → Project 2
+gh project view 2 --owner crystalshards
+
+# CrystalGigs.com → Project 3
+gh project view 3 --owner crystalshards
+
+# CrystalBits.org → Project 4
+gh project view 4 --owner crystalshards
+```
+
+### Project-Based Work Discovery
+
+```bash
+# Find ready tasks for CrystalShards
+gh project item-list 1 --owner crystalshards --format json | \
+  jq '.items[] | select(.status == "Ready")'
+
+# Find in-progress items
+gh project item-list 1 --owner crystalshards --format json | \
+  jq '.items[] | select(.status == "In Progress")'
+
+# View all projects
+for i in {1..4}; do
+  echo "=== Project $i ==="
+  gh project view $i --owner crystalshards
+done
+```
+
 ## Development Workflow
 
 ### Finding Work
 
 **When no active task or all tasks are blocked:**
 
-1. Check GitHub issues: `gh issue list --repo crystalshards/crystalshards-claude`
-2. Filter for actionable issues:
+1. **Check PROMPT.md** for active tasks and priorities
+2. **Check GitHub Projects** for ready tasks:
+   ```bash
+   # View project boards for each app
+   gh project view 1 --owner crystalshards  # CrystalShards
+   gh project view 2 --owner crystalshards  # CrystalDocs
+   gh project view 3 --owner crystalshards  # CrystalGigs
+   gh project view 4 --owner crystalshards  # CrystalBits
+
+   # List items in Ready status
+   gh project item-list 1 --owner crystalshards
+   ```
+3. **Check GitHub issues**: `gh issue list --repo crystalshards/crystalshards-claude`
+4. Filter for actionable issues:
    - `gh issue list --label "ready" --assignee=""`
    - `gh issue list --label "good-first-issue" --assignee=""`
    - `gh issue list --label "help-wanted" --assignee=""`
-3. Self-assign: `gh issue edit <number> --add-assignee @me`
-4. Create branch: `git checkout -b issue-<number>-<brief-description>`
-5. Link commits to issue: Use "refs #<number>" in commit messages
+5. Self-assign: `gh issue edit <number> --add-assignee @me`
+6. Add to project: `gh project item-add <project-num> --owner crystalshards --url <issue-url>`
+7. Create branch: `git checkout -b issue-<number>-<brief-description>`
+8. Link commits to issue: Use "refs #<number>" in commit messages
 
 ### For Each Task
 
 1. Read current state from PROMPT.md
-2. Check GitHub issues if no active task
+2. Check GitHub issues and projects if no active task
 3. Create/checkout appropriate git branch
 4. Check prerequisites and dependencies
 5. Implement the specific task – don't forget to write unit/integration tests
 6. Test the implementation – always write e2e tests that excercise the browser
 7. **Commit working code immediately** (with issue reference if applicable)
-8. Update PROMPT.md with results, and add any additional tasks
+8. Update PROMPT.md and .agent/STATUS.md with results
 9. Handle any errors appropriately
 10. **Push to remote repository after completing logical work units**
-11. Prepare notes for next iteration
-12. Close issue if complete: `gh issue close <number> --comment "Completed in <commit-sha>"`
+11. Update project status if working from project board (via web UI)
+12. Prepare notes for next iteration
+13. Close issue if complete: `gh issue close <number> --comment "Completed in <commit-sha>"`
 
 ### Commit Checkpoints
 
