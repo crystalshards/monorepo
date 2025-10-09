@@ -277,13 +277,13 @@ Continue iterating until ALL of these are complete:
 - [ ] Application metrics exposed
 - [x] Custom dashboards created
 - [x] Alert rules defined
-- [ ] On-call runbooks written
+- [x] On-call runbooks written
 - [x] Log queries documented
 
 **Documentation:**
 - [x] API documentation complete
 - [x] Deployment runbook written
-- [ ] Operational runbooks for common incidents
+- [x] Operational runbooks for common incidents
 - [ ] User guides for each application
 - [ ] Contributing guide
 - [ ] Architecture decision records
