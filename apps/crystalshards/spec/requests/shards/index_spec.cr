@@ -292,6 +292,7 @@ describe Shards::Index do
         .github_stars(100)
 
       not_matching_query = ShardFactory.create &.name("other-lib")
+        .description("Database library for PostgreSQL")
         .license("MIT")
         .github_stars(100)
 
