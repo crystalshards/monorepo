@@ -87,3 +87,21 @@ resource "kubernetes_config_map" "grafana_dashboard_gke" {
 
   depends_on = [helm_release.prometheus_operator]
 }
+
+# ConfigMap for Logs dashboard
+resource "kubernetes_config_map" "grafana_dashboard_logs" {
+  metadata {
+    name      = "grafana-dashboard-logs"
+    namespace = "monitoring"
+    labels = {
+      grafana_dashboard = "1"
+      grafana_folder    = "Observability"
+    }
+  }
+
+  data = {
+    "logs-overview.json" = file("${path.module}/dashboards/logs-overview.json")
+  }
+
+  depends_on = [helm_release.prometheus_operator, helm_release.loki]
+}

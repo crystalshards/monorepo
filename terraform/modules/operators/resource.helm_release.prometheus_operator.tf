@@ -82,6 +82,19 @@ resource "helm_release" "prometheus_operator" {
           }
         }
         adminPassword = "admin" # Change in production
+        # Additional data sources (Loki for logs)
+        additionalDataSources = [
+          {
+            name      = "Loki"
+            type      = "loki"
+            url       = "http://loki-gateway:80"
+            access    = "proxy"
+            isDefault = false
+            jsonData = {
+              maxLines = 1000
+            }
+          }
+        ]
         sidecar = {
           dashboards = {
             enabled          = true

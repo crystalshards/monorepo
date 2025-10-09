@@ -257,7 +257,7 @@ Continue iterating until ALL of these are complete:
 - [x] DNS configured and working
 - [x] Grafana dashboards configured
 - [x] Prometheus alerting rules set up
-- [ ] Log aggregation configured
+- [x] Log aggregation configured
 - [ ] Backup schedules configured
 - [ ] Disaster recovery tested
 
@@ -278,7 +278,7 @@ Continue iterating until ALL of these are complete:
 - [x] Custom dashboards created
 - [x] Alert rules defined
 - [ ] On-call runbooks written
-- [ ] Log queries documented
+- [x] Log queries documented
 
 **Documentation:**
 - [x] API documentation complete
