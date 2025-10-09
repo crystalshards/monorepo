@@ -5,8 +5,8 @@ resource "kubernetes_ingress_v1" "traefik_dashboard" {
     namespace = "traefik-system"
     annotations = {
       "cert-manager.io/cluster-issuer"                   = "letsencrypt-prod"
-      "traefik.ingress.kubernetes.io/router.entrypoints" = "websecure"
-      "traefik.ingress.kubernetes.io/router.tls"         = "true"
+      "traefik.ingress.kubernetes.io/router.entrypoints" = "web,websecure"
+      "traefik.ingress.kubernetes.io/router.middlewares" = "traefik-system-redirect-https@kubernetescrd"
     }
   }
 

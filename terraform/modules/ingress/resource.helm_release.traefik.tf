@@ -19,10 +19,10 @@ resource "helm_release" "traefik" {
       }
     }
 
-    # Enable Traefik Dashboard (for debugging)
+    # Enable Traefik Dashboard
     ingressRoute = {
       dashboard = {
-        enabled = false # Set to true if you want the dashboard exposed
+        enabled = true
       }
     }
 
@@ -43,12 +43,20 @@ resource "helm_release" "traefik" {
       }
     }
 
-    # Access logs and provider configuration
+    # Access logs
     additionalArguments = [
       "--accesslog=true",
-      "--accesslog.format=json",
-      "--providers.kubernetesingress.publishedservice.enabled=true"
+      "--accesslog.format=json"
     ]
+
+    # Provider configuration for published service
+    providers = {
+      kubernetesIngress = {
+        publishedService = {
+          enabled = true
+        }
+      }
+    }
 
     # Resource limits for Autopilot
     resources = {

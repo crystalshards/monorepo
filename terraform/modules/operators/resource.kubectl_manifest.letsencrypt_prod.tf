@@ -14,7 +14,7 @@ resource "kubectl_manifest" "letsencrypt_prod" {
         solvers:
         - http01:
             ingress:
-              class: nginx
+              class: traefik
   YAML
 
   depends_on = [

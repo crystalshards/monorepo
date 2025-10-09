@@ -4,8 +4,10 @@ resource "kubernetes_ingress_v1" "crystalshards" {
     name      = "crystalshards-ingress"
     namespace = kubernetes_namespace.crystalshards.metadata[0].name
     annotations = {
-      "external-dns.alpha.kubernetes.io/hostname" = "crystalshards.org,www.crystalshards.org"
-      "cert-manager.io/cluster-issuer"            = "letsencrypt-prod"
+      "external-dns.alpha.kubernetes.io/hostname"                   = "crystalshards.org,www.crystalshards.org"
+      "cert-manager.io/cluster-issuer"                              = "letsencrypt-prod"
+      "traefik.ingress.kubernetes.io/router.entrypoints"            = "web,websecure"
+      "traefik.ingress.kubernetes.io/router.middlewares"            = "traefik-system-redirect-https@kubernetescrd"
     }
   }
 
