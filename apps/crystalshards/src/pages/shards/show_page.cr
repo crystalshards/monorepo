@@ -94,6 +94,7 @@ class Shards::ShowPage < MainLayout
                 div class: "code-block", id: "install-code-wrapper" do
                   pre do
                     code id: "install-code" do
+                      text "# Add this to your shard.yml\n"
                       text "dependencies:\n"
                       text "  #{@shard.name}:\n"
                       text "    github: #{extract_github_path(@shard.repository_url)}\n"
@@ -335,7 +336,7 @@ class Shards::ShowPage < MainLayout
     diff = Time.utc - time
     case
     when diff < 1.minute
-      "just now"
+      "moments ago"
     when diff < 1.hour
       "#{diff.total_minutes.to_i} minutes ago"
     when diff < 1.day
