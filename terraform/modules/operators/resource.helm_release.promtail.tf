@@ -106,7 +106,7 @@ resource "helm_release" "promtail" {
       # GKE Autopilot compatibility: Override default volumes
       # Default chart tries to mount /var/lib/docker/containers which is prohibited
       # Only /var/log is allowed in Autopilot
-      defaultVolumes = []
+      defaultVolumes      = []
       defaultVolumeMounts = []
 
       # Mount only /var/log (read-only, allowed in Autopilot)
@@ -118,7 +118,7 @@ resource "helm_release" "promtail" {
           }
         },
         {
-          name = "varlibdockercontainers"
+          name     = "varlibdockercontainers"
           emptyDir = {}
         }
       ]
