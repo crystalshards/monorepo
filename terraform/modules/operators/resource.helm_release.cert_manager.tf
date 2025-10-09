@@ -77,5 +77,12 @@ resource "helm_release" "cert_manager" {
     value = "128Mi"
   }
 
+  # Leader election configuration for GKE Autopilot
+  # Use infrastructure namespace instead of kube-system to avoid Warden restrictions
+  set {
+    name  = "global.leaderElection.namespace"
+    value = "infrastructure"
+  }
+
   depends_on = [kubernetes_namespace.infrastructure]
 }
