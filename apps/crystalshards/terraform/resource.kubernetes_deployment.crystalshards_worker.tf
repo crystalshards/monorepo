@@ -11,7 +11,7 @@ resource "kubernetes_deployment" "crystalshards_worker" {
   }
 
   spec {
-    replicas = 2 # Start with 2 worker pods
+    replicas                  = 2    # Start with 2 worker pods
     progress_deadline_seconds = 1200 # Allow 20 minutes for GKE Autopilot deployment
 
     selector {
@@ -171,9 +171,9 @@ resource "kubernetes_deployment" "crystalshards_worker" {
             exec {
               command = ["pgrep", "-f", "worker"]
             }
-            initial_delay_seconds = 120  # Increased for GKE Autopilot startup and DB connection
+            initial_delay_seconds = 120 # Increased for GKE Autopilot startup and DB connection
             period_seconds        = 30
-            failure_threshold     = 5    # Allow more failures before restart
+            failure_threshold     = 5 # Allow more failures before restart
           }
         }
 
