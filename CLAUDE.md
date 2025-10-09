@@ -8,6 +8,30 @@
 
 Building CrystalShards.org and CrystalDocs.org - a comprehensive Crystal language package registry and documentation platform.
 
+## Quick Reference: Current Priorities
+
+**TOP PRIORITY: CrystalShards.org UI & Workers**
+- Background workers MUST be operational (IndexShardWorker, BuildDocsWorker, UpdateDependenciesWorker)
+- Web interface: Homepage, Browse/Search, Package Detail
+- **Verify ALL UI changes with Playwright MCP (Section 12)**
+- This is the core product - focus here before other apps
+
+**Key Principles:**
+1. **GitHub Projects = Single Source of Truth** (NO STATUS.md)
+2. **UI/UX Verification is Mandatory** (Playwright for all user-facing changes)
+3. **Parallel Execution Enabled** (Multiple agents can work simultaneously)
+4. **Comment-Based Communication** (Update issues, not files)
+5. **CrystalShards First** (Other apps after core product is complete)
+
+**All 5 GitHub Projects:**
+- Project #1: CrystalShards.org (TOP PRIORITY)
+- Project #2: CrystalDocs.org
+- Project #3: CrystalGigs.com
+- Project #4: CrystalBits.org
+- Project #5: Agent Enhancements
+
+**See PROMPT.md for active tasks. See .claude/ULTRATHINK.md for strategic guidance.**
+
 ## Development Principles
 
 ### 1. Autonomous Execution (RepoMirror Style)
@@ -115,17 +139,26 @@ rm -rf /tmp/* && docker system prune -f
 
 ### 10. Progress Tracking
 
-GitHub Projects is the single source of truth for all task tracking and progress:
+**CRITICAL: NO STATUS.md FILES** - GitHub Projects is the ONLY source of truth for all task tracking and progress.
+
+**Why NO STATUS.md:**
+- Causes merge conflicts with parallel agents
+- Creates bottleneck for coordination
+- Duplicates information already in GitHub
+- File locks prevent async collaboration
+- GitHub Projects provides better visibility
+
+**Instead, use:**
 
 - **GitHub Projects**: Track all tasks and their status (Ready → In Progress → In Review → Done)
-- **Issue Comments**: Document progress, blockers, and updates
+- **Issue Comments**: Document progress, blockers, and updates (REQUIRED for transparency)
 - **PROMPT.md**: High-level phase tracking only (production readiness checklist)
-- **Commit Messages**: Link to issues with `refs #<number>`
-- **PR Descriptions**: Close issues with `Closes #<number>`
-- **Push Frequently**: Commit and push working code regularly
+- **Commit Messages**: Link to issues with `refs #<number>` in commit body
+- **PR Descriptions**: Close issues with `Closes #<number>` in description
+- **Push Frequently**: Commit and push working code regularly for visibility
 - **Full Traceability**: Project Item → Issue → Commits → PR → Merged Code
 
-This enables parallel agent execution since GitHub provides coordination.
+**This enables parallel agent execution since GitHub provides coordination without file conflicts.**
 
 ### 11. Parallel Agent Execution
 
@@ -835,14 +868,17 @@ gh auth login                         # Login to GitHub
 
 ## GitHub Projects Integration
 
-The monorepo uses GitHub Projects for visual task management across all four applications. Each app has its own project board with a Workflow Status field.
+The monorepo uses GitHub Projects for visual task management across all applications. Each app and the agent have their own project board with a Workflow Status field.
 
 ### Project Boards
 
-- **CrystalShards.org Development** - Project #1 - https://github.com/orgs/crystalshards/projects/1
+All 5 GitHub Projects (in priority order):
+
+- **CrystalShards.org Development** - Project #1 - https://github.com/orgs/crystalshards/projects/1 (TOP PRIORITY)
 - **CrystalDocs.org Development** - Project #2 - https://github.com/orgs/crystalshards/projects/2
 - **CrystalGigs.com Development** - Project #3 - https://github.com/orgs/crystalshards/projects/3
 - **CrystalBits.org Development** - Project #4 - https://github.com/orgs/crystalshards/projects/4
+- **Agent Enhancements** - Project #5 - https://github.com/orgs/crystalshards/projects/5
 
 ### Workflow Status Field Values
 
@@ -891,7 +927,7 @@ gh api graphql -f query='
 When working on specific apps, use the corresponding project:
 
 ```bash
-# CrystalShards.org → Project 1
+# CrystalShards.org → Project 1 (TOP PRIORITY)
 gh project view 1 --owner crystalshards
 
 # CrystalDocs.org → Project 2
@@ -902,6 +938,9 @@ gh project view 3 --owner crystalshards
 
 # CrystalBits.org → Project 4
 gh project view 4 --owner crystalshards
+
+# Agent Enhancements → Project 5
+gh project view 5 --owner crystalshards
 ```
 
 ### Project-Based Work Discovery
@@ -916,7 +955,7 @@ gh project item-list 1 --owner crystalshards --format json | \
   jq '.items[] | select(.status == "In Progress")'
 
 # View all projects
-for i in {1..4}; do
+for i in {1..5}; do
   echo "=== Project $i ==="
   gh project view $i --owner crystalshards
 done
@@ -1090,15 +1129,16 @@ This creates a transparent audit trail and enables async coordination without co
 **When no active task or all tasks are blocked:**
 
 1. **Check PROMPT.md** for active tasks and priorities
-2. **Check GitHub Projects** for ready tasks:
+2. **Check GitHub Projects** for ready tasks (all 5 projects):
    ```bash
    # View project boards for each app
-   gh project view 1 --owner crystalshards  # CrystalShards
+   gh project view 1 --owner crystalshards  # CrystalShards (TOP PRIORITY)
    gh project view 2 --owner crystalshards  # CrystalDocs
    gh project view 3 --owner crystalshards  # CrystalGigs
    gh project view 4 --owner crystalshards  # CrystalBits
+   gh project view 5 --owner crystalshards  # Agent Enhancements
 
-   # List items in Ready status
+   # List items in Ready status for priority project
    gh project item-list 1 --owner crystalshards
    ```
 3. **Check GitHub issues**: `gh issue list --repo crystalshards/crystalshards-claude`

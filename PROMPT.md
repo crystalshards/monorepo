@@ -226,11 +226,12 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
 
 1. **Active Tasks in PROMPT.md** → Work on current phase tasks
 2. **CI Failures** → Fix immediately (`gh run list`, check logs)
-3. **GitHub Projects (PRIMARY SOURCE OF TRUTH)** → Check project boards for Ready items
-   - CrystalShards.org → Project #1: https://github.com/orgs/crystalshards/projects/1
+3. **GitHub Projects (PRIMARY SOURCE OF TRUTH - NO STATUS.md)** → Check project boards for Ready items
+   - CrystalShards.org → Project #1: https://github.com/orgs/crystalshards/projects/1 (TOP PRIORITY)
    - CrystalDocs.org → Project #2: https://github.com/orgs/crystalshards/projects/2
    - CrystalGigs.com → Project #3: https://github.com/orgs/crystalshards/projects/3
    - CrystalBits.org → Project #4: https://github.com/orgs/crystalshards/projects/4
+   - Agent Enhancements → Project #5: https://github.com/orgs/crystalshards/projects/5
 4. **GitHub Issues** → Check for open issues (`gh issue list`)
 5. **Codebase TODOs** → Search for `TODO`, `FIXME`, `XXX` comments
 6. **Production Readiness Improvements**:
@@ -245,7 +246,7 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
    - Error handling improvements
    - User experience polish
 
-**Note**: GitHub Projects and Issues are the single source of truth for all task tracking. All progress updates happen through issue comments, not file-based tracking.
+**CRITICAL**: GitHub Projects and Issues are the ONLY source of truth for all task tracking. **NO STATUS.md** - all progress updates happen through issue comments, not files. This enables parallel agent execution without conflicts.
 
 ### Iteration Steps
 
@@ -262,13 +263,14 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
    - Make changes following conventions in this file
    - Validate: `terraform validate`, `crystal spec`, etc
    - Test: Write and run tests for new code
-   - **Verify UI/UX**: For user-facing changes, use Playwright MCP (see CLAUDE.md section 12):
-     * Navigate to deployed site
-     * Take accessibility snapshot with `browser_snapshot`
-     * Check console for errors with `browser_console_messages`
-     * Test interactive elements
-     * Verify responsive design at multiple viewport sizes
-     * Document any issues found as GitHub issues
+   - **Verify UI/UX (MANDATORY for user-facing changes)**: Use Playwright MCP (see CLAUDE.md section 12):
+     * Navigate to deployed site (https://crystalshards.org, etc.)
+     * Take accessibility snapshot with `browser_snapshot` (ALWAYS do this first)
+     * Check console for errors with `browser_console_messages --onlyErrors true`
+     * Test interactive elements (clicks, forms, navigation)
+     * Verify responsive design at multiple viewport sizes (mobile, tablet, desktop)
+     * Document ANY issues found as GitHub issues immediately
+     * **UI verification is NOT optional - it's part of "done"**
    - **Commit frequently** with issue reference (`refs #123` in commit body)
    - **Push regularly** (at least every 30 minutes of work)
    - **Progress comments** every few hours: `gh issue comment <number> --body "Progress: [completed items]"`
@@ -422,16 +424,20 @@ This is an autonomous agent operating continuously toward production excellence.
 
 **The goal is a fully production-ready platform, not just "deployed code."**
 
-**Key Change**: No more STATUS.md - GitHub Projects is the single source of truth for all task tracking, enabling parallel agent execution.
+**CRITICAL CHANGE**: **NO MORE STATUS.md** - GitHub Projects is the ONLY source of truth for all task tracking. This enables parallel agent execution without file conflicts. All updates via issue comments.
 
 ### Project Board Quick Reference
 
-- **CrystalShards.org** (Project #1): Main package registry - highest priority
+All 5 GitHub Projects (in priority order):
+
+- **CrystalShards.org** (Project #1): Main package registry - **TOP PRIORITY**
 - **CrystalDocs.org** (Project #2): Documentation hosting
 - **CrystalGigs.com** (Project #3): Job board
 - **CrystalBits.org** (Project #4): Blog/newsletter
+- **Agent Enhancements** (Project #5): Agent workflow improvements
 
-View any board: `gh project view <1-4> --owner crystalshards --web`
+View any board: `gh project view <1-5> --owner crystalshards --web`
+View all boards: `for i in {1..5}; do gh project view $i --owner crystalshards; done`
 
 ---
 **Current Status**: All apps deployed and live. Continue iterating on monitoring, observability, data seeding, and production polish.
