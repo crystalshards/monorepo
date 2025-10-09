@@ -30,15 +30,18 @@ struct IndexShardWorker < BaseJob
 
     fetch_and_parse_shard_yml(shard, shard_version)
 
-    UpdateDependenciesWorker.enqueue(
-      shard_name: @shard_name.not_nil!,
-      version: @version.not_nil!
-    )
+    # Skip enqueueing jobs in test environment to avoid Redis connection
+    unless LuckyEnv.test?
+      UpdateDependenciesWorker.enqueue(
+        shard_name: @shard_name.not_nil!,
+        version: @version.not_nil!
+      )
 
-    BuildDocsWorker.enqueue(
-      shard_name: @shard_name.not_nil!,
-      version: @version.not_nil!
-    )
+      BuildDocsWorker.enqueue(
+        shard_name: @shard_name.not_nil!,
+        version: @version.not_nil!
+      )
+    end
 
     log_info "Successfully indexed #{@shard_name}@#{@version}"
   rescue ex : Exception

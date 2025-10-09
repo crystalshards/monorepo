@@ -51,20 +51,21 @@ struct UpdateDependenciesWorker < BaseJob
       end
     end
 
-    log_info "Stored #{dependencies.size} dependencies"
+    log_info "Stored #{dependencies.size} runtime and #{dev_dependencies.try(&.size) || 0} development dependencies"
   end
 
   private def store_dependency(shard_version : ShardVersion, dep_name : String, dep_spec : JSON::Any, scope : String)
     version_requirement = extract_version_requirement(dep_spec)
-
     dependent_shard = ShardQuery.new.name(dep_name).first?
 
-    SaveDependency.create do |operation|
-      operation.shard_version_id.value = shard_version.id.not_nil!
-      operation.name.value = dep_name
-      operation.version_requirement.value = version_requirement
-      operation.scope.value = scope
-      operation.dependent_shard_id.value = dependent_shard.try(&.id)
+    SaveDependency.create(
+      shard_version_id: shard_version.id,
+      dependent_shard_id: dependent_shard.try(&.id),
+      name: dep_name,
+      version_requirement: version_requirement,
+      scope: scope
+    ) do |operation, dependency|
+      # Operation complete - dependency will be non-nil on success
     end
   end
 
