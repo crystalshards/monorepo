@@ -46,7 +46,7 @@ class Shards::IndexPage < MainLayout
           end
           if @query || filters_active?
             a href: "/shards", class: "button" do
-              text "Clear Filters"
+              text "View All Shards"
             end
           end
         end
