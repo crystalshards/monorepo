@@ -7,7 +7,7 @@ describe Docs::Show do
 
     DocVersionFactory.create &.doc_id(doc.id).version("1.0.0")
 
-    response = ApiClient.exec(Docs::Show, package_name: "lucky")
+    response = ApiClient.exec(Docs::Show.with("lucky"))
 
     response.status.should eq(302)
     response.headers["Location"].should eq("/docs/lucky/1.0.0")
@@ -18,7 +18,7 @@ describe Docs::Show do
       .current_version(nil)
       .description("A Crystal library")
 
-    response = ApiClient.exec(Docs::Show, package_name: "mylib")
+    response = ApiClient.exec(Docs::Show.with("mylib"))
 
     response.status.should eq(200)
     response.body.should contain("mylib")
@@ -27,7 +27,7 @@ describe Docs::Show do
 
   it "returns 404 for non-existent package" do
     expect_raises(Lucky::RouteNotFoundError) do
-      ApiClient.exec(Docs::Show, package_name: "nonexistent")
+      ApiClient.exec(Docs::Show.with("nonexistent"))
     end
   end
 
@@ -36,7 +36,7 @@ describe Docs::Show do
       .total_views(1000)
       .last_updated_at(Time.utc)
 
-    response = ApiClient.exec(Docs::Show, package_name: "popular")
+    response = ApiClient.exec(Docs::Show.with("popular"))
 
     response.body.should contain("1000")
     response.body.should contain("views")
@@ -52,7 +52,7 @@ describe Docs::Show do
       .version("2.0.0")
       .published_at(Time.utc)
 
-    response = ApiClient.exec(Docs::Show, package_name: "versioned")
+    response = ApiClient.exec(Docs::Show.with("versioned"))
 
     response.body.should contain("1.0.0")
     response.body.should contain("2.0.0")

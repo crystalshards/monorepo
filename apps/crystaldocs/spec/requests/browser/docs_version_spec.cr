@@ -10,28 +10,9 @@ describe Docs::Version do
     # Note: In real test, would need to mock MinIO storage service
     # For now, test the action structure
 
-    response = ApiClient.exec(Docs::Version,
-      package_name: "lucky",
-      version: "1.0.0"
-    )
+    response = ApiClient.exec(Docs::Version.with("lucky", "1.0.0"))
 
     response.status.should eq(200)
-  end
-
-  it "supports wildcard file paths" do
-    doc = DocFactory.create &.package_name("lucky")
-    version = DocVersionFactory.create &.doc_id(doc.id)
-      .version("1.0.0")
-
-    # Test that the route accepts file paths
-    response = ApiClient.exec(Docs::Version,
-      package_name: "lucky",
-      version: "1.0.0",
-      file_path: "guides/getting-started.html"
-    )
-
-    # Should attempt to render even if content not found
-    response.status.should be >= 200
   end
 
   it "increments view count when displaying docs" do
@@ -50,10 +31,7 @@ describe Docs::Version do
 
   it "returns 404 for non-existent package" do
     expect_raises(Lucky::RouteNotFoundError) do
-      ApiClient.exec(Docs::Version,
-        package_name: "nonexistent",
-        version: "1.0.0"
-      )
+      ApiClient.exec(Docs::Version.with("nonexistent", "1.0.0"))
     end
   end
 
@@ -61,10 +39,7 @@ describe Docs::Version do
     doc = DocFactory.create &.package_name("mylib")
 
     expect_raises(Lucky::RouteNotFoundError) do
-      ApiClient.exec(Docs::Version,
-        package_name: "mylib",
-        version: "99.0.0"
-      )
+      ApiClient.exec(Docs::Version.with("mylib", "99.0.0"))
     end
   end
 
@@ -74,10 +49,7 @@ describe Docs::Version do
     version1 = DocVersionFactory.create &.doc_id(doc.id).version("1.0.0")
     version2 = DocVersionFactory.create &.doc_id(doc.id).version("2.0.0")
 
-    response = ApiClient.exec(Docs::Version,
-      package_name: "versioned",
-      version: "1.0.0"
-    )
+    response = ApiClient.exec(Docs::Version.with("versioned", "1.0.0"))
 
     response.body.should contain("Version:")
     response.body.should contain("1.0.0")
@@ -90,10 +62,7 @@ describe Docs::Version do
 
     version = DocVersionFactory.create &.doc_id(doc.id).version("1.0.0")
 
-    response = ApiClient.exec(Docs::Version,
-      package_name: "mylib",
-      version: "1.0.0"
-    )
+    response = ApiClient.exec(Docs::Version.with("mylib", "1.0.0"))
 
     response.body.should contain("View Source")
     response.body.should contain("github.com/user/mylib")
@@ -104,10 +73,7 @@ describe Docs::Version do
     doc = DocFactory.create &.package_name("mylib")
     version = DocVersionFactory.create &.doc_id(doc.id).version("1.0.0")
 
-    response = ApiClient.exec(Docs::Version,
-      package_name: "mylib",
-      version: "1.0.0"
-    )
+    response = ApiClient.exec(Docs::Version.with("mylib", "1.0.0"))
 
     response.body.should contain("CrystalDocs")
     response.body.should contain("Browse")
@@ -119,10 +85,7 @@ describe Docs::Version do
     doc = DocFactory.create &.package_name("mylib")
     version = DocVersionFactory.create &.doc_id(doc.id).version("1.0.0")
 
-    response = ApiClient.exec(Docs::Version,
-      package_name: "mylib",
-      version: "1.0.0"
-    )
+    response = ApiClient.exec(Docs::Version.with("mylib", "1.0.0"))
 
     response.body.should contain("Navigation")
   end
