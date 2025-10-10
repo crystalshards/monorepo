@@ -52,6 +52,7 @@ jobs:
       with:
         terraform_version: 1.6.0
         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+        terraform_wrapper: false  # Disable wrapper to get clean output
 
     - name: Deploy Cluster Module
       working-directory: ./terraform
@@ -174,6 +175,7 @@ jobs:
       with:
         terraform_version: 1.6.0
         cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+        terraform_wrapper: false  # Disable wrapper to get clean output
 
     - name: Deploy Full Infrastructure
       working-directory: ./terraform
