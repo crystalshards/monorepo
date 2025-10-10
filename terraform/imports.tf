@@ -52,3 +52,9 @@ import {
   to = module.networking.google_compute_firewall.allow_webhooks
   id = "projects/crystalshards-org/global/firewalls/crystalshards-cluster-allow-webhooks"
 }
+
+# Import claude namespace (agent namespace)
+import {
+  to = module.agent.kubernetes_namespace.claude
+  id = "claude"
+}
