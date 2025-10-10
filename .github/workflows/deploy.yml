@@ -199,10 +199,73 @@ jobs:
         terraform output kubectl_config || true
         terraform output load_balancer_ip || true
 
+    - name: Verify Deployment Health
+      run: |
+        echo "Verifying application health..."
+        sleep 60  # Give applications time to start after deployment
+
+        declare -A app_urls=(
+          ["crystalshards"]="https://crystalshards.org/api/health"
+          ["crystaldocs"]="https://crystaldocs.org/api/health"
+          ["crystalgigs"]="https://crystalgigs.com/api/health"
+          ["crystalbits"]="https://crystalbits.org/api/health"
+        )
+
+        failed=0
+        for app in "${!app_urls[@]}"; do
+          url="${app_urls[$app]}"
+          echo "Checking $app health at $url..."
+
+          # Retry up to 5 times with 30 second delays
+          for i in {1..5}; do
+            response=$(curl -s -w "\n%{http_code}" "$url" || echo "000")
+            http_code=$(echo "$response" | tail -n1)
+            body=$(echo "$response" | sed '$d')
+
+            if [ "$http_code" != "200" ]; then
+              echo "  Attempt $i: HTTP $http_code - retrying..."
+              sleep 30
+              continue
+            fi
+
+            # Check if services are healthy
+            unhealthy=$(echo "$body" | jq -r '.services | to_entries[] | select(.value | contains("unhealthy")) | .key' 2>/dev/null || echo "")
+
+            if [ -n "$unhealthy" ]; then
+              echo "  Attempt $i: Unhealthy services detected: $unhealthy - retrying..."
+              echo "$body" | jq '.' || echo "$body"
+              sleep 30
+              continue
+            fi
+
+            echo "✅ $app is healthy"
+            break
+          done
+
+          # Final check after retries
+          if [ "$http_code" != "200" ] || [ -n "$unhealthy" ]; then
+            echo "❌ $app health check failed after 5 attempts"
+            echo "Final response: $body"
+            failed=1
+          fi
+        done
+
+        if [ $failed -eq 1 ]; then
+          echo ""
+          echo "⚠️  Deployment completed but some applications are unhealthy"
+          echo "Check application logs and database connectivity"
+          exit 1
+        fi
+
+        echo ""
+        echo "✅ All applications are healthy!"
+
     - name: Deployment summary
+      if: success()
       run: |
         echo "✅ Deployment completed successfully!"
         echo ""
         echo "📦 Step 1: Cluster & Artifact Registry created"
         echo "🐳 Step 2: Docker images built and pushed"
         echo "🚀 Step 3: Full infrastructure deployed"
+        echo "🏥 Step 4: All health checks passed"
