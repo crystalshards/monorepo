@@ -7,10 +7,10 @@ resource "kubernetes_secret" "crystalshards_secrets" {
 
   data = {
     # CNPG creates a read-write service: <cluster-name>-rw
-    # CNPG creates an app secret: <cluster-name>-app with username/password
-    # We use a data source to get both username and password from the CNPG-generated secret
+    # CNPG creates an app secret: <cluster-name>-app with password ONLY
+    # Username matches bootstrap.initdb.owner from the cluster manifest ("crystalshards")
     # Format: postgresql://username:password@service:5432/database
-    database_url = "postgresql://${data.kubernetes_secret.crystalshards_postgres_app.data["username"]}:${data.kubernetes_secret.crystalshards_postgres_app.data["password"]}@crystalshards-postgres-rw:5432/crystalshards_production"
+    database_url = "postgresql://crystalshards:${data.kubernetes_secret.crystalshards_postgres_app.data["password"]}@crystalshards-postgres-rw:5432/crystalshards_production"
 
     # Redis URL for Mosquito workers - shared Redis in infrastructure namespace
     redis_url = "redis://shared-redis.infrastructure.svc.cluster.local:6379/0"
