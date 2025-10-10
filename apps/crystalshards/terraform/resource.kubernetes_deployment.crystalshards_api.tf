@@ -10,10 +10,10 @@ resource "kubernetes_deployment" "crystalshards_api" {
     }
   }
 
-  wait_for_rollout = false  # Let Kubernetes handle rollout asynchronously
+  wait_for_rollout = false # Let Kubernetes handle rollout asynchronously
 
   spec {
-    replicas = 2
+    replicas                  = 2
     progress_deadline_seconds = 1200 # Allow 20 minutes for GKE Autopilot deployment
 
     selector {
@@ -185,10 +185,10 @@ resource "kubernetes_deployment" "crystalshards_api" {
               path = "/api/health"
               port = 3000
             }
-            initial_delay_seconds = 120  # Increased for GKE Autopilot startup and DB connection
+            initial_delay_seconds = 120 # Increased for GKE Autopilot startup and DB connection
             period_seconds        = 10
-            timeout_seconds       = 10   # Increased timeout for health check
-            failure_threshold     = 6    # Allow more failures before restart
+            timeout_seconds       = 10 # Increased timeout for health check
+            failure_threshold     = 6  # Allow more failures before restart
           }
 
           readiness_probe {
@@ -196,10 +196,10 @@ resource "kubernetes_deployment" "crystalshards_api" {
               path = "/api/health"
               port = 3000
             }
-            initial_delay_seconds = 60   # Increased for GKE Autopilot startup and DB connection
-            period_seconds        = 10   # Less frequent checks
-            timeout_seconds       = 10   # Increased timeout for health check
-            failure_threshold     = 6    # Allow more failures before marking unready
+            initial_delay_seconds = 60 # Increased for GKE Autopilot startup and DB connection
+            period_seconds        = 10 # Less frequent checks
+            timeout_seconds       = 10 # Increased timeout for health check
+            failure_threshold     = 6  # Allow more failures before marking unready
           }
         }
 

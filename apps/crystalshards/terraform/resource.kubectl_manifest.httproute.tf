@@ -14,13 +14,13 @@ resource "kubectl_manifest" "crystalshards_httproute" {
     spec = {
       parentRefs = [
         {
-          name      = "crystalshards-gateway"
-          namespace = "envoy-gateway-system"
+          name        = "crystalshards-gateway"
+          namespace   = "envoy-gateway-system"
           sectionName = "https-crystalshards"
         },
         {
-          name      = "crystalshards-gateway"
-          namespace = "envoy-gateway-system"
+          name        = "crystalshards-gateway"
+          namespace   = "envoy-gateway-system"
           sectionName = "https-www-crystalshards"
         }
       ]
@@ -62,8 +62,8 @@ resource "kubectl_manifest" "crystalshards_http_redirect" {
     spec = {
       parentRefs = [
         {
-          name      = "crystalshards-gateway"
-          namespace = "envoy-gateway-system"
+          name        = "crystalshards-gateway"
+          namespace   = "envoy-gateway-system"
           sectionName = "http"
         }
       ]
