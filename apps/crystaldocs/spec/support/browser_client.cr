@@ -23,7 +23,7 @@ class BrowserClient < Lucky::BaseHTTPClient
   def exec(route_helper : Lucky::RouteHelper, params : NamedTuple) : HTTP::Client::Response
     # Convert nested params to form-encoded format
     form_data = encode_form_params(params)
-    headers("Content-Type": "application/x-www-form-urlencoded").exec_raw(route_helper, form_data)
+    headers(content_type: "application/x-www-form-urlencoded").exec_raw(route_helper, form_data)
   end
 
   private def encode_form_params(params : NamedTuple) : String
