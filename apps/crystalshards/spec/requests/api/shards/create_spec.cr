@@ -6,11 +6,11 @@ describe Api::Shards::Create do
 
     response = ApiClient.auth(user).exec(Api::Shards::Create,
       shard: {
-        name: "test-shard",
-        description: "A test shard for Crystal",
+        name:           "test-shard",
+        description:    "A test shard for Crystal",
         repository_url: "https://github.com/user/test-shard",
-        homepage_url: "https://test-shard.org",
-        license: "MIT",
+        homepage_url:   "https://test-shard.org",
+        license:        "MIT",
       },
       version: "0.1.0"
     )
@@ -54,7 +54,7 @@ describe Api::Shards::Create do
     # Attempt to create shard with same name
     response = ApiClient.auth(user).exec(Api::Shards::Create,
       shard: {
-        name: "duplicate-shard",
+        name:           "duplicate-shard",
         repository_url: "https://github.com/user/duplicate-shard-2",
       },
       version: "0.1.0"
@@ -69,7 +69,7 @@ describe Api::Shards::Create do
 
     response = ApiClient.auth(user).exec(Api::Shards::Create,
       shard: {
-        name: "test-shard",
+        name:           "test-shard",
         repository_url: "not-a-valid-url",
       },
       version: "0.1.0"
@@ -84,7 +84,7 @@ describe Api::Shards::Create do
 
     response = ApiClient.auth(user).exec(Api::Shards::Create,
       shard: {
-        name: "minimal-shard",
+        name:           "minimal-shard",
         repository_url: "https://github.com/user/minimal-shard",
       },
       version: "1.0.0"
@@ -105,7 +105,7 @@ describe Api::Shards::Create do
     # For now we just verify the response indicates indexing started
     response = ApiClient.auth(user).exec(Api::Shards::Create,
       shard: {
-        name: "worker-test-shard",
+        name:           "worker-test-shard",
         repository_url: "https://github.com/user/worker-test-shard",
       },
       version: "2.0.0"
@@ -127,7 +127,7 @@ describe Api::Shards::Create do
 
     response = ApiClient.auth(user).exec(Api::Shards::Create,
       shard: {
-        name: "version-test-shard",
+        name:           "version-test-shard",
         repository_url: "https://github.com/user/version-test-shard",
       },
       version: "invalid-version"
