@@ -95,10 +95,10 @@ class ClaudeStreamRenderer
     desc = data["description"]?.try(&.as_s)
 
     result = String::Builder.new
-    result << "\n#{indent}  Command: ".colorize(:cyan).to_s
+    result << "\n#{indent}  📝 ".colorize(:cyan).to_s
     result << command.colorize(:white).to_s
     if desc
-      result << "\n#{indent}  Purpose: ".colorize(:dark_gray).to_s
+      result << "\n#{indent}  💡 ".colorize(:dark_gray).to_s
       result << desc.colorize(:dark_gray).to_s
     end
     result.to_s
@@ -110,10 +110,10 @@ class ClaudeStreamRenderer
     limit = data["limit"]?.try(&.as_i)
 
     result = String::Builder.new
-    result << "\n#{indent}  File: ".colorize(:cyan).to_s
+    result << "\n#{indent}  📄 ".colorize(:cyan).to_s
     result << file.colorize(:white).to_s
     if offset || limit
-      result << "\n#{indent}  Range: ".colorize(:dark_gray).to_s
+      result << "\n#{indent}  📊 ".colorize(:dark_gray).to_s
       result << "lines #{offset || 0}-#{(offset || 0) + (limit || 0)}".colorize(:dark_gray).to_s
     end
     result.to_s
@@ -126,25 +126,25 @@ class ClaudeStreamRenderer
     replace_all = data["replace_all"]?.try(&.as_bool) || false
 
     result = String::Builder.new
-    result << "\n#{indent}  File: ".colorize(:cyan).to_s
+    result << "\n#{indent}  ✏️  ".colorize(:cyan).to_s
     result << file.colorize(:white).to_s
-    result << "\n#{indent}  Mode: ".colorize(:dark_gray).to_s
+    result << "\n#{indent}  🔄 ".colorize(:dark_gray).to_s
     result << (replace_all ? "Replace All" : "Replace First").colorize(:yellow).to_s
 
     # Show truncated old/new strings
     if old.size > 50
-      result << "\n#{indent}  Old: ".colorize(:red).to_s
+      result << "\n#{indent}  ➖ ".colorize(:red).to_s
       result << "\"#{old[0..50]}...\" (#{old.size} chars)".colorize(:red).to_s
     else
-      result << "\n#{indent}  Old: ".colorize(:red).to_s
+      result << "\n#{indent}  ➖ ".colorize(:red).to_s
       result << "\"#{old}\"".colorize(:red).to_s
     end
 
     if new_str.size > 50
-      result << "\n#{indent}  New: ".colorize(:green).to_s
+      result << "\n#{indent}  ➕ ".colorize(:green).to_s
       result << "\"#{new_str[0..50]}...\" (#{new_str.size} chars)".colorize(:green).to_s
     else
-      result << "\n#{indent}  New: ".colorize(:green).to_s
+      result << "\n#{indent}  ➕ ".colorize(:green).to_s
       result << "\"#{new_str}\"".colorize(:green).to_s
     end
 
@@ -156,9 +156,9 @@ class ClaudeStreamRenderer
     content = data["content"]?.try(&.as_s) || ""
 
     result = String::Builder.new
-    result << "\n#{indent}  File: ".colorize(:cyan).to_s
+    result << "\n#{indent}  💾 ".colorize(:cyan).to_s
     result << file.colorize(:white).to_s
-    result << "\n#{indent}  Size: ".colorize(:dark_gray).to_s
+    result << "\n#{indent}  📏 ".colorize(:dark_gray).to_s
     result << "#{content.size} chars (#{content.lines.size} lines)".colorize(:dark_gray).to_s
     result.to_s
   end
@@ -169,14 +169,14 @@ class ClaudeStreamRenderer
     glob = data["glob"]?.try(&.as_s)
 
     result = String::Builder.new
-    result << "\n#{indent}  Pattern: ".colorize(:cyan).to_s
+    result << "\n#{indent}  🔍 ".colorize(:cyan).to_s
     result << pattern.colorize(:white).to_s
     if path
-      result << "\n#{indent}  Path: ".colorize(:dark_gray).to_s
+      result << "\n#{indent}  📂 ".colorize(:dark_gray).to_s
       result << path.colorize(:dark_gray).to_s
     end
     if glob
-      result << "\n#{indent}  Filter: ".colorize(:dark_gray).to_s
+      result << "\n#{indent}  🎯 ".colorize(:dark_gray).to_s
       result << glob.colorize(:dark_gray).to_s
     end
     result.to_s
@@ -187,15 +187,15 @@ class ClaudeStreamRenderer
     return "" unless todos
 
     result = String::Builder.new
-    result << "\n#{indent}  Tasks:"
+    result << "\n#{indent}  📋 Tasks:"
     todos.each do |todo|
       status = todo["status"]?.try(&.as_s) || "pending"
       content = todo["content"]?.try(&.as_s) || ""
 
       symbol = case status
-      when "completed" then "✓"
-      when "in_progress" then "▶"
-      else "○"
+      when "completed" then "✅"
+      when "in_progress" then "🔧"
+      else "⏳"
       end
 
       color = case status
@@ -214,7 +214,7 @@ class ClaudeStreamRenderer
     command = data["command"]?.try(&.as_s) || ""
 
     result = String::Builder.new
-    result << "\n#{indent}  Command: ".colorize(:cyan).to_s
+    result << "\n#{indent}  ⚡ ".colorize(:cyan).to_s
     result << command.colorize(:white).to_s
     result.to_s
   end
@@ -226,7 +226,7 @@ class ClaudeStreamRenderer
     data.as_h.each do |key, value|
       next if count >= 3  # Limit to first 3 fields
 
-      result << "\n#{indent}  #{key}: ".colorize(:cyan).to_s
+      result << "\n#{indent}  🔹 #{key}: ".colorize(:cyan).to_s
 
       if value.as_s?
         str = value.as_s
@@ -276,9 +276,9 @@ class ClaudeStreamRenderer
     when "init"
       model = data["model"]?.try(&.as_s)
       session_id = data["session_id"]?.try(&.as_s)
-      @output.puts "🚀 Claude initialized".colorize(:green).bold
-      @output.puts "   Model: #{model}".colorize(:cyan)
-      @output.puts "   Session: #{session_id}".colorize(:dark_gray)
+      @output.puts "🚀 Claude initialized".colorize(:green)
+      @output.puts "   🤖 Model: #{model}".colorize(:cyan)
+      @output.puts "   🆔 Session: #{session_id}".colorize(:dark_gray)
       @output.puts
     end
   end
@@ -319,7 +319,7 @@ class ClaudeStreamRenderer
       tool_id = content_block["id"]?.try(&.as_s)
       @output.puts if !@current_text.empty?
       @output.puts
-      @output.puts "#{indent}▶ Tool: #{@tool_name}".colorize(:yellow).bold
+      @output.puts "#{indent}🔧 #{@tool_name}".colorize(:yellow)
       @tool_input_buffer = String::Builder.new
     when "text"
       @in_tool_use = false
@@ -361,7 +361,7 @@ class ClaudeStreamRenderer
     content = data["content"]?
 
     if is_error
-      @output.puts "#{indent}  ✗ Error".colorize(:red).bold
+      @output.puts "#{indent}  ❌ Error".colorize(:red)
       if content
         content.as_a.each do |item|
           if item["type"]? == "text"
@@ -374,7 +374,7 @@ class ClaudeStreamRenderer
         end
       end
     else
-      @output.puts "#{indent}  ✓ Success".colorize(:green).bold
+      @output.puts "#{indent}  ✅ Success".colorize(:green)
       if content
         content.as_a.each do |item|
           if item["type"]? == "text"
@@ -387,11 +387,11 @@ class ClaudeStreamRenderer
                 truncated = line.size > 100 ? line[0..100] + "..." : line
                 @output.puts "#{indent}    #{truncated}".colorize(:dark_gray)
               end
-              @output.puts "#{indent}    ... (#{lines.size - 8} more lines)".colorize(:dark_gray)
+              @output.puts "#{indent}    📄 (#{lines.size - 8} more lines)".colorize(:dark_gray)
             elsif text.size > 500
               # Single long line
               @output.puts "#{indent}    #{text[0..500]}...".colorize(:dark_gray)
-              @output.puts "#{indent}    (#{text.size} chars total)".colorize(:dark_gray)
+              @output.puts "#{indent}    📏 (#{text.size} chars total)".colorize(:dark_gray)
             else
               # Show all content
               lines.each do |line|
@@ -410,7 +410,7 @@ class ClaudeStreamRenderer
     return unless content
 
     @output.puts
-    @output.puts "👤 User:".colorize(:blue).bold
+    @output.puts "👤 User:".colorize(:blue)
     if content.as_s?
       @output.puts "   #{content.as_s}".colorize(:white)
     elsif content.as_a?
