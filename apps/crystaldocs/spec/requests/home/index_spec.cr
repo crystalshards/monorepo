@@ -10,7 +10,7 @@ describe Home::Index do
       .description("Database ORM")
       .total_views(50)
 
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("CrystalDocs")
@@ -23,7 +23,7 @@ describe Home::Index do
     DocVersionFactory.create &.doc_id(DocQuery.new.first.id)
     DocVersionFactory.create &.doc_id(DocQuery.new.last.id)
 
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("2")
@@ -38,7 +38,7 @@ describe Home::Index do
     old_doc = DocFactory.create &.package_name("old-shard")
       .last_updated_at(Time.utc - 30.days)
 
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("Recently Updated")
@@ -51,14 +51,14 @@ describe Home::Index do
     unpopular_doc = DocFactory.create &.package_name("unpopular-shard")
       .total_views(10)
 
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("Popular Packages")
   end
 
   it "handles empty state gracefully" do
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("No documentation available yet")

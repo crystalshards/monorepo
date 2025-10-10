@@ -5,7 +5,7 @@ describe Posts::Index do
     published_post = PostFactory.create &.published_at(Time.utc - 1.day)
     unpublished_post = PostFactory.create &.published_at(nil)
 
-    response = ApiClient.exec(Posts::Index)
+    response = BrowserClient.exec(Posts::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(published_post.title)
@@ -31,14 +31,14 @@ describe Posts::Index do
     end
 
     # First page should show 20 posts
-    response = ApiClient.exec(Posts::Index)
+    response = BrowserClient.exec(Posts::Index)
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("Post 0")
     response.body.should contain("Post 19")
     response.body.should_not contain("Post 24")
 
     # Second page should show remaining posts
-    response = ApiClient.exec(Posts::Index, page: 2)
+    response = BrowserClient.exec(Posts::Index, page: 2)
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("Post 20")
     response.body.should contain("Post 24")
@@ -49,7 +49,7 @@ describe Posts::Index do
     crystal_post = PostFactory.create &.tags(["crystal", "tutorial"]).published_at(Time.utc - 1.day)
     ruby_post = PostFactory.create &.tags(["ruby", "tutorial"]).published_at(Time.utc - 2.days)
 
-    response = ApiClient.exec(Posts::Index, tag: "crystal")
+    response = BrowserClient.exec(Posts::Index, tag: "crystal")
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(crystal_post.title)
@@ -60,7 +60,7 @@ describe Posts::Index do
     matching_post = PostFactory.create &.title("Building Web Apps").published_at(Time.utc - 1.day)
     non_matching_post = PostFactory.create &.title("Database Tutorial").published_at(Time.utc - 2.days)
 
-    response = ApiClient.exec(Posts::Index, search: "Web Apps")
+    response = BrowserClient.exec(Posts::Index, search: "Web Apps")
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(matching_post.title)
@@ -79,7 +79,7 @@ describe Posts::Index do
       post.published_at(Time.utc - 2.days)
     end
 
-    response = ApiClient.exec(Posts::Index, search: "web frameworks")
+    response = BrowserClient.exec(Posts::Index, search: "web frameworks")
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(matching_post.title)
@@ -90,7 +90,7 @@ describe Posts::Index do
     older_post = PostFactory.create &.title("Old Post").published_at(Time.utc - 5.days)
     newer_post = PostFactory.create &.title("New Post").published_at(Time.utc - 1.day)
 
-    response = ApiClient.exec(Posts::Index)
+    response = BrowserClient.exec(Posts::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     # Newer post should appear before older post in HTML
@@ -108,7 +108,7 @@ describe Posts::Index do
       p.tags(["crystal", "tutorial"])
     end
 
-    response = ApiClient.exec(Posts::Index)
+    response = BrowserClient.exec(Posts::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(post.title)
@@ -124,7 +124,7 @@ describe Posts::Index do
       p.published_at(Time.utc - 1.day)
     end
 
-    response = ApiClient.exec(Posts::Index)
+    response = BrowserClient.exec(Posts::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("This is a short excerpt")
@@ -133,7 +133,7 @@ describe Posts::Index do
   it "includes newsletter signup form" do
     PostFactory.create &.published_at(Time.utc - 1.day)
 
-    response = ApiClient.exec(Posts::Index)
+    response = BrowserClient.exec(Posts::Index)
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("newsletter")

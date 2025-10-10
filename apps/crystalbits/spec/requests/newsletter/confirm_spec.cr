@@ -8,7 +8,7 @@ describe Newsletter::Confirm do
       s.confirmation_token("valid-token")
     end
 
-    response = ApiClient.exec(Newsletter::Confirm.with("valid-token"))
+    response = BrowserClient.exec(Newsletter::Confirm.with("valid-token"))
 
     response.status.should eq(HTTP::Status.new(200))
     subscriber.reload
@@ -23,7 +23,7 @@ describe Newsletter::Confirm do
       s.confirmation_token("valid-token")
     end
 
-    response = ApiClient.exec(Newsletter::Confirm.with("valid-token"))
+    response = BrowserClient.exec(Newsletter::Confirm.with("valid-token"))
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("You're Subscribed!")
@@ -55,7 +55,7 @@ describe Newsletter::Confirm do
     end
 
     before = Time.utc
-    ApiClient.exec(Newsletter::Confirm.with("valid-token"))
+    BrowserClient.exec(Newsletter::Confirm.with("valid-token"))
     after = Time.utc
 
     subscriber.reload
@@ -70,7 +70,7 @@ describe Newsletter::Confirm do
       s.confirmation_token("valid-token")
     end
 
-    ApiClient.exec(Newsletter::Confirm.with("valid-token"))
+    BrowserClient.exec(Newsletter::Confirm.with("valid-token"))
 
     subscriber.reload
     subscriber.confirmation_token.should be_nil

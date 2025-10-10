@@ -2,7 +2,7 @@ require "../../spec_helper"
 
 describe Home::Index do
   it "renders homepage successfully" do
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("CrystalShards")
@@ -12,7 +12,7 @@ describe Home::Index do
   it "displays total shard count" do
     ShardFactory.create_pair
 
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("2")
@@ -24,7 +24,7 @@ describe Home::Index do
     shard2 = ShardFactory.create &.name("less-popular").github_stars(50)
     shard3 = ShardFactory.create &.name("unpopular").github_stars(10)
 
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("popular-shard")
@@ -35,7 +35,7 @@ describe Home::Index do
     old_shard = ShardFactory.create &.name("old-shard").updated_at(2.days.ago)
     new_shard = ShardFactory.create &.name("new-shard").updated_at(1.hour.ago)
 
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("new-shard")
@@ -43,7 +43,7 @@ describe Home::Index do
   end
 
   it "includes search bar" do
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("search-input")
@@ -51,7 +51,7 @@ describe Home::Index do
   end
 
   it "handles empty state gracefully" do
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("0")
@@ -64,7 +64,7 @@ describe Home::Index do
     DownloadFactory.create &.shard_version_id(version.id).shard_id(shard.id)
     DownloadFactory.create &.shard_version_id(version.id).shard_id(shard.id)
 
-    response = ApiClient.exec(Home::Index)
+    response = BrowserClient.exec(Home::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("2")

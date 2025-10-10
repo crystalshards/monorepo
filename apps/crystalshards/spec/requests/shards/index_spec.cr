@@ -2,7 +2,7 @@ require "../../spec_helper"
 
 describe Shards::Index do
   it "renders browse page successfully" do
-    response = ApiClient.exec(Shards::Index)
+    response = BrowserClient.exec(Shards::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("Browse Shards")
@@ -12,7 +12,7 @@ describe Shards::Index do
     shard1 = ShardFactory.create &.name("http-client")
     shard2 = ShardFactory.create &.name("json-parser")
 
-    response = ApiClient.exec(Shards::Index)
+    response = BrowserClient.exec(Shards::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("http-client")
@@ -23,7 +23,7 @@ describe Shards::Index do
     shard1 = ShardFactory.create &.name("http-client")
     shard2 = ShardFactory.create &.name("database-orm")
 
-    response = ApiClient.exec(Shards::Index.with(query: "http"))
+    response = BrowserClient.exec(Shards::Index.with(query: "http"))
 
     response.status_code.should eq(200)
     response.body.should contain("http-client")
@@ -37,7 +37,7 @@ describe Shards::Index do
     shard2 = ShardFactory.create &.name("other-lib")
       .description("Database connector")
 
-    response = ApiClient.exec(Shards::Index.with(query: "HTTP"))
+    response = BrowserClient.exec(Shards::Index.with(query: "HTTP"))
 
     response.status_code.should eq(200)
     response.body.should contain("awesome-lib")
@@ -47,7 +47,7 @@ describe Shards::Index do
   it "shows empty state when no shards found" do
     ShardFactory.create &.name("existing-shard")
 
-    response = ApiClient.exec(Shards::Index.with(query: "nonexistent"))
+    response = BrowserClient.exec(Shards::Index.with(query: "nonexistent"))
 
     response.status_code.should eq(200)
     response.body.should contain("No shards found matching your search")
@@ -59,7 +59,7 @@ describe Shards::Index do
       ShardFactory.create &.name("test-shard-#{i}")
     end
 
-    response = ApiClient.exec(Shards::Index.with(query: "test"))
+    response = BrowserClient.exec(Shards::Index.with(query: "test"))
 
     response.status_code.should eq(200)
     response.body.should contain("Found 3 shards")
@@ -70,7 +70,7 @@ describe Shards::Index do
       ShardFactory.create &.name("shard-#{i}")
     end
 
-    response = ApiClient.exec(Shards::Index.with(page: 1))
+    response = BrowserClient.exec(Shards::Index.with(page: 1))
 
     response.status_code.should eq(200)
     response.body.should contain("Next")
@@ -82,7 +82,7 @@ describe Shards::Index do
       ShardFactory.create &.name("shard-#{i}")
     end
 
-    response = ApiClient.exec(Shards::Index.with(page: 2))
+    response = BrowserClient.exec(Shards::Index.with(page: 2))
 
     response.status_code.should eq(200)
     response.body.should contain("Previous")
@@ -95,7 +95,7 @@ describe Shards::Index do
     new_shard = ShardFactory.create &.name("new-shard")
       .updated_at(1.hour.ago)
 
-    response = ApiClient.exec(Shards::Index)
+    response = BrowserClient.exec(Shards::Index)
 
     response.status_code.should eq(200)
     new_position = response.body.index("new-shard")
@@ -107,7 +107,7 @@ describe Shards::Index do
   end
 
   it "includes search bar with current query" do
-    response = ApiClient.exec(Shards::Index.with(query: "http"))
+    response = BrowserClient.exec(Shards::Index.with(query: "http"))
 
     response.status_code.should eq(200)
     response.body.should contain("value=\"http\"")
@@ -120,7 +120,7 @@ describe Shards::Index do
       .total_downloads(100)
       .license("MIT")
 
-    response = ApiClient.exec(Shards::Index)
+    response = BrowserClient.exec(Shards::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("test-shard")
@@ -135,7 +135,7 @@ describe Shards::Index do
       unpopular = ShardFactory.create &.name("unpopular").github_stars(10)
       popular = ShardFactory.create &.name("popular").github_stars(1000)
 
-      response = ApiClient.exec(Shards::Index.with(sort: "popular"))
+      response = BrowserClient.exec(Shards::Index.with(sort: "popular"))
 
       response.status_code.should eq(200)
       popular_index = response.body.index("popular")
@@ -151,7 +151,7 @@ describe Shards::Index do
       a_shard = ShardFactory.create &.name("alpha-shard")
       m_shard = ShardFactory.create &.name("middle-shard")
 
-      response = ApiClient.exec(Shards::Index.with(sort: "name"))
+      response = BrowserClient.exec(Shards::Index.with(sort: "name"))
 
       response.status_code.should eq(200)
       alpha_index = response.body.index("alpha-shard")
@@ -169,7 +169,7 @@ describe Shards::Index do
       low_downloads = ShardFactory.create &.name("low-downloads").total_downloads(100)
       high_downloads = ShardFactory.create &.name("high-downloads").total_downloads(10000)
 
-      response = ApiClient.exec(Shards::Index.with(sort: "downloads"))
+      response = BrowserClient.exec(Shards::Index.with(sort: "downloads"))
 
       response.status_code.should eq(200)
       high_index = response.body.index("high-downloads")
@@ -181,7 +181,7 @@ describe Shards::Index do
     end
 
     it "defaults to sorting by recently updated" do
-      response = ApiClient.exec(Shards::Index)
+      response = BrowserClient.exec(Shards::Index)
 
       response.status_code.should eq(200)
       response.body.should contain("Recently Updated")
@@ -194,7 +194,7 @@ describe Shards::Index do
       apache_shard = ShardFactory.create &.name("apache-shard").license("Apache-2.0")
       bsd_shard = ShardFactory.create &.name("bsd-shard").license("BSD-3-Clause")
 
-      response = ApiClient.exec(Shards::Index.with(license: "MIT"))
+      response = BrowserClient.exec(Shards::Index.with(license: "MIT"))
 
       response.status_code.should eq(200)
       response.body.should contain("mit-shard")
@@ -207,7 +207,7 @@ describe Shards::Index do
       medium_stars = ShardFactory.create &.name("medium-stars").github_stars(75)
       high_stars = ShardFactory.create &.name("high-stars").github_stars(200)
 
-      response = ApiClient.exec(Shards::Index.with(min_stars: 50))
+      response = BrowserClient.exec(Shards::Index.with(min_stars: 50))
 
       response.status_code.should eq(200)
       response.body.should_not contain("low-stars")
@@ -219,7 +219,7 @@ describe Shards::Index do
       with_docs = ShardFactory.create &.name("with-docs").documentation_url("https://docs.example.com")
       without_docs = ShardFactory.create &.name("without-docs").documentation_url(nil)
 
-      response = ApiClient.exec(Shards::Index.with(has_docs: true))
+      response = BrowserClient.exec(Shards::Index.with(has_docs: true))
 
       response.status_code.should eq(200)
       response.body.should contain("with-docs")
@@ -247,7 +247,7 @@ describe Shards::Index do
         .github_stars(100)
         .documentation_url(nil)
 
-      response = ApiClient.exec(Shards::Index.with(
+      response = BrowserClient.exec(Shards::Index.with(
         license: "MIT",
         min_stars: 50,
         has_docs: true
@@ -263,7 +263,7 @@ describe Shards::Index do
     it "shows clear filters button when filters active" do
       ShardFactory.create &.name("test")
 
-      response = ApiClient.exec(Shards::Index.with(license: "MIT"))
+      response = BrowserClient.exec(Shards::Index.with(license: "MIT"))
 
       response.status_code.should eq(200)
       response.body.should contain("Clear Filters")
@@ -278,7 +278,7 @@ describe Shards::Index do
         ShardFactory.create &.name("apache-#{i}").license("Apache-2.0")
       end
 
-      response = ApiClient.exec(Shards::Index.with(license: "MIT", page: 2))
+      response = BrowserClient.exec(Shards::Index.with(license: "MIT", page: 2))
 
       response.status_code.should eq(200)
       response.body.should contain("Page 2")
@@ -300,7 +300,7 @@ describe Shards::Index do
         .license("Apache-2.0")
         .github_stars(100)
 
-      response = ApiClient.exec(Shards::Index.with(
+      response = BrowserClient.exec(Shards::Index.with(
         query: "crystal",
         license: "MIT",
         min_stars: 50
@@ -325,7 +325,7 @@ describe Shards::Index do
         .license("MIT")
         .total_downloads(5000)
 
-      response = ApiClient.exec(Shards::Index.with(
+      response = BrowserClient.exec(Shards::Index.with(
         license: "MIT",
         sort: "downloads"
       ))
@@ -346,7 +346,7 @@ describe Shards::Index do
 
   describe "filters UI" do
     it "displays filters section" do
-      response = ApiClient.exec(Shards::Index)
+      response = BrowserClient.exec(Shards::Index)
 
       response.status_code.should eq(200)
       response.body.should contain("Sort by:")
@@ -359,7 +359,7 @@ describe Shards::Index do
     it "preserves selected sort option" do
       ShardFactory.create &.name("test")
 
-      response = ApiClient.exec(Shards::Index.with(sort: "popular"))
+      response = BrowserClient.exec(Shards::Index.with(sort: "popular"))
 
       response.status_code.should eq(200)
       response.body.should contain("Most Popular")
@@ -369,7 +369,7 @@ describe Shards::Index do
     it "preserves selected license filter" do
       ShardFactory.create &.name("test")
 
-      response = ApiClient.exec(Shards::Index.with(license: "MIT"))
+      response = BrowserClient.exec(Shards::Index.with(license: "MIT"))
 
       response.status_code.should eq(200)
       response.body.should contain("MIT")
@@ -378,7 +378,7 @@ describe Shards::Index do
     it "preserves checked has_docs checkbox" do
       ShardFactory.create &.name("test").documentation_url("https://docs.example.com")
 
-      response = ApiClient.exec(Shards::Index.with(has_docs: true))
+      response = BrowserClient.exec(Shards::Index.with(has_docs: true))
 
       response.status_code.should eq(200)
       response.body.should contain("checked")

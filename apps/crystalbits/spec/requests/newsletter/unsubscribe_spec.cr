@@ -9,7 +9,7 @@ describe Newsletter::Unsubscribe do
       s.unsubscribed_at(nil)
     end
 
-    response = ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    response = BrowserClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
     response.status.should eq(HTTP::Status.new(200))
     subscriber.reload
@@ -23,7 +23,7 @@ describe Newsletter::Unsubscribe do
       s.unsubscribed_at(nil)
     end
 
-    response = ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    response = BrowserClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
     response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("You've Been Unsubscribed")
@@ -42,7 +42,7 @@ describe Newsletter::Unsubscribe do
       s.unsubscribed_at(Time.utc - 1.day)
     end
 
-    response = ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    response = BrowserClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
     response.status.should eq(HTTP::Status.new(302))
   end
@@ -55,7 +55,7 @@ describe Newsletter::Unsubscribe do
     end
 
     before = Time.utc
-    ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    BrowserClient.exec(Newsletter::Unsubscribe.with("valid-token"))
     after = Time.utc
 
     subscriber.reload
@@ -72,7 +72,7 @@ describe Newsletter::Unsubscribe do
       s.unsubscribed_at(nil)
     end
 
-    ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    BrowserClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
     # Subscriber still exists
     found = SubscriberQuery.new.by_email("test@example.com").first
