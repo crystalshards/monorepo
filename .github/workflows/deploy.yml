@@ -186,16 +186,11 @@ jobs:
         echo "Step 3/3: Deploying full infrastructure..."
         terraform init
 
-        # Plan infrastructure changes with forced secret replacement
-        # Force-replace secrets to apply database credential fix from commit 6133edc
-        # The lifecycle.replace_triggered_by blocks don't trigger on first deployment
-        # because data source IDs are stable. This is a one-time fix.
+        # Plan infrastructure changes
+        # Pod templates include secret-hash annotation, so pods automatically restart
+        # when secret values change. No manual -replace flags needed.
         terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
                       -var="region=us-central1" \
-                      -replace='module.applications.module.crystalshards.kubernetes_secret.crystalshards_secrets' \
-                      -replace='module.applications.module.crystaldocs.kubernetes_secret.crystaldocs_secrets' \
-                      -replace='module.applications.module.crystalgigs.kubernetes_secret.crystalgigs_secrets' \
-                      -replace='module.applications.module.crystalbits.kubernetes_secret.crystalbits_secrets' \
                       -out=tfplan
 
         # Apply changes

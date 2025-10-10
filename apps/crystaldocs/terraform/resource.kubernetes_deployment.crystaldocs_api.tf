@@ -31,6 +31,7 @@ resource "kubernetes_deployment" "crystaldocs_api" {
         }
         annotations = {
           "crystalshards.org/image-tag" = var.image_tag
+          "crystalshards.org/secret-hash" = sha256(jsonencode(kubernetes_secret.crystaldocs_secrets.data))
         }
       }
 

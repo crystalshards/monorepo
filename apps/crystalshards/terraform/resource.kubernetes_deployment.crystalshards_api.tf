@@ -30,7 +30,8 @@ resource "kubernetes_deployment" "crystalshards_api" {
           component = "api"
         }
         annotations = {
-          "crystalshards.org/image-tag" = var.image_tag
+          "crystalshards.org/image-tag"   = var.image_tag
+          "crystalshards.org/secret-hash" = sha256(jsonencode(kubernetes_secret.crystalshards_secrets.data))
         }
       }
 
