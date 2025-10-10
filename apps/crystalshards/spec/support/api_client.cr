@@ -10,7 +10,7 @@ class ApiClient < Lucky::BaseHTTPClient
     end
   end
 
-  def self.auth(user : User, json: Bool = false)
+  def self.auth(user : User, json : Bool = false)
     new(json_content: json).headers("Authorization": UserToken.generate(user))
   end
 
