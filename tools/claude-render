@@ -86,7 +86,7 @@ class ClaudeStreamRenderer
       end
     rescue
       # If parsing fails, return the raw input
-      input.size > 2000 ? "#{input[0..2000]}... (#{input.size} chars)" : input
+      input
     end
   end
 
@@ -131,22 +131,11 @@ class ClaudeStreamRenderer
     result << "\n#{indent}  🔄 ".colorize(:dark_gray).to_s
     result << (replace_all ? "Replace All" : "Replace First").colorize(:yellow).to_s
 
-    # Show truncated old/new strings
-    if old.size > 1000
-      result << "\n#{indent}  ➖ ".colorize(:red).to_s
-      result << "\"#{old[0..1000]}...\" (#{old.size} chars)".colorize(:red).to_s
-    else
-      result << "\n#{indent}  ➖ ".colorize(:red).to_s
-      result << "\"#{old}\"".colorize(:red).to_s
-    end
+    result << "\n#{indent}  ➖ ".colorize(:red).to_s
+    result << "\"#{old}\"".colorize(:red).to_s
 
-    if new_str.size > 1000
-      result << "\n#{indent}  ➕ ".colorize(:green).to_s
-      result << "\"#{new_str[0..1000]}...\" (#{new_str.size} chars)".colorize(:green).to_s
-    else
-      result << "\n#{indent}  ➕ ".colorize(:green).to_s
-      result << "\"#{new_str}\"".colorize(:green).to_s
-    end
+    result << "\n#{indent}  ➕ ".colorize(:green).to_s
+    result << "\"#{new_str}\"".colorize(:green).to_s
 
     result.to_s
   end
@@ -220,21 +209,14 @@ class ClaudeStreamRenderer
   end
 
   private def format_generic_tool(data : JSON::Any) : String
-    # For unknown tools, show key fields
+    # For unknown tools, show all fields
     result = String::Builder.new
-    count = 0
     data.as_h.each do |key, value|
-      next if count >= 3  # Limit to first 3 fields
-
       result << "\n#{indent}  🔹 #{key}: ".colorize(:cyan).to_s
 
       if value.as_s?
         str = value.as_s
-        if str.size > 300
-          result << "#{str[0..300]}... (#{str.size} chars)".colorize(:dark_gray).to_s
-        else
-          result << str.colorize(:white).to_s
-        end
+        result << str.colorize(:white).to_s
       elsif value.as_i?
         result << value.as_i.to_s.colorize(:white).to_s
       elsif value.as_bool?
@@ -244,8 +226,6 @@ class ClaudeStreamRenderer
       elsif value.as_h?
         result << "{#{value.as_h.size} fields}".colorize(:dark_gray).to_s
       end
-
-      count += 1
     end
     result.to_s
   end
@@ -379,24 +359,10 @@ class ClaudeStreamRenderer
         content.as_a.each do |item|
           if item["type"]? == "text"
             text = item["text"]?.try(&.as_s) || ""
-            # Smart truncation for output
+            # Show all content
             lines = text.lines
-            if lines.size > 50
-              # Show first 30 lines, then summary
-              lines[0..29].each do |line|
-                truncated = line.size > 2000 ? line[0..2000] + "..." : line
-                @output.puts "#{indent}    #{truncated}".colorize(:dark_gray)
-              end
-              @output.puts "#{indent}    📄 (#{lines.size - 30} more lines)".colorize(:dark_gray)
-            elsif text.size > 5000
-              # Single long line
-              @output.puts "#{indent}    #{text[0..5000]}...".colorize(:dark_gray)
-              @output.puts "#{indent}    📏 (#{text.size} chars total)".colorize(:dark_gray)
-            else
-              # Show all content
-              lines.each do |line|
-                @output.puts "#{indent}    #{line}".colorize(:dark_gray)
-              end
+            lines.each do |line|
+              @output.puts "#{indent}    #{line}".colorize(:dark_gray)
             end
           end
         end
