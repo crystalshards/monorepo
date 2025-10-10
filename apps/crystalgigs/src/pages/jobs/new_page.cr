@@ -69,7 +69,7 @@ class Jobs::NewPage < MainLayout
           type: "text",
           name: "job:title",
           id: "job_title",
-          value: @operation.title.value,
+          value: @operation.title.value.to_s,
           placeholder: "e.g., Senior Crystal Developer",
           required: true
         )
@@ -87,7 +87,7 @@ class Jobs::NewPage < MainLayout
           type: "text",
           name: "job:company_name",
           id: "job_company_name",
-          value: @operation.company_name.value,
+          value: @operation.company_name.value.to_s,
           placeholder: "Your Company Inc.",
           required: true
         )
@@ -102,7 +102,7 @@ class Jobs::NewPage < MainLayout
           type: "url",
           name: "job:company_url",
           id: "job_company_url",
-          value: @operation.company_url.value,
+          value: @operation.company_url.value.to_s,
           placeholder: "https://yourcompany.com"
         )
         render_errors(@operation.company_url)
@@ -126,7 +126,7 @@ class Jobs::NewPage < MainLayout
           placeholder: "Describe the role, responsibilities, and requirements...",
           required: true
         ) do
-          text @operation.description.value
+          text @operation.description.value.to_s
         end
         render_errors(@operation.description)
         para class: "field-help" do
@@ -143,7 +143,7 @@ class Jobs::NewPage < MainLayout
             type: "text",
             name: "job:location",
             id: "job_location",
-            value: @operation.location.value,
+            value: @operation.location.value.to_s,
             placeholder: "San Francisco, CA"
           )
           render_errors(@operation.location)
@@ -198,7 +198,7 @@ class Jobs::NewPage < MainLayout
           type: "text",
           name: "job:tags_string",
           id: "job_tags_string",
-          value: @operation.tags_string.value,
+          value: @operation.tags_string.value.to_s,
           placeholder: "Crystal, PostgreSQL, Docker, AWS"
         )
         para class: "field-help" do
@@ -227,7 +227,7 @@ class Jobs::NewPage < MainLayout
             type: "number",
             name: "job:salary_min",
             id: "job_salary_min",
-            value: @operation.salary_min.value,
+            value: @operation.salary_min.value.to_s,
             placeholder: "80000",
             min: "0",
             step: "1000"
@@ -243,7 +243,7 @@ class Jobs::NewPage < MainLayout
             type: "number",
             name: "job:salary_max",
             id: "job_salary_max",
-            value: @operation.salary_max.value,
+            value: @operation.salary_max.value.to_s,
             placeholder: "120000",
             min: "0",
             step: "1000"
@@ -295,7 +295,7 @@ class Jobs::NewPage < MainLayout
           type: "url",
           name: "job:apply_url",
           id: "job_apply_url",
-          value: @operation.apply_url.value,
+          value: @operation.apply_url.value.to_s,
           placeholder: "https://yourcompany.com/careers/apply"
         )
         render_errors(@operation.apply_url)
@@ -312,7 +312,7 @@ class Jobs::NewPage < MainLayout
           type: "email",
           name: "job:apply_email",
           id: "job_apply_email",
-          value: @operation.apply_email.value,
+          value: @operation.apply_email.value.to_s,
           placeholder: "jobs@yourcompany.com"
         )
         render_errors(@operation.apply_email)
