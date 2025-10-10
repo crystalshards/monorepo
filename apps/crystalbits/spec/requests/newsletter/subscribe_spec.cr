@@ -5,7 +5,10 @@ describe Newsletter::Subscribe do
     response = BrowserClient.exec(Newsletter::Subscribe, subscriber: {email: "test@example.com"})
 
     if response.status.to_i != 302
-      pp! response.status, response.headers, response.body[0..500]
+      puts "\n\n=== DEBUG: Response Status: #{response.status} ==="
+      puts "=== DEBUG: Full Response Body: ==="
+      puts response.body
+      puts "=== DEBUG: End Response Body ==="
     end
     response.status.should eq(HTTP::Status.new(302)) # Redirect
     subscriber = SubscriberQuery.new.by_email("test@example.com").first
