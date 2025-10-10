@@ -8,9 +8,9 @@ resource "kubernetes_secret" "crystaldocs_secrets" {
   data = {
     # CNPG creates a read-write service: <cluster-name>-rw
     # CNPG creates an app secret: <cluster-name>-app with username/password
-    # We use a data source to get the actual password from the CNPG-generated secret
-    # Format: postgresql://app:password@service:5432/database
-    database_url = "postgresql://app:${data.kubernetes_secret.crystaldocs_postgres_app.data["password"]}@crystaldocs-postgres-rw:5432/crystaldocs_production"
+    # We use a data source to get both username and password from the CNPG-generated secret
+    # Format: postgresql://username:password@service:5432/database
+    database_url = "postgresql://${data.kubernetes_secret.crystaldocs_postgres_app.data["username"]}:${data.kubernetes_secret.crystaldocs_postgres_app.data["password"]}@crystaldocs-postgres-rw:5432/crystaldocs_production"
 
     # MinIO credentials from operator-generated secret
     minio_endpoint    = "shared-storage-hl.infrastructure.svc.cluster.local:9000"
