@@ -197,7 +197,7 @@ jobs:
         echo "Getting cluster information..."
         terraform output cluster_name || true
         terraform output kubectl_config || true
-        terraform output load_balancer_ip || true
+        terraform output load_balancer_ip_command || true
 
     - name: Verify Deployment Health
       run: |
