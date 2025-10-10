@@ -1,4 +1,4 @@
-require "../workers_spec_helper"
+require "../spec_helper"
 
 describe IndexShardWorker do
   Spec.before_each do
