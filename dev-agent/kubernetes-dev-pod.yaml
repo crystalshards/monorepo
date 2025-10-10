@@ -84,7 +84,7 @@ spec:
         - name: workspaces
           mountPath: /workspaces
         - name: prod-kubeconfig
-          mountPath: /root/.kube
+          mountPath: /home/coder/.kube
           readOnly: true
       resources:
         requests:
