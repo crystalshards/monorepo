@@ -8,7 +8,7 @@ describe Posts::Show do
       p.published_at(Time.utc - 1.day)
     end
 
-    response = AppClient.exec(Posts::Show.with(post.slug))
+    response = ApiClient.exec(Posts::Show.with(post.slug))
 
     response.should send_http_status(200)
     response.body.should contain(post.title)
@@ -21,7 +21,7 @@ describe Posts::Show do
       p.published_at(Time.utc - 1.day)
     end
 
-    AppClient.exec(Posts::Show.with(post.slug))
+    ApiClient.exec(Posts::Show.with(post.slug))
 
     post.reload
     post.view_count.should eq(11)
@@ -34,7 +34,7 @@ describe Posts::Show do
     end
 
     3.times do
-      AppClient.exec(Posts::Show.with(post.slug))
+      ApiClient.exec(Posts::Show.with(post.slug))
     end
 
     post.reload
@@ -49,7 +49,7 @@ describe Posts::Show do
       p.view_count(100)
     end
 
-    response = AppClient.exec(Posts::Show.with(post.slug))
+    response = ApiClient.exec(Posts::Show.with(post.slug))
 
     response.should send_http_status(200)
     response.body.should contain(post.author_name)
@@ -62,7 +62,7 @@ describe Posts::Show do
       p.published_at(Time.utc - 1.day)
     end
 
-    response = AppClient.exec(Posts::Show.with(post.slug))
+    response = ApiClient.exec(Posts::Show.with(post.slug))
 
     response.should send_http_status(200)
     response.body.should contain("<h1>Heading</h1>")
@@ -75,7 +75,7 @@ describe Posts::Show do
       p.published_at(Time.utc - 1.day)
     end
 
-    response = AppClient.exec(Posts::Show.with(post.slug))
+    response = ApiClient.exec(Posts::Show.with(post.slug))
 
     response.should send_http_status(200)
     response.body.should contain("crystal")
@@ -87,7 +87,7 @@ describe Posts::Show do
   it "includes newsletter CTA" do
     post = PostFactory.create &.published_at(Time.utc - 1.day)
 
-    response = AppClient.exec(Posts::Show.with(post.slug))
+    response = ApiClient.exec(Posts::Show.with(post.slug))
 
     response.should send_http_status(200)
     response.body.should contain("Enjoyed this post")
@@ -98,13 +98,13 @@ describe Posts::Show do
     post = PostFactory.create &.published_at(nil)
 
     expect_raises(Avram::RecordNotFoundError) do
-      AppClient.exec(Posts::Show.with(post.slug))
+      ApiClient.exec(Posts::Show.with(post.slug))
     end
   end
 
   it "returns 404 for non-existent post" do
     expect_raises(Avram::RecordNotFoundError) do
-      AppClient.exec(Posts::Show.with("non-existent-slug"))
+      ApiClient.exec(Posts::Show.with("non-existent-slug"))
     end
   end
 
@@ -113,7 +113,7 @@ describe Posts::Show do
       p.published_at(Time.utc(2025, 3, 15))
     end
 
-    response = AppClient.exec(Posts::Show.with(post.slug))
+    response = ApiClient.exec(Posts::Show.with(post.slug))
 
     response.should send_http_status(200)
     response.body.should contain("March 15, 2025")

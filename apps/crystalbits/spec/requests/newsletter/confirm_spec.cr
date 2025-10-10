@@ -8,7 +8,7 @@ describe Newsletter::Confirm do
       s.confirmation_token("valid-token")
     end
 
-    response = AppClient.exec(Newsletter::Confirm.with("valid-token"))
+    response = ApiClient.exec(Newsletter::Confirm.with("valid-token"))
 
     response.should send_http_status(200)
     subscriber.reload
@@ -23,7 +23,7 @@ describe Newsletter::Confirm do
       s.confirmation_token("valid-token")
     end
 
-    response = AppClient.exec(Newsletter::Confirm.with("valid-token"))
+    response = ApiClient.exec(Newsletter::Confirm.with("valid-token"))
 
     response.should send_http_status(200)
     response.body.should contain("You're Subscribed!")
@@ -31,7 +31,7 @@ describe Newsletter::Confirm do
   end
 
   it "redirects for invalid token" do
-    response = AppClient.exec(Newsletter::Confirm.with("invalid-token"))
+    response = ApiClient.exec(Newsletter::Confirm.with("invalid-token"))
 
     response.should send_http_status(302)
   end
@@ -43,7 +43,7 @@ describe Newsletter::Confirm do
       s.confirmed_at(Time.utc)
     end
 
-    response = AppClient.exec(Newsletter::Confirm.with("token"))
+    response = ApiClient.exec(Newsletter::Confirm.with("token"))
 
     response.should send_http_status(302)
   end
@@ -55,7 +55,7 @@ describe Newsletter::Confirm do
     end
 
     before = Time.utc
-    AppClient.exec(Newsletter::Confirm.with("valid-token"))
+    ApiClient.exec(Newsletter::Confirm.with("valid-token"))
     after = Time.utc
 
     subscriber.reload
@@ -70,7 +70,7 @@ describe Newsletter::Confirm do
       s.confirmation_token("valid-token")
     end
 
-    AppClient.exec(Newsletter::Confirm.with("valid-token"))
+    ApiClient.exec(Newsletter::Confirm.with("valid-token"))
 
     subscriber.reload
     subscriber.confirmation_token.should be_nil

@@ -9,7 +9,7 @@ describe Newsletter::Unsubscribe do
       s.unsubscribed_at(nil)
     end
 
-    response = AppClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    response = ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
     response.should send_http_status(200)
     subscriber.reload
@@ -23,14 +23,14 @@ describe Newsletter::Unsubscribe do
       s.unsubscribed_at(nil)
     end
 
-    response = AppClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    response = ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
     response.should send_http_status(200)
     response.body.should contain("You've Been Unsubscribed")
   end
 
   it "redirects for invalid token" do
-    response = AppClient.exec(Newsletter::Unsubscribe.with("invalid-token"))
+    response = ApiClient.exec(Newsletter::Unsubscribe.with("invalid-token"))
 
     response.should send_http_status(302)
   end
@@ -42,7 +42,7 @@ describe Newsletter::Unsubscribe do
       s.unsubscribed_at(Time.utc - 1.day)
     end
 
-    response = AppClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    response = ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
     response.should send_http_status(302)
   end
@@ -55,7 +55,7 @@ describe Newsletter::Unsubscribe do
     end
 
     before = Time.utc
-    AppClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
     after = Time.utc
 
     subscriber.reload
@@ -72,7 +72,7 @@ describe Newsletter::Unsubscribe do
       s.unsubscribed_at(nil)
     end
 
-    AppClient.exec(Newsletter::Unsubscribe.with("valid-token"))
+    ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
     # Subscriber still exists
     found = SubscriberQuery.new.by_email("test@example.com").first
