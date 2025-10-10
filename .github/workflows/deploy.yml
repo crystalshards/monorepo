@@ -210,9 +210,9 @@ jobs:
 
     - name: Configure kubectl
       run: |
-        # Get cluster name from Terraform (filter only the actual value)
+        # Get cluster name from Terraform using JSON output
         cd terraform
-        CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null | grep -v '::' | head -n1)
+        CLUSTER_NAME=$(terraform output -json cluster_name | jq -r '.')
         cd ..
 
         echo "Cluster name: $CLUSTER_NAME"
