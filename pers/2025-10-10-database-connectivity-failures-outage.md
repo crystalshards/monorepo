@@ -1,9 +1,9 @@
 # Post-Event Review: Database and Redis Connectivity Failures
 
 **Date:** 2025-10-10
-**Duration:** Ongoing (started ~03:50 UTC)
+**Duration:** Ongoing (started ~03:50 UTC, RBAC blocker identified at 09:17 UTC)
 **Severity:** P0 - Complete Platform Outage
-**Status:** INVESTIGATING
+**Status:** BLOCKED - AWAITING RBAC FIX
 
 ## Executive Summary
 
@@ -33,6 +33,13 @@ Following successful Terraform deployment (run 18395832256), all four applicatio
 - **2025-10-10 03:58:XX** - FINDING: Application secrets created with correct DATABASE_URL format
 - **2025-10-10 04:00:XX** - HYPOTHESIS: PostgreSQL pods or CNPG operator may not be running
 - **2025-10-10 04:02:XX** - Post-Event Review created (this document)
+- **2025-10-10 09:17:XX** - INVESTIGATION RESUMED: Second SRE agent assigned to issues #52 and #53
+- **2025-10-10 09:18:XX** - CONFIRMED: RBAC configuration exists in terraform/modules/agent/main.tf
+- **2025-10-10 09:19:XX** - CONFIRMED: Terraform refreshing agent RBAC resources in deployment runs
+- **2025-10-10 09:20:XX** - FINDING: Cannot verify if RBAC actually applied (Forbidden errors persist)
+- **2025-10-10 09:21:XX** - FINDING: Latest deployment (run 18399969384) failed due to health check timeouts
+- **2025-10-10 09:22:XX** - CREATED: Comprehensive diagnostic runbook posted to issue #52
+- **2025-10-10 09:23:XX** - STATUS: Investigation blocked until RBAC permissions manually applied
 
 ## Root Cause Analysis
 
@@ -131,9 +138,28 @@ database_url = "postgresql://app:${data.kubernetes_secret.crystalshards_postgres
    - Health checks timing out during database initialization
    - Readiness probes failing prematurely (60s initial delay may be too short)
 
-### RBAC Investigation Blocker
+### RBAC Investigation Blocker - CRITICAL FINDING
 
-**Agent Service Account Limitations** (`system:serviceaccount:claude:default`):
+**RBAC Configuration Status:**
+
+✅ **RBAC Resources Defined:**
+- Comprehensive ClusterRole defined in `terraform/modules/agent/main.tf` (lines 30-146)
+- Includes permissions for: pods, services, endpoints, CNPG clusters, Redis resources, secrets, logs, events, etc.
+- ClusterRoleBinding grants permissions to both `claude-agent` AND `default` service accounts in `claude` namespace
+
+✅ **Terraform Refreshing RBAC:**
+- GitHub Actions run 18399969384 shows Terraform refreshing these resources:
+  - `module.agent.kubernetes_cluster_role.claude_agent_role: Refreshing state...`
+  - `module.agent.kubernetes_service_account.claude_agent: Refreshing state...`
+  - `module.agent.kubernetes_cluster_role_binding.claude_agent_binding: Refreshing state...`
+
+❌ **RBAC Not Effective:**
+- Agent service account STILL lacks permissions despite Terraform refresh
+- Cannot verify if resources exist in cluster (Forbidden)
+- Cannot inspect any cluster resources across all namespaces
+- **Chicken-and-egg problem:** Need admin permissions to apply RBAC, which grants non-admin permissions
+
+**Agent Service Account Current Limitations** (`system:serviceaccount:claude:default`):
 
 ❌ Cannot execute:
 - `kubectl get pods -n <namespace>` - Forbidden
@@ -241,6 +267,16 @@ database_url = "postgresql://app:${data.kubernetes_secret.crystalshards_postgres
 ## Action Items
 
 ### Immediate (Requires Human Intervention - Cluster Access Needed)
+
+- [ ] **PRIORITY 0 - CRITICAL BLOCKER**: Apply RBAC permissions manually (MUST BE DONE FIRST):
+  ```bash
+  # Run with cluster admin permissions
+  kubectl apply -f /tmp/claude-agent-rbac.yaml
+  # OR
+  cd /workspaces/monorepo/terraform
+  terraform apply -target=module.agent
+  ```
+  **Without this, all other diagnostics are impossible. See GitHub issue #52 for full RBAC manifest.**
 
 - [ ] **PRIORITY 1**: Check PostgreSQL pod status in all namespaces:
   ```bash
