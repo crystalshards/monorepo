@@ -397,7 +397,7 @@ kubectl get servicemonitors --all-namespaces
 
 Never get blocked:
 
-1. Log errors to `.agent/errors.log`
+1. Use comments and issues on GitHub to track progress or report issues
 2. Try alternative approaches (3 attempts)
 3. Document in GitHub issue comments
 4. Continue with next task

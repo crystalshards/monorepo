@@ -47,7 +47,7 @@ spec:
         - name: ENVBUILDER_DEVCONTAINER_DIR
           value: /workspaces/monorepo/.devcontainer
         - name: ENVBUILDER_INIT_SCRIPT
-          value: "/workspaces/monorepo/develop.sh"
+          value: "/workspaces/monorepo/dev-agent/loop"
         - name: ENVBUILDER_WORKSPACE_FOLDER
           value: /workspaces/monorepo
         - name: ENVBUILDER_VERBOSE
