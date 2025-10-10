@@ -1,0 +1,135 @@
+name: Force Restart Pods
+
+on:
+  workflow_dispatch:
+    inputs:
+      namespace:
+        description: 'Namespace to restart (or "all" for all apps)'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - crystalshards
+          - crystaldocs
+          - crystalgigs
+          - crystalbits
+
+jobs:
+  restart-pods:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure kubectl
+        run: |
+          gcloud container clusters get-credentials crystalshards-cluster \
+            --region us-central1 \
+            --project ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Restart CrystalShards pods
+        if: inputs.namespace == 'all' || inputs.namespace == 'crystalshards'
+        run: |
+          echo "Restarting CrystalShards deployments..."
+          kubectl rollout restart deployment/crystalshards-api -n crystalshards
+          kubectl rollout restart deployment/crystalshards-workers -n crystalshards
+
+          echo "Waiting for rollouts to complete..."
+          kubectl rollout status deployment/crystalshards-api -n crystalshards --timeout=5m
+          kubectl rollout status deployment/crystalshards-workers -n crystalshards --timeout=5m
+
+          echo "CrystalShards pods restarted successfully"
+
+      - name: Restart CrystalDocs pods
+        if: inputs.namespace == 'all' || inputs.namespace == 'crystaldocs'
+        run: |
+          echo "Restarting CrystalDocs deployments..."
+          kubectl rollout restart deployment/crystaldocs-api -n crystaldocs
+
+          echo "Waiting for rollout to complete..."
+          kubectl rollout status deployment/crystaldocs-api -n crystaldocs --timeout=5m
+
+          echo "CrystalDocs pods restarted successfully"
+
+      - name: Restart CrystalGigs pods
+        if: inputs.namespace == 'all' || inputs.namespace == 'crystalgigs'
+        run: |
+          echo "Restarting CrystalGigs deployments..."
+          kubectl rollout restart deployment/crystalgigs-api -n crystalgigs
+
+          echo "Waiting for rollout to complete..."
+          kubectl rollout status deployment/crystalgigs-api -n crystalgigs --timeout=5m
+
+          echo "CrystalGigs pods restarted successfully"
+
+      - name: Restart CrystalBits pods
+        if: inputs.namespace == 'all' || inputs.namespace == 'crystalbits'
+        run: |
+          echo "Restarting CrystalBits deployments..."
+          kubectl rollout restart deployment/crystalbits-api -n crystalbits
+
+          echo "Waiting for rollout to complete..."
+          kubectl rollout status deployment/crystalbits-api -n crystalbits --timeout=5m
+
+          echo "CrystalBits pods restarted successfully"
+
+      - name: Check pod status
+        run: |
+          echo "=== Pod Status ==="
+          if [[ "${{ inputs.namespace }}" == "all" ]] || [[ "${{ inputs.namespace }}" == "crystalshards" ]]; then
+            echo "--- CrystalShards ---"
+            kubectl get pods -n crystalshards -o wide
+          fi
+
+          if [[ "${{ inputs.namespace }}" == "all" ]] || [[ "${{ inputs.namespace }}" == "crystaldocs" ]]; then
+            echo "--- CrystalDocs ---"
+            kubectl get pods -n crystaldocs -o wide
+          fi
+
+          if [[ "${{ inputs.namespace }}" == "all" ]] || [[ "${{ inputs.namespace }}" == "crystalgigs" ]]; then
+            echo "--- CrystalGigs ---"
+            kubectl get pods -n crystalgigs -o wide
+          fi
+
+          if [[ "${{ inputs.namespace }}" == "all" ]] || [[ "${{ inputs.namespace }}" == "crystalbits" ]]; then
+            echo "--- CrystalBits ---"
+            kubectl get pods -n crystalbits -o wide
+          fi
+
+      - name: Check health endpoints
+        run: |
+          echo "=== Health Check Results ==="
+
+          if [[ "${{ inputs.namespace }}" == "all" ]] || [[ "${{ inputs.namespace }}" == "crystalshards" ]]; then
+            echo "--- CrystalShards ---"
+            curl -s https://crystalshards.org/api/health | jq || echo "Health check failed"
+          fi
+
+          if [[ "${{ inputs.namespace }}" == "all" ]] || [[ "${{ inputs.namespace }}" == "crystaldocs" ]]; then
+            echo "--- CrystalDocs ---"
+            curl -s https://crystaldocs.org/api/health | jq || echo "Health check failed"
+          fi
+
+          if [[ "${{ inputs.namespace }}" == "all" ]] || [[ "${{ inputs.namespace }}" == "crystalgigs" ]]; then
+            echo "--- CrystalGigs ---"
+            curl -s https://crystalgigs.com/api/health | jq || echo "Health check failed"
+          fi
+
+          if [[ "${{ inputs.namespace }}" == "all" ]] || [[ "${{ inputs.namespace }}" == "crystalbits" ]]; then
+            echo "--- CrystalBits ---"
+            curl -s https://crystalbits.org/api/health | jq || echo "Health check failed"
+          fi
