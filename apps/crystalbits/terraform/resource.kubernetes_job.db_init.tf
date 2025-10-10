@@ -11,8 +11,8 @@ resource "kubernetes_job" "crystalbits_db_init" {
 
   wait_for_completion = true
   timeouts {
-    create = "5m"
-    update = "5m"
+    create = "15m"
+    update = "15m"
   }
 
   spec {
