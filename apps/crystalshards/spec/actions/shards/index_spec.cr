@@ -1,11 +1,11 @@
-require "../../../spec_helper"
+require "../../spec_helper"
 
-describe Shards::Browse::Index do
+describe Shards::Index do
   it "displays all shards by default" do
     shard1 = ShardFactory.create &.name("shard-one")
     shard2 = ShardFactory.create &.name("shard-two")
 
-    response = ApiClient.exec(Shards::Browse::Index)
+    response = ApiClient.exec(Shards::Index)
 
     response.status.should eq(200)
     response.body.should contain(shard1.name)
@@ -16,7 +16,7 @@ describe Shards::Browse::Index do
     http_shard = ShardFactory.create &.name("http-client")
     web_shard = ShardFactory.create &.name("web-framework")
 
-    response = ApiClient.exec(Shards::Browse::Index, query: "http")
+    response = ApiClient.exec(Shards::Index, query: "http")
 
     response.status.should eq(200)
     response.body.should contain(http_shard.name)
@@ -27,7 +27,7 @@ describe Shards::Browse::Index do
     mit_shard = ShardFactory.create &.name("mit-shard").license("MIT")
     apache_shard = ShardFactory.create &.name("apache-shard").license("Apache-2.0")
 
-    response = ApiClient.exec(Shards::Browse::Index, license: "MIT")
+    response = ApiClient.exec(Shards::Index, license: "MIT")
 
     response.status.should eq(200)
     response.body.should contain(mit_shard.name)
@@ -38,7 +38,7 @@ describe Shards::Browse::Index do
     popular = ShardFactory.create &.name("popular").github_stars(100)
     unpopular = ShardFactory.create &.name("unpopular").github_stars(10)
 
-    response = ApiClient.exec(Shards::Browse::Index, min_stars: "50")
+    response = ApiClient.exec(Shards::Index, min_stars: "50")
 
     response.status.should eq(200)
     response.body.should contain(popular.name)
@@ -49,7 +49,7 @@ describe Shards::Browse::Index do
     zebra = ShardFactory.create &.name("zebra")
     alpha = ShardFactory.create &.name("alpha")
 
-    response = ApiClient.exec(Shards::Browse::Index, sort: "name", direction: "asc")
+    response = ApiClient.exec(Shards::Index, sort: "name")
 
     response.status.should eq(200)
     alpha_pos = response.body.index(alpha.name)
@@ -63,8 +63,8 @@ describe Shards::Browse::Index do
   it "paginates results" do
     25.times { |i| ShardFactory.create &.name("shard-#{i}") }
 
-    page1 = ApiClient.exec(Shards::Browse::Index, page: "1")
-    page2 = ApiClient.exec(Shards::Browse::Index, page: "2")
+    page1 = ApiClient.exec(Shards::Index, page: "1")
+    page2 = ApiClient.exec(Shards::Index, page: "2")
 
     page1.status.should eq(200)
     page2.status.should eq(200)
@@ -79,7 +79,7 @@ describe Shards::Browse::Index do
     wrong_stars = ShardFactory.create &.name("http-lib").license("MIT").github_stars(10)
 
     response = ApiClient.exec(
-      Shards::Browse::Index,
+      Shards::Index,
       query: "http",
       license: "MIT",
       min_stars: "50"
@@ -95,7 +95,7 @@ describe Shards::Browse::Index do
   it "shows empty state when no results" do
     ShardFactory.create &.name("existing-shard")
 
-    response = ApiClient.exec(Shards::Browse::Index, query: "nonexistent")
+    response = ApiClient.exec(Shards::Index, query: "nonexistent")
 
     response.status.should eq(200)
     response.body.should contain("No shards found")
@@ -104,7 +104,7 @@ describe Shards::Browse::Index do
   it "shows total count in header" do
     3.times { ShardFactory.create }
 
-    response = ApiClient.exec(Shards::Browse::Index)
+    response = ApiClient.exec(Shards::Index)
 
     response.status.should eq(200)
     response.body.should contain("3")
