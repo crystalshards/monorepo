@@ -33,11 +33,15 @@ class Docs::Version < BrowserAction
     else
       increment_views(doc)
 
+      # Fetch navigation structure
+      nav_files = storage_service.list_doc_files(package_name, version)
+
       html Docs::VersionPage,
         doc: doc,
         doc_version: doc_version,
         doc_content: doc_content,
-        file_path: file
+        file_path: file,
+        nav_files: nav_files
     end
   end
 

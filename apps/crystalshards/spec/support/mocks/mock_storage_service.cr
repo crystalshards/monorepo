@@ -1,5 +1,9 @@
+require "../../../src/services/base_storage_service"
+
 module CrystalShards
   class MockStorageService
+    include BaseStorageService
+
     property uploaded_docs = {} of String => Array(String)
     property uploaded_packages = {} of String => String
     property simulate_upload_error : Bool = false

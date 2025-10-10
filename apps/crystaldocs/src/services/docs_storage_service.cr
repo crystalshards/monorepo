@@ -27,13 +27,15 @@ module CrystalDocs
       files = [] of String
 
       begin
-        response = @client.list_objects(
+        paginator = @client.list_objects(
           MinIOConfig.settings.docs_bucket,
-          prefix
+          prefix: prefix
         )
 
-        response.contents.each do |object|
-          files << object.key.sub(prefix, "")
+        paginator.each do |response|
+          response.contents.each do |object|
+            files << object.key.sub(prefix, "")
+          end
         end
       rescue ex : Awscr::S3::Exception
         # Return empty array if listing fails

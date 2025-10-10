@@ -3,9 +3,9 @@ require "../services/storage_service"
 
 struct BuildDocsWorker < BaseJob
   @[JSON::Field(ignore: true)]
-  @storage_service : CrystalShards::StorageService?
+  @storage_service : CrystalShards::BaseStorageService?
 
-  def initialize(@shard_name : String, @version : String, @storage_service : CrystalShards::StorageService? = nil, @skip_clone : Bool = false)
+  def initialize(@shard_name : String, @version : String, @storage_service : CrystalShards::BaseStorageService? = nil, @skip_clone : Bool = false)
     @queue = "docs"
   end
 

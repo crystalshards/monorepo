@@ -1,9 +1,12 @@
 require "../../config/minio"
+require "./base_storage_service"
 
 module CrystalShards
   # Service for interacting with MinIO object storage
   # Handles package and documentation storage
   class StorageService
+    include BaseStorageService
+
     def initialize
       @client = MinIOConfig.client
     end
