@@ -23,7 +23,7 @@ describe Api::Shards::Versions::Index do
 
     response = ApiClient.exec(Api::Shards::Versions::Index.with(shard_name: "test-shard"))
 
-    response.should send_json(200)
+    response.status.should eq(200)
     json = JSON.parse(response.body)
     json["shard_name"].should eq("test-shard")
     json["versions"].as_a.size.should eq(2)
@@ -49,7 +49,7 @@ describe Api::Shards::Versions::Index do
 
     response = ApiClient.exec(Api::Shards::Versions::Index.with(shard_name: "test-shard"))
 
-    response.should send_json(200)
+    response.status.should eq(200)
     json = JSON.parse(response.body)
     json["versions"][0]["downloads"].should eq(2)
   end

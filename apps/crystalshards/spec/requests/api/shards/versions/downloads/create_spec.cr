@@ -51,7 +51,7 @@ describe Api::Shards::Versions::Downloads::Create do
     if response.status_code != 200
       pp! response.status_code, response.body
     end
-    response.should send_json(200)
+    response.status.should eq(200)
     json = JSON.parse(response.body)
     json["message"].as_s.should contain("tracked successfully")
 
@@ -70,7 +70,7 @@ describe Api::Shards::Versions::Downloads::Create do
       version_number: "0.1.0"
     ))
 
-    response.should send_json(200)
+    response.status.should eq(200)
 
     download = DownloadQuery.new.shard_version_id(version.id).first?
     download.should_not be_nil
