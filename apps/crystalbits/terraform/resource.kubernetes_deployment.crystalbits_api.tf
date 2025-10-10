@@ -27,6 +27,9 @@ resource "kubernetes_deployment" "crystalbits_api" {
           app       = "crystalbits"
           component = "api"
         }
+        annotations = {
+          "crystalshards.org/image-tag" = var.image_tag
+        }
       }
 
       spec {

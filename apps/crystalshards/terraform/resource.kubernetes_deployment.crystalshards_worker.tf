@@ -27,6 +27,9 @@ resource "kubernetes_deployment" "crystalshards_worker" {
           app       = "crystalshards"
           component = "worker"
         }
+        annotations = {
+          "crystalshards.org/image-tag" = var.image_tag
+        }
       }
 
       spec {
