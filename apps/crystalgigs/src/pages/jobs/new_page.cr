@@ -153,7 +153,7 @@ class Jobs::NewPage < MainLayout
           label for: "job_job_type" do
             text "Job Type"
           end
-          select name: "job:job_type", id: "job_job_type", required: true do
+          tag "select", name: "job:job_type", id: "job_job_type", required: true do
             option value: "", selected: @operation.job_type.value.nil? do
               text "Select job type"
             end
@@ -255,7 +255,7 @@ class Jobs::NewPage < MainLayout
           label for: "job_salary_currency" do
             text "Currency"
           end
-          select name: "job:salary_currency", id: "job_salary_currency" do
+          tag "select", name: "job:salary_currency", id: "job_salary_currency" do
             option value: "USD", selected: @operation.salary_currency.value == "USD" do
               text "USD"
             end

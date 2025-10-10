@@ -72,7 +72,7 @@ class Jobs::IndexPage < MainLayout
           label do
             text "Job Type"
           end
-          select name: "job_type" do
+          tag "select", name: "job_type" do
             option value: "", selected: @job_type.nil? do
               text "All Types"
             end

@@ -10,8 +10,8 @@ class Components::Head < Lucky::BaseComponent
       meta name: "description", content: "Crystal shard documentation hosting"
 
       # Syntax highlighting with Prism.js
-      link rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css"
-      link rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css"
+      tag "link", rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css"
+      tag "link", rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css"
       tag "script", src: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js", defer: "defer"
       tag "script", src: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-crystal.min.js", defer: "defer"
     end
