@@ -157,6 +157,8 @@ describe IndexShardWorker do
     it "updates metadata from minimal shard.yml" do
       shard = ShardFactory.create &.name("simple-shard")
         .repository_url("https://github.com/user/simple")
+        .description(nil)
+        .license(nil)
 
       shard_version = ShardVersionFactory.create &.shard_id(shard.id)
         .version("1.0.0")
