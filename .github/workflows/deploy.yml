@@ -210,13 +210,15 @@ jobs:
 
     - name: Configure kubectl
       run: |
-        # Get cluster name from Terraform
+        # Get cluster name from Terraform (filter only the actual value)
         cd terraform
-        CLUSTER_NAME=$(terraform output -raw cluster_name)
+        CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null | grep -v '::' | head -n1)
         cd ..
 
+        echo "Cluster name: $CLUSTER_NAME"
+
         # Configure kubectl using gcloud
-        gcloud container clusters get-credentials $CLUSTER_NAME \
+        gcloud container clusters get-credentials "$CLUSTER_NAME" \
           --region us-central1 \
           --project ${{ secrets.GCP_PROJECT_ID }}
 
