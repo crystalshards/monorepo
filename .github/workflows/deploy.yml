@@ -205,6 +205,34 @@ jobs:
         terraform output kubectl_config || true
         terraform output load_balancer_ip_command || true
 
+    - name: Configure kubectl
+      working-directory: ./terraform
+      run: |
+        terraform output -raw kubectl_config > kubeconfig.txt
+        export KUBECONFIG=kubeconfig.txt
+        kubectl config view
+
+    - name: Debug - Check Secret Values
+      working-directory: ./terraform
+      run: |
+        export KUBECONFIG=kubeconfig.txt
+
+        echo "=== Checking actual DATABASE_URL values in secrets ==="
+        for app in crystalshards crystaldocs crystalgigs crystalbits; do
+          echo ""
+          echo "--- $app ---"
+          kubectl get secret ${app}-secrets -n $app -o jsonpath='{.data.database_url}' 2>/dev/null | base64 -d || echo "Failed to read secret"
+          echo ""
+        done
+
+        echo "=== Checking CNPG postgres app secret usernames ==="
+        for app in crystalshards crystaldocs crystalgigs crystalbits; do
+          echo ""
+          echo "--- $app-postgres-app secret ---"
+          kubectl get secret ${app}-postgres-app -n $app -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || echo "Failed to read secret"
+          echo ""
+        done
+
     - name: Verify Deployment Health
       run: |
         echo "Verifying application health..."
