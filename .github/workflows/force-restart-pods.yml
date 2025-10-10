@@ -49,11 +49,19 @@ jobs:
         run: |
           echo "Restarting CrystalShards deployments..."
           kubectl rollout restart deployment/crystalshards-api -n crystalshards
-          kubectl rollout restart deployment/crystalshards-workers -n crystalshards
+
+          # Restart workers only if they exist
+          if kubectl get deployment crystalshards-workers -n crystalshards 2>/dev/null; then
+            kubectl rollout restart deployment/crystalshards-workers -n crystalshards
+          fi
 
           echo "Waiting for rollouts to complete..."
           kubectl rollout status deployment/crystalshards-api -n crystalshards --timeout=5m
-          kubectl rollout status deployment/crystalshards-workers -n crystalshards --timeout=5m
+
+          # Wait for workers only if they exist
+          if kubectl get deployment crystalshards-workers -n crystalshards 2>/dev/null; then
+            kubectl rollout status deployment/crystalshards-workers -n crystalshards --timeout=5m
+          fi
 
           echo "CrystalShards pods restarted successfully"
 
