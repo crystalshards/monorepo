@@ -12,8 +12,16 @@ class Shards::ShowPage < MainLayout
     section class: "section" do
       div class: "shard-header" do
         div class: "shard-title-block" do
-          h1 class: "shard-title" do
-            text @shard.name
+          div style: "display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;" do
+            h1 class: "shard-title", style: "margin: 0;" do
+              text @shard.name
+            end
+
+            if latest = @latest_version
+              span class: "badge", style: "background-color: var(--link-color); color: var(--white); padding: 0.4rem 0.8rem; font-size: 1rem;" do
+                text "v#{latest.version}"
+              end
+            end
           end
 
           if description = @shard.description
@@ -85,30 +93,12 @@ class Shards::ShowPage < MainLayout
             end
           end
 
-          if @dependencies.any?
-            section class: "shard-section" do
-              h2 do
-                text "Dependencies"
-              end
+          if @latest_version
+            render_readme_section
+          end
 
-              ul class: "dependency-list" do
-                @dependencies.each do |dep|
-                  li do
-                    a href: Shards::Show.with(dep.name).path, class: "dependency-link" do
-                      strong do
-                        text dep.name
-                      end
-                    end
-                    text " #{dep.version_requirement}"
-                    if dep.scope == "development"
-                      span class: "badge badge-dev" do
-                        text "dev"
-                      end
-                    end
-                  end
-                end
-              end
-            end
+          if @dependencies.any?
+            render_dependencies_section
           end
 
           if docs_url = @shard.documentation_url
@@ -193,6 +183,116 @@ class Shards::ShowPage < MainLayout
               text @shard.provider.capitalize
             end
           end
+
+          section class: "sidebar-section" do
+            h3 do
+              text "Metadata"
+            end
+
+            div style: "display: flex; flex-direction: column; gap: 0.5rem;" do
+              div do
+                strong do
+                  text "Created: "
+                end
+                text format_date(@shard.created_at)
+              end
+
+              div do
+                strong do
+                  text "Updated: "
+                end
+                text format_date(@shard.updated_at)
+              end
+
+              if crystal_version = @latest_version.try(&.crystal_version)
+                div do
+                  strong do
+                    text "Crystal: "
+                  end
+                  text crystal_version
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  private def render_readme_section
+    section class: "shard-section" do
+      h2 do
+        text "README"
+      end
+
+      div class: "readme-content" do
+        para do
+          text "This shard provides #{@shard.description || "Crystal functionality"}."
+        end
+
+        para do
+          text "For detailed documentation and usage examples, please visit the "
+          a href: @shard.repository_url, target: "_blank" do
+            text "repository"
+          end
+          text "."
+        end
+      end
+    end
+  end
+
+  private def render_dependencies_section
+    runtime_deps = @dependencies.select { |d| d.scope == "runtime" }
+    dev_deps = @dependencies.select { |d| d.scope == "development" }
+
+    section class: "shard-section" do
+      h2 do
+        text "Dependencies"
+      end
+
+      if runtime_deps.any?
+        h3 style: "font-size: 1.1rem; margin-bottom: 0.5rem;" do
+          text "Runtime Dependencies"
+        end
+
+        ul class: "dependency-list" do
+          runtime_deps.each do |dep|
+            render_dependency_item(dep)
+          end
+        end
+      end
+
+      if dev_deps.any?
+        h3 style: "font-size: 1.1rem; margin: 1.5rem 0 0.5rem 0;" do
+          text "Development Dependencies"
+        end
+
+        ul class: "dependency-list" do
+          dev_deps.each do |dep|
+            render_dependency_item(dep)
+          end
+        end
+      end
+
+      if runtime_deps.empty? && dev_deps.empty?
+        para class: "text-muted" do
+          text "No dependencies"
+        end
+      end
+    end
+  end
+
+  private def render_dependency_item(dep : Dependency)
+    li do
+      a href: Shards::Show.with(dep.name).path, class: "dependency-link" do
+        strong do
+          text dep.name
+        end
+      end
+      text " #{dep.version_requirement}"
+      if dep.scope == "development"
+        span class: "badge badge-dev" do
+          text "dev"
         end
       end
     end

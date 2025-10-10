@@ -359,9 +359,10 @@ describe Shards::Show do
 
       response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
 
-      # Development dependencies are not shown (action only loads runtime scope)
-      response.body.should_not contain("spec-helper")
-      response.body.should_not contain("Dependencies")
+      # Development dependencies ARE shown with a dev badge
+      response.body.should contain("spec-helper")
+      response.body.should contain("badge-dev")
+      response.body.should contain("Development Dependencies")
     end
 
     it "does not show dev badge for runtime dependencies" do

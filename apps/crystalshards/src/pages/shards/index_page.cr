@@ -264,6 +264,111 @@ class Shards::IndexPage < MainLayout
     end
   end
 
+  private def render_filters_and_sorting
+    div class: "filters-section" do
+      form action: "/shards", method: "get", class: "filters-form" do
+        # Preserve search query
+        if q = @query
+          input type: "hidden", name: "query", value: q
+        end
+
+        div class: "filters-row" do
+          # Sort dropdown
+          div class: "filter-group" do
+            label "Sort by:", for: "sort"
+            tag "select", name: "sort", id: "sort", class: "filter-select" do
+              tag "option", value: "updated", selected: @sort == "updated" do
+                text "Recently Updated"
+              end
+              tag "option", value: "popular", selected: @sort == "popular" do
+                text "Most Popular"
+              end
+              tag "option", value: "downloads", selected: @sort == "downloads" do
+                text "Most Downloads"
+              end
+              tag "option", value: "name", selected: @sort == "name" do
+                text "Name A-Z"
+              end
+            end
+          end
+
+          # License filter
+          div class: "filter-group" do
+            label "License:", for: "license"
+            tag "select", name: "license", id: "license", class: "filter-select" do
+              tag "option", value: "", selected: @license.nil? do
+                text "All Licenses"
+              end
+              tag "option", value: "MIT", selected: @license == "MIT" do
+                text "MIT"
+              end
+              tag "option", value: "Apache-2.0", selected: @license == "Apache-2.0" do
+                text "Apache-2.0"
+              end
+              tag "option", value: "BSD-3-Clause", selected: @license == "BSD-3-Clause" do
+                text "BSD-3-Clause"
+              end
+              tag "option", value: "GPL-3.0", selected: @license == "GPL-3.0" do
+                text "GPL-3.0"
+              end
+            end
+          end
+
+          # Minimum stars filter
+          div class: "filter-group" do
+            label "Min Stars:", for: "min_stars"
+            tag "select", name: "min_stars", id: "min_stars", class: "filter-select" do
+              tag "option", value: "", selected: @min_stars.nil? do
+                text "Any"
+              end
+              tag "option", value: "10", selected: @min_stars == 10 do
+                text "10+"
+              end
+              tag "option", value: "50", selected: @min_stars == 50 do
+                text "50+"
+              end
+              tag "option", value: "100", selected: @min_stars == 100 do
+                text "100+"
+              end
+              tag "option", value: "500", selected: @min_stars == 500 do
+                text "500+"
+              end
+            end
+          end
+
+          # Has documentation filter
+          div class: "filter-group" do
+            label do
+              input(
+                type: "checkbox",
+                name: "has_docs",
+                value: "true",
+                checked: @has_docs == true
+              )
+              text " Has Documentation"
+            end
+          end
+
+          # Apply filters button
+          div class: "filter-group" do
+            button type: "submit", class: "button button-primary" do
+              text "Apply Filters"
+            end
+          end
+
+          # Clear filters button
+          if filters_active?
+            div class: "filter-group" do
+              a href: clear_filters_url, class: "button" do
+                text "Clear Filters"
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
   private def render_pagination
     total_pages = (@total_count.to_f / @per_page).ceil.to_i
     return if total_pages <= 1
