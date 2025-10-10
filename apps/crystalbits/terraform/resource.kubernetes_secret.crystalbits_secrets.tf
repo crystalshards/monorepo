@@ -20,4 +20,12 @@ resource "kubernetes_secret" "crystalbits_secrets" {
   }
 
   type = "Opaque"
+
+  lifecycle {
+    # Force replacement when CNPG secrets change
+    # This ensures database credentials are always current
+    replace_triggered_by = [
+      data.kubernetes_secret.crystalbits_postgres_app.id
+    ]
+  }
 }

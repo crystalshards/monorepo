@@ -24,4 +24,13 @@ resource "kubernetes_secret" "crystaldocs_secrets" {
   }
 
   type = "Opaque"
+
+  lifecycle {
+    # Force replacement when CNPG or MinIO secrets change
+    # This ensures database credentials are always current
+    replace_triggered_by = [
+      data.kubernetes_secret.crystaldocs_postgres_app.id,
+      data.kubernetes_secret.minio_user.id
+    ]
+  }
 }
