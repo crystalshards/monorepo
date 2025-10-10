@@ -1,41 +1,6 @@
-require "../spec_helper"
-
-# Mock the StorageService for BuildDocsWorker tests
-class BuildDocsWorker
-  # Override upload_to_storage to use mock storage in tests
-  @@mock_storage_service : CrystalShards::MockStorageService?
-
-  def self.set_mock_storage(service : CrystalShards::MockStorageService)
-    @@mock_storage_service = service
-  end
-
-  def self.reset_mock_storage
-    @@mock_storage_service = nil
-  end
-
-  private def upload_to_storage(shard : Shard, shard_version : ShardVersion, docs_dir : String) : String
-    if mock = @@mock_storage_service
-      # Use mock storage
-      mock.upload_docs(shard.name, shard_version.version, docs_dir)
-      "https://crystaldocs.org/#{shard.name}/#{shard_version.version}"
-    else
-      # Original implementation
-      storage = CrystalShards::StorageService.new
-      uploaded_keys = storage.upload_docs(shard.name, shard_version.version, docs_dir)
-      log_info "Uploaded #{uploaded_keys.size} documentation files to MinIO"
-      "https://crystaldocs.org/#{shard.name}/#{shard_version.version}"
-    end
-  rescue ex : Exception
-    log_error "Error uploading docs to MinIO", ex
-    raise ex
-  end
-end
+require "../workers_spec_helper"
 
 describe BuildDocsWorker do
-  Spec.before_each do
-    BuildDocsWorker.reset_mock_storage
-  end
-
   describe "#perform" do
     it "handles non-existent shards gracefully" do
       worker = BuildDocsWorker.new(
@@ -66,12 +31,11 @@ describe BuildDocsWorker do
       ShardVersionQuery.new.shard_id(shard.id).version("99.99.99").first?.should be_nil
     end
 
-    # Note: The following tests are integration-style tests that would require
-    # actual git repositories and crystal docs generation. In a real test environment,
-    # we would mock these external dependencies. For now, we're testing the worker
-    # logic paths that we can control.
+    # Note: The following tests verify error handling when git clone fails
+    # Full integration tests would require mocking git, crystal docs, and MinIO
+    # For now, we test the worker's control flow and error resilience
 
-    it "logs error when documentation build fails" do
+    it "raises error when git clone fails" do
       shard = ShardFactory.create &.name("test-shard")
         .repository_url("https://github.com/user/invalid-repo-url-that-does-not-exist-xyz123")
 
@@ -79,15 +43,12 @@ describe BuildDocsWorker do
         .version("1.0.0")
         .released_at(Time.utc)
 
-      mock_storage = CrystalShards::MockStorageService.new
-      BuildDocsWorker.set_mock_storage(mock_storage)
-
       worker = BuildDocsWorker.new(
         shard_name: "test-shard",
         version: "1.0.0"
       )
 
-      # This will attempt to clone a non-existent repo and should fail gracefully
+      # This will attempt to clone a non-existent repo and should raise
       expect_raises(Exception) do
         worker.perform
       end
@@ -122,15 +83,13 @@ describe BuildDocsWorker do
     end
   end
 
-  # Additional unit tests for private methods would go here
-  # In production, we would create more comprehensive mocks for:
-  # - clone_repository
-  # - checkout_version
-  # - install_dependencies
-  # - build_docs
-  # - upload_to_storage
+  # Additional unit tests for private methods would require comprehensive mocking:
+  # - clone_repository: Mock git commands
+  # - checkout_version: Mock git checkout
+  # - install_dependencies: Mock shards install
+  # - build_docs: Mock crystal docs
+  # - upload_to_storage: Mock MinIO uploads
   #
-  # For now, these integration-style tests verify the worker's error handling
-  # and basic flow control. Full coverage would require mocking git, crystal docs,
-  # and file system operations.
+  # These integration-style tests verify the worker's error handling
+  # and basic flow control without external dependencies.
 end

@@ -1,4 +1,4 @@
-require "../spec_helper"
+require "../workers_spec_helper"
 
 describe UpdateDependenciesWorker do
   describe "#perform" do
