@@ -4,6 +4,9 @@ describe Newsletter::Subscribe do
   it "creates subscriber with valid email" do
     response = BrowserClient.exec(Newsletter::Subscribe, subscriber: {email: "test@example.com"})
 
+    if response.status.to_i != 302
+      pp! response.status, response.headers, response.body[0..500]
+    end
     response.status.should eq(HTTP::Status.new(302)) # Redirect
     subscriber = SubscriberQuery.new.by_email("test@example.com").first
     subscriber.email.should eq("test@example.com")
