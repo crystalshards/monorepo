@@ -410,6 +410,62 @@ kubectl describe certificate -n crystalshards
 kubectl logs -n infrastructure -l app.kubernetes.io/name=cert-manager
 ```
 
+### Issue: Database connectivity failures after Terraform apply
+
+**Symptom**: Health endpoints show "unhealthy" database status, apps can't connect to PostgreSQL
+
+**Root cause**: Terraform data sources don't trigger automatic updates when their values change
+
+**Solution**: Verify lifecycle triggers are present in kubernetes_secret resources
+
+```bash
+# Check if lifecycle.replace_triggered_by exists in secret definitions
+grep -A 5 "lifecycle" apps/*/terraform/resource.kubernetes_secret.*.tf
+
+# If missing, secrets won't update when CNPG credentials change
+# Fix: Add lifecycle block as shown in commit cc98382
+
+# Manual override: Force secret replacement
+cd terraform
+bash FORCE_UPDATE_SECRETS.sh
+
+# Or manually via Terraform
+terraform apply \
+  -replace='module.applications.module.crystalshards.kubernetes_secret.crystalshards_secrets' \
+  -replace='module.applications.module.crystaldocs.kubernetes_secret.crystaldocs_secrets' \
+  -replace='module.applications.module.crystalgigs.kubernetes_secret.crystalgigs_secrets' \
+  -replace='module.applications.module.crystalbits.kubernetes_secret.crystalbits_secrets'
+
+# After secrets are updated, restart pods to pick up new credentials
+kubectl rollout restart deployment/crystalshards-api -n crystalshards
+kubectl rollout restart deployment/crystalshards-workers -n crystalshards
+kubectl rollout restart deployment/crystaldocs-api -n crystaldocs
+kubectl rollout restart deployment/crystalgigs-api -n crystalgigs
+kubectl rollout restart deployment/crystalbits-api -n crystalbits
+
+# Verify health
+curl https://crystalshards.org/api/health | jq
+curl https://crystaldocs.org/api/health | jq
+curl https://crystalgigs.com/api/health | jq
+curl https://crystalbits.org/api/health | jq
+```
+
+**Technical details**: See `.agent/post-event-reviews/2025-10-10-terraform-secret-update-issue.md`
+
+**Prevention**: Always add `lifecycle.replace_triggered_by` when resources depend on data sources:
+
+```hcl
+resource "kubernetes_secret" "app_secrets" {
+  data = {
+    database_url = "postgresql://${data.kubernetes_secret.pg_app.data["username"]}:..."
+  }
+
+  lifecycle {
+    replace_triggered_by = [data.kubernetes_secret.pg_app.id]
+  }
+}
+```
+
 ## Rollback Procedure
 
 If deployment fails and you need to rollback:
