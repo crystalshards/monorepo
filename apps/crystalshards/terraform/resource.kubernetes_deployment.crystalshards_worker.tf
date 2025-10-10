@@ -10,6 +10,8 @@ resource "kubernetes_deployment" "crystalshards_worker" {
     }
   }
 
+  wait_for_rollout = false  # Let Kubernetes handle rollout asynchronously
+
   spec {
     replicas = 2 # Start with 2 worker pods
     progress_deadline_seconds = 1200 # Allow 20 minutes for GKE Autopilot deployment

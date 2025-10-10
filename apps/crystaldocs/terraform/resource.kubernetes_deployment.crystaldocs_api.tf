@@ -10,6 +10,8 @@ resource "kubernetes_deployment" "crystaldocs_api" {
     }
   }
 
+  wait_for_rollout = false  # Let Kubernetes handle rollout asynchronously
+
   spec {
     replicas = 2
     progress_deadline_seconds = 1200 # Allow 20 minutes for GKE Autopilot deployment
