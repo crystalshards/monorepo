@@ -7,7 +7,7 @@ describe Posts::Index do
 
     response = ApiClient.exec(Posts::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(published_post.title)
     response.body.should_not contain(unpublished_post.title)
   end
@@ -18,7 +18,7 @@ describe Posts::Index do
 
     response = ApiClient.exec(Home::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("Featured Post")
     response.body.should contain(featured_post.title)
     response.body.should contain(regular_post.title)
@@ -32,14 +32,14 @@ describe Posts::Index do
 
     # First page should show 20 posts
     response = ApiClient.exec(Posts::Index)
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("Post 0")
     response.body.should contain("Post 19")
     response.body.should_not contain("Post 24")
 
     # Second page should show remaining posts
     response = ApiClient.exec(Posts::Index, page: 2)
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("Post 20")
     response.body.should contain("Post 24")
     response.body.should_not contain("Post 0")
@@ -51,7 +51,7 @@ describe Posts::Index do
 
     response = ApiClient.exec(Posts::Index, tag: "crystal")
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(crystal_post.title)
     response.body.should_not contain(ruby_post.title)
   end
@@ -62,7 +62,7 @@ describe Posts::Index do
 
     response = ApiClient.exec(Posts::Index, search: "Web Apps")
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(matching_post.title)
     response.body.should_not contain(non_matching_post.title)
   end
@@ -81,7 +81,7 @@ describe Posts::Index do
 
     response = ApiClient.exec(Posts::Index, search: "web frameworks")
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(matching_post.title)
     response.body.should_not contain(non_matching_post.title)
   end
@@ -92,7 +92,7 @@ describe Posts::Index do
 
     response = ApiClient.exec(Posts::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     # Newer post should appear before older post in HTML
     newer_index = response.body.index(newer_post.title).not_nil!
     older_index = response.body.index(older_post.title).not_nil!
@@ -110,7 +110,7 @@ describe Posts::Index do
 
     response = ApiClient.exec(Posts::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain(post.title)
     response.body.should contain(post.author_name)
     response.body.should contain("100 views")
@@ -126,7 +126,7 @@ describe Posts::Index do
 
     response = ApiClient.exec(Posts::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("This is a short excerpt")
   end
 
@@ -135,7 +135,7 @@ describe Posts::Index do
 
     response = ApiClient.exec(Posts::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("newsletter")
     response.body.should contain("email")
   end

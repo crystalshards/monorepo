@@ -10,7 +10,7 @@ describe Newsletter::Confirm do
 
     response = ApiClient.exec(Newsletter::Confirm.with("valid-token"))
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     subscriber.reload
     subscriber.confirmed.should be_true
     subscriber.confirmed_at.should_not be_nil
@@ -25,7 +25,7 @@ describe Newsletter::Confirm do
 
     response = ApiClient.exec(Newsletter::Confirm.with("valid-token"))
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("You're Subscribed!")
     response.body.should contain(subscriber.email)
   end
@@ -33,7 +33,7 @@ describe Newsletter::Confirm do
   it "redirects for invalid token" do
     response = ApiClient.exec(Newsletter::Confirm.with("invalid-token"))
 
-    response.status.should eq(302)
+    response.status.should eq(HTTP::Status.new(302))
   end
 
   it "redirects if already confirmed" do
@@ -45,7 +45,7 @@ describe Newsletter::Confirm do
 
     response = ApiClient.exec(Newsletter::Confirm.with("token"))
 
-    response.status.should eq(302)
+    response.status.should eq(HTTP::Status.new(302))
   end
 
   it "sets confirmed_at timestamp" do

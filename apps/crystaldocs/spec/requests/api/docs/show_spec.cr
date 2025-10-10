@@ -26,7 +26,7 @@ describe Api::Docs::Show do
 
     response = ApiClient.exec(Api::Docs::Show.with(package_name: "test-package"))
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("test-package")
     response.body.should contain("1.0.0")
     response.body.should contain("0.9.0")

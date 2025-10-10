@@ -4,7 +4,7 @@ describe Newsletter::Subscribe do
   it "creates subscriber with valid email" do
     response = ApiClient.exec(Newsletter::Subscribe, email: "test@example.com")
 
-    response.status.should eq(302) # Redirect
+    response.status.should eq(HTTP::Status.new(302)) # Redirect
     subscriber = SubscriberQuery.new.by_email("test@example.com").first
     subscriber.email.should eq("test@example.com")
     subscriber.confirmed.should be_false
@@ -14,7 +14,7 @@ describe Newsletter::Subscribe do
   it "redirects to confirmation sent page" do
     response = ApiClient.exec(Newsletter::Subscribe, email: "test@example.com")
 
-    response.status.should eq(302)
+    response.status.should eq(HTTP::Status.new(302))
     response.headers["Location"].should contain("/newsletter/confirmation-sent")
   end
 
@@ -35,7 +35,7 @@ describe Newsletter::Subscribe do
   it "rejects invalid email format" do
     response = ApiClient.exec(Newsletter::Subscribe, email: "not-an-email")
 
-    response.status.should eq(302)
+    response.status.should eq(HTTP::Status.new(302))
     SubscriberQuery.new.select_count.should eq(0)
   end
 
@@ -44,14 +44,14 @@ describe Newsletter::Subscribe do
 
     response = ApiClient.exec(Newsletter::Subscribe, email: "test@example.com")
 
-    response.status.should eq(302)
+    response.status.should eq(HTTP::Status.new(302))
     SubscriberQuery.new.select_count.should eq(1)
   end
 
   it "requires email" do
     response = ApiClient.exec(Newsletter::Subscribe, email: "")
 
-    response.status.should eq(302)
+    response.status.should eq(HTTP::Status.new(302))
     SubscriberQuery.new.select_count.should eq(0)
   end
 

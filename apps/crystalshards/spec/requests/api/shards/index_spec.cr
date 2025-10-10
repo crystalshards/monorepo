@@ -14,7 +14,7 @@ describe Api::Shards::Index do
 
     response = ApiClient.exec(Api::Shards::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("test-shard")
     response.body.should contain("A test shard")
   end
@@ -27,7 +27,7 @@ describe Api::Shards::Index do
 
     response = ApiClient.exec(Api::Shards::Index.with(page: 2, per_page: 10))
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)
     json["shards"].as_a.size.should eq(10)
     json["meta"]["page"].should eq(2)
@@ -39,7 +39,7 @@ describe Api::Shards::Index do
 
     response = ApiClient.exec(Api::Shards::Index.with(query: "awesome"))
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("awesome-lib")
     response.body.should_not contain("cool-tool")
   end

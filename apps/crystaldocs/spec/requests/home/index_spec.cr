@@ -12,7 +12,7 @@ describe Home::Index do
 
     response = ApiClient.exec(Home::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("CrystalDocs")
     response.body.should contain("Crystal Shard Documentation")
   end
@@ -25,7 +25,7 @@ describe Home::Index do
 
     response = ApiClient.exec(Home::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("2")
     response.body.should contain("Packages")
     response.body.should contain("Versions")
@@ -40,7 +40,7 @@ describe Home::Index do
 
     response = ApiClient.exec(Home::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("Recently Updated")
   end
 
@@ -53,14 +53,14 @@ describe Home::Index do
 
     response = ApiClient.exec(Home::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("Popular Packages")
   end
 
   it "handles empty state gracefully" do
     response = ApiClient.exec(Home::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("No documentation available yet")
   end
 end
