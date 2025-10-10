@@ -2,7 +2,10 @@ class ShardQuery < Shard::BaseQuery
   def search(term : String?)
     return self if term.nil? || term.empty?
 
-    name.ilike("%#{term}%").or { description.ilike("%#{term}%") }
+    where do |q|
+      q.name.ilike("%#{term}%")
+        .or(&.description.ilike("%#{term}%"))
+    end
   end
 
   def by_license(license : String?)
