@@ -15,7 +15,7 @@ class Shards::Show < BrowserAction
     dependencies = if latest_version
                      DependencyQuery.new
                        .shard_version_id(latest_version.id.not_nil!)
-                       .scope("runtime").to_a
+                       .to_a
                    else
                      [] of Dependency
                    end
