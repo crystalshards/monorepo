@@ -7,7 +7,7 @@ describe Shards::Index do
 
     response = ApiClient.exec(Shards::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status::OK)
     response.body.should contain(shard1.name)
     response.body.should contain(shard2.name)
   end
@@ -18,7 +18,7 @@ describe Shards::Index do
 
     response = ApiClient.exec(Shards::Index, query: "http")
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status::OK)
     response.body.should contain(http_shard.name)
     response.body.should_not contain(web_shard.name)
   end
@@ -29,7 +29,7 @@ describe Shards::Index do
 
     response = ApiClient.exec(Shards::Index, license: "MIT")
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status::OK)
     response.body.should contain(mit_shard.name)
     response.body.should_not contain(apache_shard.name)
   end
@@ -40,7 +40,7 @@ describe Shards::Index do
 
     response = ApiClient.exec(Shards::Index, min_stars: "50")
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status::OK)
     response.body.should contain(popular.name)
     response.body.should_not contain(unpopular.name)
   end
@@ -51,7 +51,7 @@ describe Shards::Index do
 
     response = ApiClient.exec(Shards::Index, sort: "name")
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status::OK)
     alpha_pos = response.body.index(alpha.name)
     zebra_pos = response.body.index(zebra.name)
 
@@ -66,8 +66,8 @@ describe Shards::Index do
     page1 = ApiClient.exec(Shards::Index, page: "1")
     page2 = ApiClient.exec(Shards::Index, page: "2")
 
-    page1.status.should eq(200)
-    page2.status.should eq(200)
+    page1.status.should eq(HTTP::Status::OK)
+    page2.status.should eq(HTTP::Status::OK)
 
     page1.body.should_not eq(page2.body)
   end
@@ -85,7 +85,7 @@ describe Shards::Index do
       min_stars: "50"
     )
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status::OK)
     response.body.should contain(target.name)
     response.body.should_not contain(wrong_name.name)
     response.body.should_not contain(wrong_license.name)
@@ -97,7 +97,7 @@ describe Shards::Index do
 
     response = ApiClient.exec(Shards::Index, query: "nonexistent")
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status::OK)
     response.body.should contain("No shards found")
   end
 
@@ -106,7 +106,7 @@ describe Shards::Index do
 
     response = ApiClient.exec(Shards::Index)
 
-    response.status.should eq(200)
+    response.status.should eq(HTTP::Status::OK)
     response.body.should contain("3")
   end
 end
