@@ -45,7 +45,7 @@ echo ""
 
 # Setup production cluster access
 echo "🔐 Setting up production cluster access..."
-./setup-prod-cluster-access.sh
+$(dirname "$0")/setup-cluster-service-account
 
 # Delete existing resources
 echo "🧹 Cleaning up existing resources..."
@@ -55,7 +55,7 @@ kubectl --context "$KUBECTL_CONTEXT" delete pvc crystalshards-docker-storage -n 
 
 # Apply the manifest
 echo "📦 Creating resources..."
-envsubst < kubernetes-dev-pod.yaml | kubectl --context "$KUBECTL_CONTEXT" apply -f -
+envsubst < $(dirname "$0")/kubernetes-dev-pod.yaml | kubectl --context "$KUBECTL_CONTEXT" apply -f -
 
 # Wait for pod to be ready
 echo "⏳ Waiting for pod to be ready..."

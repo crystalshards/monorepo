@@ -5,7 +5,7 @@
 set -e
 
 KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-gke_crystalshards-org_us-central1_crystalshards-cluster}"
-SERVICE_ACCOUNT="system:serviceaccount:claude:crystalshards-agent"
+SERVICE_ACCOUNT="system:serviceaccount:claude:claude-agent"
 
 echo "=========================================="
 echo "Agent RBAC Verification"
@@ -44,8 +44,8 @@ echo ""
 
 # 2. Verify service account exists
 echo "2. Checking service account..."
-if kubectl --context "$KUBECTL_CONTEXT" get serviceaccount crystalshards-agent -n claude &> /dev/null; then
-    check_passed "ServiceAccount 'crystalshards-agent' exists"
+if kubectl --context "$KUBECTL_CONTEXT" get serviceaccount claude-agent -n claude &> /dev/null; then
+    check_passed "ServiceAccount 'claude-agent' exists"
 else
     check_failed "ServiceAccount not found - run terraform apply first"
     exit 1
@@ -54,11 +54,11 @@ echo ""
 
 # 3. Verify ClusterRole exists
 echo "3. Checking ClusterRole..."
-if kubectl --context "$KUBECTL_CONTEXT" get clusterrole crystalshards-agent-readonly &> /dev/null; then
-    check_passed "ClusterRole 'crystalshards-agent-readonly' exists"
+if kubectl --context "$KUBECTL_CONTEXT" get clusterrole claude-agent-role &> /dev/null; then
+    check_passed "ClusterRole 'claude-agent-role' exists"
 
     # Count rules
-    RULE_COUNT=$(kubectl --context "$KUBECTL_CONTEXT" get clusterrole crystalshards-agent-readonly -o json | jq '.rules | length')
+    RULE_COUNT=$(kubectl --context "$KUBECTL_CONTEXT" get clusterrole claude-agent-role -o json | jq '.rules | length')
     check_passed "ClusterRole has $RULE_COUNT permission rules"
 else
     check_failed "ClusterRole not found - run terraform apply first"
@@ -68,12 +68,12 @@ echo ""
 
 # 4. Verify ClusterRoleBinding exists
 echo "4. Checking ClusterRoleBinding..."
-if kubectl --context "$KUBECTL_CONTEXT" get clusterrolebinding crystalshards-agent-readonly &> /dev/null; then
-    check_passed "ClusterRoleBinding 'crystalshards-agent-readonly' exists"
+if kubectl --context "$KUBECTL_CONTEXT" get clusterrolebinding claude-agent-binding &> /dev/null; then
+    check_passed "ClusterRoleBinding 'claude-agent-binding' exists"
 
     # Verify binding
-    BOUND_SA=$(kubectl --context "$KUBECTL_CONTEXT" get clusterrolebinding crystalshards-agent-readonly -o jsonpath='{.subjects[0].name}')
-    if [ "$BOUND_SA" = "crystalshards-agent" ]; then
+    BOUND_SA=$(kubectl --context "$KUBECTL_CONTEXT" get clusterrolebinding claude-agent-binding -o jsonpath='{.subjects[0].name}')
+    if [ "$BOUND_SA" = "claude-agent" ]; then
         check_passed "ClusterRoleBinding correctly bound to service account"
     else
         check_failed "ClusterRoleBinding not correctly bound (found: $BOUND_SA)"
@@ -215,7 +215,7 @@ fi
 
 echo ""
 echo "To test from agent pod:"
-echo "  kubectl --context $KUBECTL_CONTEXT exec -it crystalshards-agent -n claude -c agent -- bash"
+echo "  kubectl --context $KUBECTL_CONTEXT exec -it claude-agent -n claude -c agent -- bash"
 echo "  Then run: kubectl get pods --all-namespaces"
 echo ""
 echo "Verification complete!"

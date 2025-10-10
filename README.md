@@ -13,7 +13,7 @@ export GITHUB_TOKEN="your-github-token"
 ./remote.sh
 
 # Watch it work
-kubectl logs -f crystalshards-agent -n claude
+kubectl logs -f claude-agent -n claude
 
 # Optional: Use custom settings
 GIT_URL="https://github.com/yourfork/crystalshards-claude.git" \
@@ -85,13 +85,13 @@ Features:
 
 ```bash
 # Watch logs
-kubectl logs -f crystalshards-agent -n claude
+kubectl logs -f claude-agent -n claude
 
 # Check pod status
-kubectl describe pod crystalshards-agent -n claude
+kubectl describe pod claude-agent -n claude
 
 # Get a shell
-kubectl exec -it crystalshards-agent -n claude -- bash
+kubectl exec -it claude-agent -n claude -- bash
 
 # Check PVC usage
 kubectl get pvc -n claude
