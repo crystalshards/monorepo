@@ -9,7 +9,6 @@ metadata:
   name: "${POD_NAME}"
   namespace: "${NAMESPACE}"
 spec:
-  serviceAccountName: claude-agent
   restartPolicy: Always
   securityContext:
     fsGroup: 1000
