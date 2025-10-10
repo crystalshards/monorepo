@@ -3,6 +3,7 @@ ENV["DEV_PORT"] = "5001"
 require "spec"
 require "../src/app"
 require "./support/**"
+require "./support/worker_mocks"
 require "../db/migrations/**"
 
 # Add/modify files in spec/setup to start/configure programs or run hooks
