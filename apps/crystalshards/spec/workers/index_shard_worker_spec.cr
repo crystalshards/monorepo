@@ -134,7 +134,7 @@ describe IndexShardWorker do
       # Track enqueued workers
       enqueued_update_deps = false
       original_enqueue = UpdateDependenciesWorker.method(:enqueue)
-      UpdateDependenciesWorker.define_singleton_method(:enqueue) do |**args|
+      UpdateDependenciesWorker.define_singleton_method(:enqueue) do |shard_name, version|
         enqueued_update_deps = true
         nil
       end
@@ -177,7 +177,7 @@ describe IndexShardWorker do
 
       enqueued_build_docs = false
       original_enqueue = BuildDocsWorker.method(:enqueue)
-      BuildDocsWorker.define_singleton_method(:enqueue) do |**args|
+      BuildDocsWorker.define_singleton_method(:enqueue) do |shard_name, version|
         enqueued_build_docs = true
         nil
       end
@@ -321,8 +321,8 @@ describe IndexShardWorker do
       # Suppress worker enqueuing for this test
       original_update_enqueue = UpdateDependenciesWorker.method(:enqueue)
       original_build_enqueue = BuildDocsWorker.method(:enqueue)
-      UpdateDependenciesWorker.define_singleton_method(:enqueue) { |**args| nil }
-      BuildDocsWorker.define_singleton_method(:enqueue) { |**args| nil }
+      UpdateDependenciesWorker.define_singleton_method(:enqueue) { |shard_name, version| nil }
+      BuildDocsWorker.define_singleton_method(:enqueue) { |shard_name, version| nil }
 
       begin
         worker = IndexShardWorker.new(

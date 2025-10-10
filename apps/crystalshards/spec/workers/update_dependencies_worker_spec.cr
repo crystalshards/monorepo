@@ -419,8 +419,8 @@ describe UpdateDependenciesWorker do
       end
 
       metadata = JSON.parse({
-        "name" => "many-deps",
-        "dependencies" => deps_hash
+        "name"         => "many-deps",
+        "dependencies" => deps_hash,
       }.to_json)
 
       shard_version = ShardVersionFactory.create &.shard_id(shard.id)
