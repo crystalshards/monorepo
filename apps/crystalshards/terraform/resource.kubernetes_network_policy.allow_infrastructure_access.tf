@@ -9,6 +9,7 @@ resource "kubernetes_network_policy" "allow_infrastructure_access" {
     pod_selector {}
     policy_types = ["Egress"]
 
+    # Allow Redis access in infrastructure namespace
     egress {
       to {
         namespace_selector {
@@ -16,6 +17,25 @@ resource "kubernetes_network_policy" "allow_infrastructure_access" {
             name = "infrastructure"
           }
         }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "6379"
+      }
+    }
+
+    # Allow MinIO access in infrastructure namespace
+    egress {
+      to {
+        namespace_selector {
+          match_labels = {
+            name = "infrastructure"
+          }
+        }
+      }
+      ports {
+        protocol = "TCP"
+        port     = "9000"
       }
     }
 

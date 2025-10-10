@@ -35,7 +35,7 @@ describe Api::Shards::Upload do
       body: io.to_s
     )
 
-    response.should send_json(201)
+    response.status.should eq(HTTP::Status.new(201))
     json = JSON.parse(response.body)
     json["message"].should eq("Shard uploaded successfully")
     json["shard"]["name"].should eq("multipart-shard")
@@ -65,7 +65,7 @@ describe Api::Shards::Upload do
       body: io.to_s
     )
 
-    response.should send_json(400)
+    response.status.should eq(HTTP::Status.new(400))
     response.body.should contain("Missing required fields")
   end
 
@@ -95,7 +95,7 @@ describe Api::Shards::Upload do
       body: io.to_s
     )
 
-    response.should send_json(400)
+    response.status.should eq(HTTP::Status.new(400))
     response.body.should contain("must be a .tar.gz archive")
   end
 
@@ -127,7 +127,7 @@ describe Api::Shards::Upload do
       body: io.to_s
     )
 
-    response.should send_json(400)
+    response.status.should eq(HTTP::Status.new(400))
     json = JSON.parse(response.body)
     json["error"].should eq("Checksum mismatch")
     json["expected_checksum"].should eq(wrong_checksum)
@@ -160,7 +160,7 @@ describe Api::Shards::Upload do
       body: io.to_s
     )
 
-    response.should send_json(201)
+    response.status.should eq(HTTP::Status.new(201))
     json = JSON.parse(response.body)
     json["checksum"].should eq(Digest::SHA256.hexdigest(package_content))
   end
@@ -174,7 +174,7 @@ describe Api::Shards::Upload do
       body: {name: "json-shard"}.to_json
     )
 
-    response.should send_json(400)
+    response.status.should eq(HTTP::Status.new(400))
     response.body.should contain("Content-Type must be multipart/form-data")
   end
 
@@ -205,7 +205,7 @@ describe Api::Shards::Upload do
       body: io.to_s
     )
 
-    response.should send_json(201)
+    response.status.should eq(HTTP::Status.new(201))
 
     shard = ShardQuery.new.name("minimal-multipart-shard").first?
     shard.should_not be_nil
@@ -240,7 +240,7 @@ describe Api::Shards::Upload do
       body: io.to_s
     )
 
-    response.should send_json(201)
+    response.status.should eq(HTTP::Status.new(201))
     json = JSON.parse(response.body)
     version_id = json["version"]["id"].as_i64
 
@@ -274,7 +274,7 @@ describe Api::Shards::Upload do
       Api::Shards::Upload,
       body: io.to_s
     )
-    response.should send_json(201)
+    response.status.should eq(HTTP::Status.new(201))
 
     # Attempt duplicate upload with different content
     different_content = "second upload content"
@@ -295,7 +295,7 @@ describe Api::Shards::Upload do
       headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary456"},
       body: io2.to_s
     )
-    response2.should send_json(422)
+    response2.status.should eq(422)
     response2.body.should contain("errors")
   end
 
@@ -323,7 +323,7 @@ describe Api::Shards::Upload do
       body: io.to_s
     )
 
-    response.should send_json(413)
+    response.status.should eq(HTTP::Status.new(413))
     json = JSON.parse(response.body)
     json["error"].should eq("Package size exceeds maximum allowed size")
     json["max_size_mb"].should eq(50)
@@ -382,7 +382,7 @@ describe Api::Shards::Upload do
       body: io.to_s
     )
 
-    response.should send_json(201)
+    response.status.should eq(HTTP::Status.new(201))
     json = JSON.parse(response.body)
     json["message"].should eq("Shard uploaded successfully")
 

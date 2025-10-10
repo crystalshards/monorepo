@@ -149,6 +149,11 @@ resource "kubernetes_cluster_role" "claude_agent_role" {
 resource "kubernetes_cluster_role_binding" "claude_agent_binding" {
   metadata {
     name = "claude-agent-binding"
+    annotations = {
+      # Force recreation on next apply to fix RBAC permissions
+      # Issue #52 - RBAC exists but not functioning
+      "last-applied" = "2025-10-10"
+    }
   }
 
   role_ref {

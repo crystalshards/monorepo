@@ -42,7 +42,7 @@ describe Api::Shards::Versions::Show do
       version_number: "0.1.0"
     ))
 
-    response.should send_json(200)
+    response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)
     json["shard_name"].should eq("test-shard")
     json["version"].should eq("0.1.0")
@@ -70,7 +70,7 @@ describe Api::Shards::Versions::Show do
       version_number: "0.1.0"
     ))
 
-    response.should send_json(200)
+    response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)
     json["downloads"].should eq(3)
   end

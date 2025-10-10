@@ -19,7 +19,7 @@ describe Api::Shards::Show do
 
     response = ApiClient.exec(Api::Shards::Show.with(shard_name: "test-shard"))
 
-    response.should send_json(200)
+    response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)
     json["name"].should eq("test-shard")
     json["description"].should eq("A test shard")

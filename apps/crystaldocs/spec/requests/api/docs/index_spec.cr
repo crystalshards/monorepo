@@ -14,7 +14,7 @@ describe Api::Docs::Index do
 
     response = ApiClient.exec(Api::Docs::Index)
 
-    response.should send_json(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("test-package")
     response.body.should contain("A test package documentation")
   end
@@ -27,7 +27,7 @@ describe Api::Docs::Index do
 
     response = ApiClient.exec(Api::Docs::Index.with(page: 2, per_page: 10))
 
-    response.should send_json(200)
+    response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)
     json["docs"].as_a.size.should eq(10)
     json["meta"]["page"].should eq(2)
@@ -39,7 +39,7 @@ describe Api::Docs::Index do
 
     response = ApiClient.exec(Api::Docs::Index.with(query: "awesome"))
 
-    response.should send_json(200)
+    response.status.should eq(HTTP::Status.new(200))
     response.body.should contain("awesome-lib")
     response.body.should_not contain("cool-tool")
   end

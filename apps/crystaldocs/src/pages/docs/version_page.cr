@@ -9,10 +9,31 @@ class Docs::VersionPage < MainLayout
   end
 
   def content
+    render_breadcrumbs
+
     div class: "docs-viewer" do
       render_docs_header
-      render_docs_content
+
+      div class: "docs-layout" do
+        mount Components::DocSidebar,
+          doc: doc,
+          doc_version: doc_version,
+          current_file: file_path
+
+        render_docs_content
+      end
     end
+  end
+
+  private def render_breadcrumbs
+    breadcrumb_items = [
+      Components::Breadcrumb::BreadcrumbItem.new("Home", "/"),
+      Components::Breadcrumb::BreadcrumbItem.new("Documentation", "/docs"),
+      Components::Breadcrumb::BreadcrumbItem.new(doc.package_name, "/docs/#{doc.package_name}"),
+      Components::Breadcrumb::BreadcrumbItem.new("v#{doc_version.version}", "/docs/#{doc.package_name}/#{doc_version.version}"),
+    ]
+
+    mount Components::Breadcrumb, items: breadcrumb_items
   end
 
   private def render_docs_header

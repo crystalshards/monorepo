@@ -18,7 +18,7 @@ describe Api::Shards::Create do
     if response.status_code != 201
       pp! response.status_code, response.body
     end
-    response.should send_json(201)
+    response.status.should eq(HTTP::Status.new(201))
     json = JSON.parse(response.body)
     json["message"].should eq("Shard created successfully, indexing started")
     json["shard"]["name"].should eq("test-shard")
@@ -40,7 +40,7 @@ describe Api::Shards::Create do
       }
     )
 
-    response.should send_json(422)
+    response.status.should eq(HTTP::Status.new(422))
     response.body.should contain("errors")
   end
 
@@ -60,7 +60,7 @@ describe Api::Shards::Create do
       version: "0.1.0"
     )
 
-    response.should send_json(422)
+    response.status.should eq(HTTP::Status.new(422))
     response.body.should contain("errors")
   end
 
@@ -75,7 +75,7 @@ describe Api::Shards::Create do
       version: "0.1.0"
     )
 
-    response.should send_json(422)
+    response.status.should eq(HTTP::Status.new(422))
     response.body.should contain("errors")
   end
 
@@ -90,7 +90,7 @@ describe Api::Shards::Create do
       version: "1.0.0"
     )
 
-    response.should send_json(201)
+    response.status.should eq(HTTP::Status.new(201))
 
     shard = ShardQuery.new.name("minimal-shard").first?
     shard.should_not be_nil
@@ -111,7 +111,7 @@ describe Api::Shards::Create do
       version: "2.0.0"
     )
 
-    response.should send_json(201)
+    response.status.should eq(HTTP::Status.new(201))
     response.body.should contain("indexing started")
   end
 
