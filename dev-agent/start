@@ -27,7 +27,7 @@ for var in "${REQUIRED_VARS[@]}"; do
 done
 
 # Set defaults
-export POD_NAME="${POD_NAME:-crystalshards-agent}"
+export POD_NAME="${POD_NAME:-claude-agent}"
 export NAMESPACE="claude"
 export KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-gke_waldrip-net_us-central1-a_cluster-1}"
 export GIT_URL="${GIT_URL:-https://github.com/crystalshards/crystalshards-claude.git}"

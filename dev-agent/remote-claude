@@ -2,7 +2,7 @@
 set -e
 
 # Set defaults
-POD_NAME="${POD_NAME:-crystalshards-agent}"
+POD_NAME="${POD_NAME:-claude-agent}"
 NAMESPACE="claude"
 KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-gke_crystalshards-org_us-central1_crystalshards-cluster}"
 
