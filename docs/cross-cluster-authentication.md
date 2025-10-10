@@ -18,7 +18,7 @@ The agent runs in a dedicated cluster (waldrip.net) and needs read-only access t
    - Stores production cluster credentials as a Kubernetes Secret
    - Agent pod mounts this Secret to access production cluster
 
-3. **Service Account Token**: 24-hour bound token
+3. **Service Account Token**: 30-day bound token
    - Created from `claude-agent` service account in production
    - Embedded in kubeconfig file
    - Provides read-only access to production resources
@@ -51,8 +51,8 @@ PROD_ENDPOINT=$(gcloud container clusters describe crystalshards-cluster \
 PROD_CA=$(gcloud container clusters describe crystalshards-cluster \
   --region=us-central1 --format='value(masterAuth.clusterCaCertificate)')
 
-# 4. Create 24-hour service account token
-PROD_TOKEN=$(kubectl create token claude-agent -n claude --duration=24h)
+# 4. Create 30-day service account token
+PROD_TOKEN=$(kubectl create token claude-agent -n claude --duration=720h)
 
 # 5. Build kubeconfig using envsubst
 cat > /tmp/kubeconfig-template.yaml << 'EOF'
@@ -152,7 +152,7 @@ This script:
 1. Authenticates to production cluster
 2. Extracts cluster endpoint and CA certificate
 3. Verifies service account exists
-4. Creates fresh 24-hour token
+4. Creates fresh 30-day token
 5. Builds kubeconfig with `envsubst`
 6. Verifies kubeconfig works
 7. Switches to agent cluster
@@ -181,7 +181,7 @@ This ensures the agent always has fresh credentials when deployed.
 
 ## Token Rotation
 
-Service account tokens have a 24-hour expiration. To rotate the token:
+Service account tokens have a 30-day expiration. To rotate the token:
 
 ### Automatic Rotation
 

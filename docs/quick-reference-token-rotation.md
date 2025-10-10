@@ -2,7 +2,7 @@
 
 ## When to Rotate
 
-- Every 24 hours (token expiration)
+- Every 30 days (token expiration)
 - Before deploying agent pod
 - After RBAC changes in production cluster
 - When authentication errors occur
@@ -72,7 +72,7 @@ If everything breaks:
 
 # 2. If that fails, manual setup
 gcloud container clusters get-credentials crystalshards-cluster --region=us-central1
-TOKEN=$(kubectl create token claude-agent -n claude --duration=24h)
+TOKEN=$(kubectl create token claude-agent -n claude --duration=720h)
 # ... see full manual steps in cross-cluster-authentication.md
 
 # 3. Verify RBAC in production
@@ -92,7 +92,7 @@ Add this to your monitoring/alerting:
 # Cron job to check token expiration (runs daily)
 0 12 * * * kubectl get secret prod-kubeconfig -n claude -o jsonpath='{.data.config}' | \
   base64 -d | grep 'token:' | awk '{print $2}' | cut -d. -f2 | base64 -d 2>/dev/null | \
-  jq -r 'if (.exp - now) < 7200 then "WARNING: Token expires in less than 2 hours" else empty end'
+  jq -r 'if (.exp - now) < 86400 then "WARNING: Token expires in less than 1 day" else empty end'
 ```
 
 ## File Locations
