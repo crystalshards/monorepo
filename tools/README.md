@@ -20,11 +20,14 @@ cat log.txt | ./tools/claude-render
 
 - 🚀 Shows session initialization with model info
 - 💭 Displays Claude's thinking in real-time
-- 🔧 Shows tool calls with their inputs (color-coded in yellow)
-- ✅ Indicates tool completion with truncated output
-- ❌ Highlights errors in red
+- ▶ Shows tool calls with smart formatting (no raw JSON!)
+- ✓ Indicates tool completion with truncated output
+- ✗ Highlights errors in red
 - 👤 Shows user messages
 - 🎨 Color-coded output for easy reading
+- 📊 Deep visual hierarchy with indentation
+- 🔍 Smart tool input parsing for common tools (Bash, Read, Edit, Write, Grep, Glob, TodoWrite, etc.)
+- 📏 Automatic truncation for long outputs (shows first 8 lines + summary)
 
 ## Installation
 
@@ -53,22 +56,82 @@ The renderer parses Claude's stream-json format and displays:
 
 ## Example Output
 
+### Basic Tool Call (Bash)
 ```
 🚀 Claude initialized
    Model: claude-sonnet-4-5-20250929
    Session: 6d4dcb77-ada8-4eba-b092-5393bc1a72f7
 
-💭 I'll search for today's news and write it to a file.
-
-🔧 Tool: WebSearch
-   Input: {"query": "latest news October 7 2025"}
-
 💭
+▶ Tool: Bash
 
-🔧 Tool: Write
-   Input: {"file_path": "news.txt", "content": "..."}
+  Command: gh issue create --title 'Test Issue' --body 'Test body'
+  Purpose: Create a test GitHub issue
 
-💭 File written to news.txt
+  ✓ Success
+    Created issue #123
+    URL: https://github.com/org/repo/issues/123
+
+I created the GitHub issue successfully.
+```
+
+### File Editing
+```
+▶ Tool: Edit
+
+  File: /workspace/monorepo/apps/crystalshards/src/actions/api/shards/index.cr
+  Mode: Replace First
+  Old: "shards = ShardQuery.new.limit(100)"
+  New: "shards = ShardQuery.new
+      .search(params.get?("..." (162 chars)
+
+  ✓ Success
+    File updated successfully
+```
+
+### Todo Management
+```
+▶ Tool: TodoWrite
+
+  Tasks:
+    ✓ Add search functionality to API
+    ✓ Add pagination support
+    ▶ Add tests for search and pagination
+    ○ Update API documentation
+
+  ✓ Success
+    Todos have been modified successfully
+```
+
+### Error Handling
+```
+▶ Tool: Bash
+
+  Command: kubectl get pods -n nonexistent
+  Purpose: Check pods in namespace
+
+  ✗ Error
+    Error from server (NotFound): namespaces "nonexistent" not found
+```
+
+### Long Output Truncation
+```
+▶ Tool: Grep
+
+  Pattern: IndexShardWorker
+  Path: /workspace/monorepo/apps/crystalshards/src
+  Filter: **/*.cr
+
+  ✓ Success
+    /workspace/monorepo/apps/crystalshards/src/workers/index_shard_worker.cr
+    /workspace/monorepo/apps/crystalshards/src/workers/build_docs_worker.cr
+    /workspace/monorepo/apps/crystalshards/src/workers/update_dependencies_worker.cr
+    /workspace/monorepo/apps/crystalshards/src/jobs/process_shard_job.cr
+    /workspace/monorepo/apps/crystalshards/src/jobs/build_documentation_job.cr
+    /workspace/monorepo/apps/crystalshards/src/jobs/update_deps_job.cr
+    /workspace/monorepo/apps/crystalshards/src/models/shard.cr
+    /workspace/monorepo/apps/crystalshards/src/models/shard_version.cr
+    ... (5 more lines)
 ```
 
 ## Technical Details

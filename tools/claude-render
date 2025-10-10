@@ -9,6 +9,8 @@ class ClaudeStreamRenderer
     @current_text = ""
     @in_tool_use = false
     @tool_name = ""
+    @tool_input_buffer = String::Builder.new
+    @indentation = 0
   end
 
   def run
@@ -54,6 +56,198 @@ class ClaudeStreamRenderer
         end
       end
     end
+  end
+
+  private def indent : String
+    "  " * @indentation
+  end
+
+  private def format_tool_input(tool_name : String, input : String) : String
+    begin
+      data = JSON.parse(input)
+
+      case tool_name
+      when "Bash"
+        format_bash_tool(data)
+      when "Read"
+        format_read_tool(data)
+      when "Edit"
+        format_edit_tool(data)
+      when "Write"
+        format_write_tool(data)
+      when "Glob", "Grep"
+        format_search_tool(tool_name, data)
+      when "TodoWrite"
+        format_todo_tool(data)
+      when "SlashCommand"
+        format_slash_command(data)
+      else
+        format_generic_tool(data)
+      end
+    rescue
+      # If parsing fails, return the raw input
+      input.size > 100 ? "#{input[0..100]}... (#{input.size} chars)" : input
+    end
+  end
+
+  private def format_bash_tool(data : JSON::Any) : String
+    command = data["command"]?.try(&.as_s) || ""
+    desc = data["description"]?.try(&.as_s)
+
+    result = String::Builder.new
+    result << "\n#{indent}  Command: ".colorize(:cyan).to_s
+    result << command.colorize(:white).to_s
+    if desc
+      result << "\n#{indent}  Purpose: ".colorize(:dark_gray).to_s
+      result << desc.colorize(:dark_gray).to_s
+    end
+    result.to_s
+  end
+
+  private def format_read_tool(data : JSON::Any) : String
+    file = data["file_path"]?.try(&.as_s) || ""
+    offset = data["offset"]?.try(&.as_i)
+    limit = data["limit"]?.try(&.as_i)
+
+    result = String::Builder.new
+    result << "\n#{indent}  File: ".colorize(:cyan).to_s
+    result << file.colorize(:white).to_s
+    if offset || limit
+      result << "\n#{indent}  Range: ".colorize(:dark_gray).to_s
+      result << "lines #{offset || 0}-#{(offset || 0) + (limit || 0)}".colorize(:dark_gray).to_s
+    end
+    result.to_s
+  end
+
+  private def format_edit_tool(data : JSON::Any) : String
+    file = data["file_path"]?.try(&.as_s) || ""
+    old = data["old_string"]?.try(&.as_s) || ""
+    new_str = data["new_string"]?.try(&.as_s) || ""
+    replace_all = data["replace_all"]?.try(&.as_bool) || false
+
+    result = String::Builder.new
+    result << "\n#{indent}  File: ".colorize(:cyan).to_s
+    result << file.colorize(:white).to_s
+    result << "\n#{indent}  Mode: ".colorize(:dark_gray).to_s
+    result << (replace_all ? "Replace All" : "Replace First").colorize(:yellow).to_s
+
+    # Show truncated old/new strings
+    if old.size > 50
+      result << "\n#{indent}  Old: ".colorize(:red).to_s
+      result << "\"#{old[0..50]}...\" (#{old.size} chars)".colorize(:red).to_s
+    else
+      result << "\n#{indent}  Old: ".colorize(:red).to_s
+      result << "\"#{old}\"".colorize(:red).to_s
+    end
+
+    if new_str.size > 50
+      result << "\n#{indent}  New: ".colorize(:green).to_s
+      result << "\"#{new_str[0..50]}...\" (#{new_str.size} chars)".colorize(:green).to_s
+    else
+      result << "\n#{indent}  New: ".colorize(:green).to_s
+      result << "\"#{new_str}\"".colorize(:green).to_s
+    end
+
+    result.to_s
+  end
+
+  private def format_write_tool(data : JSON::Any) : String
+    file = data["file_path"]?.try(&.as_s) || ""
+    content = data["content"]?.try(&.as_s) || ""
+
+    result = String::Builder.new
+    result << "\n#{indent}  File: ".colorize(:cyan).to_s
+    result << file.colorize(:white).to_s
+    result << "\n#{indent}  Size: ".colorize(:dark_gray).to_s
+    result << "#{content.size} chars (#{content.lines.size} lines)".colorize(:dark_gray).to_s
+    result.to_s
+  end
+
+  private def format_search_tool(name : String, data : JSON::Any) : String
+    pattern = data["pattern"]?.try(&.as_s) || ""
+    path = data["path"]?.try(&.as_s)
+    glob = data["glob"]?.try(&.as_s)
+
+    result = String::Builder.new
+    result << "\n#{indent}  Pattern: ".colorize(:cyan).to_s
+    result << pattern.colorize(:white).to_s
+    if path
+      result << "\n#{indent}  Path: ".colorize(:dark_gray).to_s
+      result << path.colorize(:dark_gray).to_s
+    end
+    if glob
+      result << "\n#{indent}  Filter: ".colorize(:dark_gray).to_s
+      result << glob.colorize(:dark_gray).to_s
+    end
+    result.to_s
+  end
+
+  private def format_todo_tool(data : JSON::Any) : String
+    todos = data["todos"]?.try(&.as_a)
+    return "" unless todos
+
+    result = String::Builder.new
+    result << "\n#{indent}  Tasks:"
+    todos.each do |todo|
+      status = todo["status"]?.try(&.as_s) || "pending"
+      content = todo["content"]?.try(&.as_s) || ""
+
+      symbol = case status
+      when "completed" then "✓"
+      when "in_progress" then "▶"
+      else "○"
+      end
+
+      color = case status
+      when "completed" then :green
+      when "in_progress" then :yellow
+      else :dark_gray
+      end
+
+      result << "\n#{indent}    #{symbol} ".colorize(color).to_s
+      result << content.colorize(color).to_s
+    end
+    result.to_s
+  end
+
+  private def format_slash_command(data : JSON::Any) : String
+    command = data["command"]?.try(&.as_s) || ""
+
+    result = String::Builder.new
+    result << "\n#{indent}  Command: ".colorize(:cyan).to_s
+    result << command.colorize(:white).to_s
+    result.to_s
+  end
+
+  private def format_generic_tool(data : JSON::Any) : String
+    # For unknown tools, show key fields
+    result = String::Builder.new
+    count = 0
+    data.as_h.each do |key, value|
+      next if count >= 3  # Limit to first 3 fields
+
+      result << "\n#{indent}  #{key}: ".colorize(:cyan).to_s
+
+      if value.as_s?
+        str = value.as_s
+        if str.size > 60
+          result << "#{str[0..60]}... (#{str.size} chars)".colorize(:dark_gray).to_s
+        else
+          result << str.colorize(:white).to_s
+        end
+      elsif value.as_i?
+        result << value.as_i.to_s.colorize(:white).to_s
+      elsif value.as_bool?
+        result << value.as_bool.to_s.colorize(:yellow).to_s
+      elsif value.as_a?
+        result << "[#{value.as_a.size} items]".colorize(:dark_gray).to_s
+      elsif value.as_h?
+        result << "{#{value.as_h.size} fields}".colorize(:dark_gray).to_s
+      end
+
+      count += 1
+    end
+    result.to_s
   end
 
   private def process_event(data : JSON::Any)
@@ -125,8 +319,8 @@ class ClaudeStreamRenderer
       tool_id = content_block["id"]?.try(&.as_s)
       @output.puts if !@current_text.empty?
       @output.puts
-      @output.puts "🔧 Tool: #{@tool_name}".colorize(:yellow).bold
-      @output.print "   Input: ".colorize(:dark_gray)
+      @output.puts "#{indent}▶ Tool: #{@tool_name}".colorize(:yellow).bold
+      @tool_input_buffer = String::Builder.new
     when "text"
       @in_tool_use = false
     end
@@ -146,15 +340,18 @@ class ClaudeStreamRenderer
       @output.flush
     when "input_json_delta"
       json = delta["partial_json"]?.try(&.as_s) || ""
-      @output.print json.colorize(:yellow)
-      @output.flush
+      @tool_input_buffer << json
     end
   end
 
   private def process_content_block_stop(event : JSON::Any)
     if @in_tool_use
+      # Display formatted tool input
+      formatted = format_tool_input(@tool_name, @tool_input_buffer.to_s)
+      @output.puts formatted
       @output.puts
       @in_tool_use = false
+      @tool_input_buffer = String::Builder.new
     end
   end
 
@@ -163,29 +360,43 @@ class ClaudeStreamRenderer
     is_error = data["is_error"]?.try(&.as_bool) || false
     content = data["content"]?
 
-    @output.puts
-
     if is_error
-      @output.puts "❌ Tool Error".colorize(:red).bold
-      if content
-        content.as_a.each do |item|
-          if item["type"]? == "text"
-            @output.puts "   #{item["text"]?}".colorize(:red)
-          end
-        end
-      end
-    else
-      @output.puts "✅ Tool Complete".colorize(:green).bold
+      @output.puts "#{indent}  ✗ Error".colorize(:red).bold
       if content
         content.as_a.each do |item|
           if item["type"]? == "text"
             text = item["text"]?.try(&.as_s) || ""
-            # Truncate long output
-            if text.size > 500
-              @output.puts "   #{text[0..500]}...".colorize(:dark_gray)
-              @output.puts "   (#{text.size} chars total)".colorize(:dark_gray)
+            # Show error details with indentation
+            text.lines.each do |line|
+              @output.puts "#{indent}    #{line}".colorize(:red)
+            end
+          end
+        end
+      end
+    else
+      @output.puts "#{indent}  ✓ Success".colorize(:green).bold
+      if content
+        content.as_a.each do |item|
+          if item["type"]? == "text"
+            text = item["text"]?.try(&.as_s) || ""
+            # Smart truncation for output
+            lines = text.lines
+            if lines.size > 10
+              # Show first 8 lines, then summary
+              lines[0..7].each do |line|
+                truncated = line.size > 100 ? line[0..100] + "..." : line
+                @output.puts "#{indent}    #{truncated}".colorize(:dark_gray)
+              end
+              @output.puts "#{indent}    ... (#{lines.size - 8} more lines)".colorize(:dark_gray)
+            elsif text.size > 500
+              # Single long line
+              @output.puts "#{indent}    #{text[0..500]}...".colorize(:dark_gray)
+              @output.puts "#{indent}    (#{text.size} chars total)".colorize(:dark_gray)
             else
-              @output.puts "   #{text}".colorize(:dark_gray)
+              # Show all content
+              lines.each do |line|
+                @output.puts "#{indent}    #{line}".colorize(:dark_gray)
+              end
             end
           end
         end
