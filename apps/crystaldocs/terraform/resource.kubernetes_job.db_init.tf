@@ -9,10 +9,10 @@ resource "kubernetes_job" "crystaldocs_db_init" {
     }
   }
 
-  wait_for_completion = true
+  wait_for_completion = false  # Don't block Terraform - let job run in background
   timeouts {
-    create = "15m"
-    update = "15m"
+    create = "5m"   # Reduced timeout for job creation (not completion)
+    update = "5m"
   }
 
   spec {
