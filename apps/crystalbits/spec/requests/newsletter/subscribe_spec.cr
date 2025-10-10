@@ -15,7 +15,7 @@ describe Newsletter::Subscribe do
     response = ApiClient.exec(Newsletter::Subscribe, subscriber: {email: "test@example.com"})
 
     response.status.should eq(HTTP::Status.new(302))
-    response.headers["Location"].should contain("/newsletter/confirmation-sent")
+    response.headers["Location"].should contain("/newsletter/confirmation_sent")
   end
 
   it "normalizes email to lowercase" do
