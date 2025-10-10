@@ -13,6 +13,16 @@ spec:
   securityContext:
     fsGroup: 1000
     fsGroupChangePolicy: "OnRootMismatch"
+  initContainers:
+    - name: copy-kubeconfig
+      image: busybox
+      command: ['sh', '-c', 'mkdir -p /kubeconfig && cp /tmp/secret-kubeconfig/config /kubeconfig/config && chmod 600 /kubeconfig/config']
+      volumeMounts:
+        - name: prod-kubeconfig-secret
+          mountPath: /tmp/secret-kubeconfig
+          readOnly: true
+        - name: kubeconfig
+          mountPath: /kubeconfig
   containers:
     - name: dind
       image: docker:24-dind
@@ -83,9 +93,8 @@ spec:
       volumeMounts:
         - name: workspaces
           mountPath: /workspaces
-        - name: prod-kubeconfig
-          mountPath: /home/coder/.kube
-          readOnly: true
+        - name: kubeconfig
+          mountPath: /root/.kube
       resources:
         requests:
           memory: "4Gi"
@@ -100,9 +109,11 @@ spec:
     - name: docker-storage
       persistentVolumeClaim:
         claimName: crystalshards-docker-storage
-    - name: prod-kubeconfig
+    - name: prod-kubeconfig-secret
       secret:
         secretName: prod-kubeconfig
+    - name: kubeconfig
+      emptyDir: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
