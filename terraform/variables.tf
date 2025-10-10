@@ -18,7 +18,7 @@ variable "cluster_name" {
 variable "image_tag" {
   description = "Docker image tag to deploy (git commit SHA, e.g., 'sha-abc123')"
   type        = string
-  default     = "dev" # Use 'dev' for initial deployment, should be overridden in production
+  default     = "latest" # Use 'latest' tag which is pushed by CI/CD pipeline
 }
 
 # CrystalBits secrets
