@@ -11,7 +11,7 @@ describe Newsletter::Unsubscribe do
 
     response = ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
-    response.should send_http_status(200)
+    response.status.should eq(200)
     subscriber.reload
     subscriber.unsubscribed_at.should_not be_nil
   end
@@ -25,14 +25,14 @@ describe Newsletter::Unsubscribe do
 
     response = ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
-    response.should send_http_status(200)
+    response.status.should eq(200)
     response.body.should contain("You've Been Unsubscribed")
   end
 
   it "redirects for invalid token" do
     response = ApiClient.exec(Newsletter::Unsubscribe.with("invalid-token"))
 
-    response.should send_http_status(302)
+    response.status.should eq(302)
   end
 
   it "redirects if already unsubscribed" do
@@ -44,7 +44,7 @@ describe Newsletter::Unsubscribe do
 
     response = ApiClient.exec(Newsletter::Unsubscribe.with("valid-token"))
 
-    response.should send_http_status(302)
+    response.status.should eq(302)
   end
 
   it "sets unsubscribed_at timestamp" do

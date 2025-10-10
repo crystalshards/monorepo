@@ -10,7 +10,7 @@ describe Posts::Show do
 
     response = ApiClient.exec(Posts::Show.with(post.slug))
 
-    response.should send_http_status(200)
+    response.status.should eq(200)
     response.body.should contain(post.title)
     response.body.should contain("This is the full content")
   end
@@ -51,7 +51,7 @@ describe Posts::Show do
 
     response = ApiClient.exec(Posts::Show.with(post.slug))
 
-    response.should send_http_status(200)
+    response.status.should eq(200)
     response.body.should contain(post.author_name)
     response.body.should contain("100 views")
   end
@@ -64,7 +64,7 @@ describe Posts::Show do
 
     response = ApiClient.exec(Posts::Show.with(post.slug))
 
-    response.should send_http_status(200)
+    response.status.should eq(200)
     response.body.should contain("<h1>Heading</h1>")
     response.body.should contain("<strong>bold</strong>")
   end
@@ -77,7 +77,7 @@ describe Posts::Show do
 
     response = ApiClient.exec(Posts::Show.with(post.slug))
 
-    response.should send_http_status(200)
+    response.status.should eq(200)
     response.body.should contain("crystal")
     response.body.should contain("web")
     response.body.should contain("tutorial")
@@ -89,7 +89,7 @@ describe Posts::Show do
 
     response = ApiClient.exec(Posts::Show.with(post.slug))
 
-    response.should send_http_status(200)
+    response.status.should eq(200)
     response.body.should contain("Enjoyed this post")
     response.body.should contain("Subscribe to our newsletter")
   end
@@ -115,7 +115,7 @@ describe Posts::Show do
 
     response = ApiClient.exec(Posts::Show.with(post.slug))
 
-    response.should send_http_status(200)
+    response.status.should eq(200)
     response.body.should contain("March 15, 2025")
   end
 end
