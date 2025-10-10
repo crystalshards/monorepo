@@ -8,23 +8,31 @@ class MockProvider < BaseProvider
   property should_raise : Exception?
 
   def fetch_shard_yml(version : String? = nil) : YAML::Any?
-    raise should_raise if should_raise
+    if ex = should_raise
+      raise ex
+    end
     return nil unless shard_yml_content
     YAML.parse(shard_yml_content.not_nil!)
   end
 
   def fetch_metadata : RepositoryMetadata?
-    raise should_raise if should_raise
+    if ex = should_raise
+      raise ex
+    end
     metadata_result
   end
 
   def clone_repository(target_dir : String) : Bool
-    raise should_raise if should_raise
+    if ex = should_raise
+      raise ex
+    end
     clone_success
   end
 
   def checkout_version(repo_dir : String, version : String) : Bool
-    raise should_raise if should_raise
+    if ex = should_raise
+      raise ex
+    end
     checkout_success
   end
 

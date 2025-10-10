@@ -79,7 +79,7 @@ class Shards::Browse::IndexPage < MainLayout
               type: "number",
               name: "min_stars",
               id: "min_stars",
-              value: @min_stars,
+              value: @min_stars.try(&.to_s) || "",
               placeholder: "0",
               min: "0",
               class: "filter-input"
