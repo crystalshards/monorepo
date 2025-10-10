@@ -1,18 +1,38 @@
 #!/bin/bash
 set -e
 
-# Check required environment variables
-if [ -z "$GITHUB_TOKEN" ]; then
-    echo "❌ Missing GITHUB_TOKEN"
+# Function to check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Check for envsubst (part of gettext package)
+if ! command_exists envsubst; then
+    echo "❌ envsubst is not installed. Please install gettext package:"
+    echo "   macOS: brew install gettext"
+    echo "   Ubuntu/Debian: apt-get install gettext-base"
+    echo "   RHEL/CentOS: yum install gettext"
     exit 1
 fi
 
+# Required environment variables
+REQUIRED_VARS=("GITHUB_TOKEN")
+
+# Check required environment variables
+for var in "${REQUIRED_VARS[@]}"; do
+    if [ -z "${!var}" ]; then
+        echo "❌ Missing required environment variable: $var"
+        exit 1
+    fi
+done
+
 # Set defaults
-POD_NAME="${POD_NAME:-crystalshards-agent}"
-NAMESPACE="claude"
-KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-gke_crystalshards-org_us-central1_crystalshards-cluster}"
-GIT_URL="${GIT_URL:-https://github.com/crystalshards/crystalshards-claude.git}"
-GIT_BRANCH="${GIT_BRANCH:-main}"
+export POD_NAME="${POD_NAME:-crystalshards-agent}"
+export NAMESPACE="claude"
+export KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-gke_waldrip-net_us-central1-a_cluster-1}"
+export GIT_URL="${GIT_URL:-https://github.com/crystalshards/crystalshards-claude.git}"
+export GIT_BRANCH="${GIT_BRANCH:-main}"
+export GITHUB_TOKEN
 
 echo "🚀 Launching CrystalShards Agent"
 echo "================================"
@@ -23,6 +43,10 @@ echo "Git URL: $GIT_URL"
 echo "Git Branch: $GIT_BRANCH"
 echo ""
 
+# Setup production cluster access
+echo "🔐 Setting up production cluster access..."
+./scripts/setup-prod-cluster-access.sh
+
 # Delete existing resources
 echo "🧹 Cleaning up existing resources..."
 kubectl --context "$KUBECTL_CONTEXT" delete pod "$POD_NAME" -n "$NAMESPACE" --ignore-not-found=true --wait
@@ -31,11 +55,7 @@ kubectl --context "$KUBECTL_CONTEXT" delete pvc crystalshards-docker-storage -n 
 
 # Apply the manifest
 echo "📦 Creating resources..."
-cat kubernetes-dev-pod.yaml | \
-    sed "s|YOUR_GITHUB_TOKEN_HERE|$GITHUB_TOKEN|g" | \
-    sed "s|crystalshards-agent|$POD_NAME|g" | \
-    sed "s|ENVBUILDER_GIT_URL: https://github.com/crystalshards/crystalshards-claude.git|ENVBUILDER_GIT_URL: $GIT_URL|g" | \
-    sed "s|value: main|value: $GIT_BRANCH|g" | kubectl --context "$KUBECTL_CONTEXT" apply -f -
+envsubst < kubernetes-dev-pod.yaml | kubectl --context "$KUBECTL_CONTEXT" apply -f -
 
 # Wait for pod to be ready
 echo "⏳ Waiting for pod to be ready..."

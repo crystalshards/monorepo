@@ -1,13 +1,13 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: claude
+  name: "${NAMESPACE}"
 ---
 apiVersion: v1
 kind: Pod
 metadata:
-  name: crystalshards-agent
-  namespace: claude
+  name: "${POD_NAME}"
+  namespace: "${NAMESPACE}"
 spec:
   serviceAccountName: crystalshards-agent
   restartPolicy: Always
@@ -41,15 +41,13 @@ spec:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
         - name: ENVBUILDER_GIT_URL
-          value: https://github.com/crystalshards/monorepo.git
+          value: "${GIT_URL}"
         - name: ENVBUILDER_GIT_BRANCH
-          value: main
+          value: "${GIT_BRANCH}"
         - name: ENVBUILDER_DEVCONTAINER_DIR
           value: /workspaces/monorepo/.devcontainer
         - name: ENVBUILDER_INIT_SCRIPT
           value: "/workspaces/monorepo/develop.sh"
-        - name: ENVBUILDER_CACHE_REPO
-          value: "" # Optional: Add cache repository for faster builds
         - name: ENVBUILDER_WORKSPACE_FOLDER
           value: /workspaces/monorepo
         - name: ENVBUILDER_VERBOSE
@@ -86,6 +84,9 @@ spec:
       volumeMounts:
         - name: workspaces
           mountPath: /workspaces
+        - name: prod-kubeconfig
+          mountPath: /root/.kube
+          readOnly: true
       resources:
         requests:
           memory: "4Gi"
@@ -100,12 +101,15 @@ spec:
     - name: docker-storage
       persistentVolumeClaim:
         claimName: crystalshards-docker-storage
+    - name: prod-kubeconfig
+      secret:
+        secretName: prod-kubeconfig
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: crystalshards-workspaces
-  namespace: claude
+  namespace: "${NAMESPACE}"
 spec:
   accessModes:
     - ReadWriteOnce
@@ -118,7 +122,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: crystalshards-docker-storage
-  namespace: claude
+  namespace: "${NAMESPACE}"
 spec:
   accessModes:
     - ReadWriteOnce
@@ -130,28 +134,8 @@ spec:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: claude-secrets
-  namespace: claude
-type: Opaque
-stringData:
-  api-key: "YOUR_CLAUDE_API_KEY_HERE"
----
-apiVersion: v1
-kind: Secret
-metadata:
   name: github-secrets
-  namespace: claude
+  namespace: "${NAMESPACE}"
 type: Opaque
 stringData:
-  token: "YOUR_GITHUB_TOKEN_HERE"
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: agent-config
-  namespace: claude
-data:
-  git-url: "https://github.com/crystalshards/monorepo.git"
-  git-branch: "main"
-  agent-name: "CrystalShards Agent"
-  agent-email: "agent@crystalshards.org"
+  token: "${GITHUB_TOKEN}"
