@@ -3,6 +3,7 @@ class Docs::VersionPage < MainLayout
   needs doc_version : DocVersion
   needs doc_content : String
   needs file_path : String
+  needs nav_files : Array(String)
 
   def page_title
     "#{doc.package_name} v#{doc_version.version}"
@@ -11,7 +12,8 @@ class Docs::VersionPage < MainLayout
   def content
     div class: "docs-viewer" do
       render_docs_header
-      render_docs_content
+      render_breadcrumbs
+      render_docs_layout
     end
   end
 
@@ -58,10 +60,27 @@ class Docs::VersionPage < MainLayout
     end
   end
 
-  private def render_docs_content
-    div class: "docs-content-wrapper" do
-      div class: "docs-content" do
-        raw doc_content
+  private def render_breadcrumbs
+    mount Components::Breadcrumbs,
+      package_name: doc.package_name,
+      version: doc_version.version,
+      file_path: file_path
+  end
+
+  private def render_docs_layout
+    div class: "docs-layout" do
+      # Sidebar navigation
+      mount Components::DocNavigation,
+        package_name: doc.package_name,
+        version: doc_version.version,
+        nav_files: nav_files,
+        current_file: file_path
+
+      # Main content area
+      div class: "docs-content-wrapper" do
+        div class: "docs-content" do
+          raw doc_content
+        end
       end
     end
   end

@@ -4,13 +4,10 @@ class Docs::Index < BrowserAction
 
   get "/docs" do
     per_page = 20
-    docs_query = DocQuery.new.preload_doc_versions
-
-    if search_query = query
-      docs_query = docs_query.package_name.ilike("%#{search_query}%")
-    end
-
-    docs_query = docs_query.last_updated_at.desc_order
+    docs_query = DocQuery.new
+      .preload_versions
+      .search(query)
+      .recently_updated
 
     total_count = docs_query.select_count
     offset_value = (page - 1) * per_page

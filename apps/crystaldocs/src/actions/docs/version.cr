@@ -1,9 +1,18 @@
 class Docs::Version < BrowserAction
-  param file : String = "index.html"
+  # Support wildcard path for deep linking to specific doc pages
+  # Example: /docs/lucky/1.0.0/guides/getting-started.html
+  get "/docs/:package_name/:version/*file_path" do
+    render_documentation(package_name, version, file_path)
+  end
 
+  # Default to index.html when no file specified
   get "/docs/:package_name/:version" do
+    render_documentation(package_name, version, "index.html")
+  end
+
+  private def render_documentation(package_name : String, version : String, file_path : String)
     doc = DocQuery.new
-      .preload_doc_versions
+      .preload_versions
       .package_name(package_name)
       .first?
 
@@ -22,22 +31,26 @@ class Docs::Version < BrowserAction
     doc_content = storage_service.fetch_doc_file(
       package_name: package_name,
       version: version,
-      file_path: file
+      file_path: file_path
     )
 
     if doc_content.nil?
       html Docs::VersionNotFoundPage,
         doc: doc,
         doc_version: doc_version,
-        file_path: file
+        file_path: file_path
     else
       increment_views(doc)
+
+      # Fetch navigation structure
+      nav_files = storage_service.list_doc_files(package_name, version)
 
       html Docs::VersionPage,
         doc: doc,
         doc_version: doc_version,
         doc_content: doc_content,
-        file_path: file
+        file_path: file_path,
+        nav_files: nav_files
     end
   end
 

@@ -1,7 +1,7 @@
 class Docs::Show < BrowserAction
   get "/docs/:package_name" do
     doc = DocQuery.new
-      .preload_doc_versions
+      .preload_versions
       .package_name(package_name)
       .first?
 

@@ -4,13 +4,13 @@ class Home::Index < BrowserAction
     total_versions = DocVersionQuery.new.select_count
 
     recent_docs = DocQuery.new
-      .preload_doc_versions
-      .last_updated_at.desc_order
+      .preload_versions
+      .recently_updated
       .limit(6)
 
     popular_docs = DocQuery.new
-      .preload_doc_versions
-      .total_views.desc_order
+      .preload_versions
+      .popular
       .limit(6)
 
     html Home::IndexPage,
