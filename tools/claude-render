@@ -86,7 +86,7 @@ class ClaudeStreamRenderer
       end
     rescue
       # If parsing fails, return the raw input
-      input.size > 100 ? "#{input[0..100]}... (#{input.size} chars)" : input
+      input.size > 2000 ? "#{input[0..2000]}... (#{input.size} chars)" : input
     end
   end
 
@@ -132,17 +132,17 @@ class ClaudeStreamRenderer
     result << (replace_all ? "Replace All" : "Replace First").colorize(:yellow).to_s
 
     # Show truncated old/new strings
-    if old.size > 50
+    if old.size > 1000
       result << "\n#{indent}  ➖ ".colorize(:red).to_s
-      result << "\"#{old[0..50]}...\" (#{old.size} chars)".colorize(:red).to_s
+      result << "\"#{old[0..1000]}...\" (#{old.size} chars)".colorize(:red).to_s
     else
       result << "\n#{indent}  ➖ ".colorize(:red).to_s
       result << "\"#{old}\"".colorize(:red).to_s
     end
 
-    if new_str.size > 50
+    if new_str.size > 1000
       result << "\n#{indent}  ➕ ".colorize(:green).to_s
-      result << "\"#{new_str[0..50]}...\" (#{new_str.size} chars)".colorize(:green).to_s
+      result << "\"#{new_str[0..1000]}...\" (#{new_str.size} chars)".colorize(:green).to_s
     else
       result << "\n#{indent}  ➕ ".colorize(:green).to_s
       result << "\"#{new_str}\"".colorize(:green).to_s
@@ -230,8 +230,8 @@ class ClaudeStreamRenderer
 
       if value.as_s?
         str = value.as_s
-        if str.size > 60
-          result << "#{str[0..60]}... (#{str.size} chars)".colorize(:dark_gray).to_s
+        if str.size > 300
+          result << "#{str[0..300]}... (#{str.size} chars)".colorize(:dark_gray).to_s
         else
           result << str.colorize(:white).to_s
         end
@@ -381,16 +381,16 @@ class ClaudeStreamRenderer
             text = item["text"]?.try(&.as_s) || ""
             # Smart truncation for output
             lines = text.lines
-            if lines.size > 10
-              # Show first 8 lines, then summary
-              lines[0..7].each do |line|
-                truncated = line.size > 100 ? line[0..100] + "..." : line
+            if lines.size > 50
+              # Show first 30 lines, then summary
+              lines[0..29].each do |line|
+                truncated = line.size > 2000 ? line[0..2000] + "..." : line
                 @output.puts "#{indent}    #{truncated}".colorize(:dark_gray)
               end
-              @output.puts "#{indent}    📄 (#{lines.size - 8} more lines)".colorize(:dark_gray)
-            elsif text.size > 500
+              @output.puts "#{indent}    📄 (#{lines.size - 30} more lines)".colorize(:dark_gray)
+            elsif text.size > 5000
               # Single long line
-              @output.puts "#{indent}    #{text[0..500]}...".colorize(:dark_gray)
+              @output.puts "#{indent}    #{text[0..5000]}...".colorize(:dark_gray)
               @output.puts "#{indent}    📏 (#{text.size} chars total)".colorize(:dark_gray)
             else
               # Show all content
