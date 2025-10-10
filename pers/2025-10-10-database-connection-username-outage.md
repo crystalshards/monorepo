@@ -42,6 +42,33 @@ CrystalShards.org and CrystalGigs.com experienced database connectivity issues d
 - CrystalShards.org: **STILL UNHEALTHY** (username 'app' error persists)
 - **NEW**: CrystalShards showing Redis connection errors
 
+**2025-10-10 14:21 UTC** - Second deployment attempt (Run #18409385726)
+- Triggered full deployment to force pod recreation
+- Deployment completed but health checks still failing
+- Pods still showing username 'app' error
+
+**2025-10-10 14:30 UTC** - Deep investigation reveals Terraform lifecycle issue
+- Identified root cause: `replace_triggered_by` lifecycle rule prevents normal secret updates
+- Secret only replaces when CNPG secret ID changes, not when secret data changes
+- Even though code fix was in place (a379c5f), Terraform wasn't applying it
+
+**2025-10-10 14:33 UTC** - Applied Terraform workaround (commit d91d468, Run #18409673237)
+- Added `_force_update` field to secret data to trigger Terraform change detection
+- Terraform successfully modified secret: "Modifications complete after 0s"
+- Deployment annotation hash changed (should trigger rolling update)
+
+**2025-10-10 14:40 UTC** - Pods STILL not restarting, Redis identified as blocker
+- New pods fail readiness checks due to Redis connectivity issue
+- Kubernetes rolling update stalled - old pods preserved when new pods aren't ready
+- Health checks continue hitting old pods with username 'app'
+- **ROOT BLOCKER**: Redis connection refused at shared-redis.infrastructure.svc.cluster.local:6379
+
+**2025-10-10 14:45 UTC** - Status: Investigation complete, awaiting Redis fix
+- Created comprehensive GitHub issue #60 documenting cascading failures
+- Kubernetes secret NOW contains correct DATABASE_URL
+- New pods ready to deploy with correct configuration
+- **Blocked by**: Redis connectivity - must be fixed before pods can become ready
+
 ## Root Cause Analysis
 
 ### Primary Cause
@@ -194,10 +221,13 @@ This suggests:
 
 - [#52](https://github.com/crystalshards/monorepo/issues/52) - Database connection issues (CrystalShards, CrystalGigs)
 - [#53](https://github.com/crystalshards/monorepo/issues/53) - Health check failing for CrystalShards
+- [#60](https://github.com/crystalshards/monorepo/issues/60) - **PRIMARY TRACKING ISSUE** - Comprehensive documentation of cascading failures
 
 ## Related Commits
 
-- [8d453f8](https://github.com/crystalshards/monorepo/commit/8d453f8) - fix(terraform): use correct database username from CNPG secrets
+- [a379c5f](https://github.com/crystalshards/monorepo/commit/a379c5f) - fix(infra): use correct PostgreSQL username from bootstrap config (initial code fix)
+- [d91d468](https://github.com/crystalshards/monorepo/commit/d91d468) - fix(crystalshards): force secret recreation to apply username fix (Terraform workaround)
+- [8d453f8](https://github.com/crystalshards/monorepo/commit/8d453f8) - fix(terraform): use correct database username from CNPG secrets (earlier attempt)
 - [2cec0ba](https://github.com/crystalshards/monorepo/commit/2cec0ba) - feat(ci): add workflow to force restart pods
 - [d6c9d00](https://github.com/crystalshards/monorepo/commit/d6c9d00) - fix(ci): use correct GCP auth method
 - [8df0421](https://github.com/crystalshards/monorepo/commit/8df0421) - fix(ci): install gke-gcloud-auth-plugin
@@ -232,6 +262,23 @@ Implementing the action items above will prevent similar outages in the future.
 
 ---
 
-**Document Status**: Living document, updated during incident resolution
-**Last Updated**: 2025-10-10 14:05 UTC
-**Next Review**: After CrystalShards becomes healthy
+**Document Status**: Investigation Complete - Awaiting Redis Fix
+**Last Updated**: 2025-10-10 14:45 UTC
+**Next Review**: After Redis connectivity is restored and CrystalShards becomes healthy
+
+## Final Investigation Status
+
+**Database Username Issue**: RESOLVED (in Kubernetes secret, awaiting pod rollout)
+- Terraform workaround successfully applied
+- Kubernetes secret now contains correct DATABASE_URL with username 'crystalshards'
+- Deployment annotation hash changed to trigger rolling update
+
+**Pod Rollout Issue**: BLOCKED by Redis connectivity
+- Rolling update initiated but stalled
+- New pods failing readiness checks
+- Old pods (with incorrect config) still serving traffic
+
+**Redis Connectivity Issue**: INVESTIGATION REQUIRED
+- Must be fixed before pods can complete rollout
+- See GitHub issue #60 for next steps
+- Requires kubectl access or manual intervention via web console
