@@ -1,8 +1,8 @@
 class Docs::Version < BrowserAction
   # Support wildcard path for deep linking to specific doc pages
   # Example: /docs/lucky/1.0.0/guides/getting-started.html
-  get "/docs/:package_name/:version/*file_path" do
-    render_documentation(package_name, version, file_path)
+  get "/docs/:package_name/:version/*:file_path" do
+    render_documentation(package_name, version, file_path || "index.html")
   end
 
   # Default to index.html when no file specified
@@ -12,7 +12,7 @@ class Docs::Version < BrowserAction
 
   private def render_documentation(package_name : String, version : String, file_path : String)
     doc = DocQuery.new
-      .preload_versions
+      .preload_doc_versions
       .package_name(package_name)
       .first?
 
