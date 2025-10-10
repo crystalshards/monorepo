@@ -4,20 +4,21 @@ set -e
 # Set defaults
 POD_NAME="${POD_NAME:-crystalshards-agent}"
 NAMESPACE="claude"
+KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-gke_crystalshards-org_us-central1_crystalshards-cluster}"
 
 echo "🔐 CrystalShards Agent Login"
 echo "============================"
 echo ""
 
 # Check if pod exists and is ready
-if ! kubectl --context gke_waldrip-net_us-central1-a_cluster-1 get pod "$POD_NAME" -n "$NAMESPACE" &>/dev/null; then
+if ! kubectl --context "$KUBECTL_CONTEXT" get pod "$POD_NAME" -n "$NAMESPACE" &>/dev/null; then
     echo "❌ Pod $POD_NAME not found in namespace $NAMESPACE"
     echo "   Run ./remote.sh first to create the pod"
     exit 1
 fi
 
 # Check pod status
-POD_STATUS=$(kubectl --context gke_waldrip-net_us-central1-a_cluster-1 get pod "$POD_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}')
+POD_STATUS=$(kubectl --context "$KUBECTL_CONTEXT" get pod "$POD_NAME" -n "$NAMESPACE" -o jsonpath='{.status.phase}')
 if [ "$POD_STATUS" != "Running" ]; then
     echo "❌ Pod is not running (status: $POD_STATUS)"
     echo "   Wait for pod to be ready or run ./remote.sh"
@@ -25,7 +26,7 @@ if [ "$POD_STATUS" != "Running" ]; then
 fi
 
 echo "⏳ Waiting for envbuilder to be ready..."
-until kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -n "$NAMESPACE" -c agent -- su - claude -s /bin/bash -c "true" > /dev/null 2>&1; do
+until kubectl --context "$KUBECTL_CONTEXT" exec -it "$POD_NAME" -n "$NAMESPACE" -c agent -- su - claude -s /bin/bash -c "true" > /dev/null 2>&1; do
   printf "."
   sleep 10
 done
@@ -38,7 +39,7 @@ echo "⚠️  IMPORTANT: Use your Claude Max account if available!"
 echo ""
 
 # Execute login in the container
-kubectl --context gke_waldrip-net_us-central1-a_cluster-1 exec -it "$POD_NAME" -n "$NAMESPACE" -c agent -- su - claude -s /bin/bash -c "
+kubectl --context "$KUBECTL_CONTEXT" exec -it "$POD_NAME" -n "$NAMESPACE" -c agent -- su - claude -s /bin/bash -c "
 
     cd /workspaces/monorepo
 

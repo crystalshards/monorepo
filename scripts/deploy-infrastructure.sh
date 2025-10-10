@@ -5,6 +5,9 @@
 
 set -e
 
+# Set defaults
+KUBECTL_CONTEXT="${KUBECTL_CONTEXT:-gke_crystalshards-org_us-central1_crystalshards-cluster}"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -25,7 +28,7 @@ print_error() {
 }
 
 # Check if kubectl is configured
-if ! kubectl cluster-info > /dev/null 2>&1; then
+if ! kubectl --context "$KUBECTL_CONTEXT" cluster-info > /dev/null 2>&1; then
     print_error "kubectl is not configured or cluster is not accessible"
     print_error "Please run: gcloud container clusters get-credentials crystalshards-cluster --region us-central1 --project YOUR_PROJECT_ID"
     exit 1
@@ -38,44 +41,44 @@ print_status "Verifying Terraform-deployed components..."
 
 # Wait for operators to be ready
 print_status "Waiting for operators to be ready..."
-kubectl wait --for=condition=available --timeout=300s deployment/cnpg-controller-manager -n infrastructure || true
-kubectl wait --for=condition=available --timeout=300s deployment/redis-operator -n infrastructure || true
+kubectl --context "$KUBECTL_CONTEXT" wait --for=condition=available --timeout=300s deployment/cnpg-controller-manager -n infrastructure || true
+kubectl --context "$KUBECTL_CONTEXT" wait --for=condition=available --timeout=300s deployment/redis-operator -n infrastructure || true
 
 # 2. Deploy PostgreSQL cluster
 print_status "Deploying PostgreSQL cluster..."
-kubectl apply -f kubernetes/infrastructure/postgresql-cluster.yaml
+kubectl --context "$KUBECTL_CONTEXT" apply -f kubernetes/infrastructure/postgresql-cluster.yaml
 
 # Wait for PostgreSQL to be ready
 print_status "Waiting for PostgreSQL cluster to be ready..."
-kubectl wait --for=condition=Ready --timeout=600s cluster/postgresql-cluster -n infrastructure
+kubectl --context "$KUBECTL_CONTEXT" wait --for=condition=Ready --timeout=600s cluster/postgresql-cluster -n infrastructure
 
 # 3. Deploy Redis cluster
 print_status "Deploying Redis cluster..."
-kubectl apply -f kubernetes/infrastructure/redis-cluster.yaml
+kubectl --context "$KUBECTL_CONTEXT" apply -f kubernetes/infrastructure/redis-cluster.yaml
 
 # Wait for Redis to be ready
 print_status "Waiting for Redis to be ready..."
 sleep 30
-kubectl wait --for=condition=available --timeout=300s deployment -l app=redis-cluster -n infrastructure || true
+kubectl --context "$KUBECTL_CONTEXT" wait --for=condition=available --timeout=300s deployment -l app=redis-cluster -n infrastructure || true
 
 # 4. Deploy MinIO tenant
 print_status "Deploying MinIO tenant..."
-kubectl apply -f kubernetes/infrastructure/minio-tenant.yaml
+kubectl --context "$KUBECTL_CONTEXT" apply -f kubernetes/infrastructure/minio-tenant.yaml
 
 # Wait for MinIO to be ready
 print_status "Waiting for MinIO to be ready..."
 sleep 60
-kubectl wait --for=condition=available --timeout=600s deployment -l v1.min.io/tenant=minio-tenant -n infrastructure || true
+kubectl --context "$KUBECTL_CONTEXT" wait --for=condition=available --timeout=600s deployment -l v1.min.io/tenant=minio-tenant -n infrastructure || true
 
 # 5. Run MinIO bucket setup job
 print_status "Setting up MinIO buckets..."
-kubectl delete job minio-bucket-setup -n infrastructure --ignore-not-found=true
-kubectl apply -f kubernetes/infrastructure/minio-tenant.yaml
-kubectl wait --for=condition=complete --timeout=300s job/minio-bucket-setup -n infrastructure
+kubectl --context "$KUBECTL_CONTEXT" delete job minio-bucket-setup -n infrastructure --ignore-not-found=true
+kubectl --context "$KUBECTL_CONTEXT" apply -f kubernetes/infrastructure/minio-tenant.yaml
+kubectl --context "$KUBECTL_CONTEXT" wait --for=condition=complete --timeout=300s job/minio-bucket-setup -n infrastructure
 
 # 6. Deploy KEDA scaling configurations
 print_status "Deploying KEDA autoscaling configurations..."
-kubectl apply -f kubernetes/apps/keda-scaling.yaml
+kubectl --context "$KUBECTL_CONTEXT" apply -f kubernetes/apps/keda-scaling.yaml
 
 print_status "Infrastructure deployment completed!"
 

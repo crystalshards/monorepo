@@ -9,6 +9,7 @@ metadata:
   name: crystalshards-agent
   namespace: claude
 spec:
+  serviceAccountName: crystalshards-agent
   restartPolicy: Always
   securityContext:
     fsGroup: 1000
