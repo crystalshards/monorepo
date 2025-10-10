@@ -205,18 +205,27 @@ jobs:
         terraform output kubectl_config || true
         terraform output load_balancer_ip_command || true
 
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
     - name: Configure kubectl
-      working-directory: ./terraform
       run: |
-        terraform output -raw kubectl_config > kubeconfig.txt
-        export KUBECONFIG=kubeconfig.txt
-        kubectl config view
+        # Get cluster name from Terraform
+        cd terraform
+        CLUSTER_NAME=$(terraform output -raw cluster_name)
+        cd ..
+
+        # Configure kubectl using gcloud
+        gcloud container clusters get-credentials $CLUSTER_NAME \
+          --region us-central1 \
+          --project ${{ secrets.GCP_PROJECT_ID }}
+
+        # Verify connection
+        kubectl cluster-info
+        kubectl get nodes
 
     - name: Debug - Check Secret Values
-      working-directory: ./terraform
       run: |
-        export KUBECONFIG=kubeconfig.txt
-
         echo "=== Checking actual DATABASE_URL values in secrets ==="
         for app in crystalshards crystaldocs crystalgigs crystalbits; do
           echo ""
