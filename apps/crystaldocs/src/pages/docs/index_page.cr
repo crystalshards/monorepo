@@ -33,7 +33,7 @@ class Docs::IndexPage < MainLayout
     if docs.any?
       div class: "doc-list" do
         docs.each do |doc|
-          mount Components::DocCard, doc: doc
+          mount Components::DocCard, doc: doc, heading_level: 2
         end
       end
     else

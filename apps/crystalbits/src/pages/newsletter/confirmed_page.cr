@@ -7,7 +7,11 @@ class Newsletter::ConfirmedPage < MainLayout
 
   def content
     div class: "confirmation-success" do
-      h1 "✓ You're Subscribed!"
+      # The glyph is decorative; the sentence carries the meaning.
+      h1 do
+        tag "i", class: "fa-solid fa-circle-check confirmation-icon", "aria-hidden": "true"
+        text "You're Subscribed!"
+      end
 
       para do
         text "Your subscription to CrystalBits newsletter is confirmed. We'll send you the latest Crystal tutorials, news, and updates."

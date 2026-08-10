@@ -39,7 +39,9 @@ class Jobs::ShowPage < MainLayout
 
           if location = @job.location
             span class: "meta-item" do
-              text "📍 #{location}"
+              # The glyph is decorative; the location text carries the meaning.
+              tag "i", class: "fa-solid fa-location-dot icon", "aria-hidden": "true"
+              text location
             end
           end
 
@@ -49,7 +51,8 @@ class Jobs::ShowPage < MainLayout
 
           if salary = format_salary_range
             span class: "meta-item" do
-              text "💰 #{salary}"
+              tag "i", class: "fa-solid fa-sack-dollar icon", "aria-hidden": "true"
+              text salary
             end
           end
 

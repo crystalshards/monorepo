@@ -1,11 +1,14 @@
 class JobCard < Lucky::BaseComponent
   needs job : Job
   needs featured : Bool = false
+  # Cards appear under an h2 on listings and homepage sections, so the level
+  # is set by the caller rather than baked into the visual style.
+  needs heading_level : Int32 = 3
 
   def render
     a href: "/jobs/#{@job.id}", class: card_class do
       div class: "job-card-header" do
-        h3 class: "job-title" do
+        tag "h#{@heading_level}", class: "job-title" do
           text @job.title
         end
 

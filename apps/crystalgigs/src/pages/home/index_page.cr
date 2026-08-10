@@ -11,34 +11,61 @@ class Home::IndexPage < MainLayout
   def content
     section class: "hero" do
       div class: "hero-content" do
-        h1 class: "hero-title" do
-          text "Find Your Next Crystal Job"
-        end
-
-        para class: "hero-subtitle" do
-          text "The premier job board for Crystal developers and companies hiring Crystal talent"
-        end
-
-        mount SearchBar, query: nil, large: true
-
-        div class: "hero-stats" do
-          div class: "stat" do
-            strong do
-              text @total_jobs.to_s
-            end
-            text " active jobs"
+        div do
+          para class: "eyebrow" do
+            text "The Crystal job board"
           end
-          div class: "stat" do
-            strong do
-              text @total_companies.to_s
+
+          h1 class: "hero-title" do
+            text "Find your next "
+            span class: "accent" do
+              text "Crystal job"
             end
-            text " companies hiring"
+            text "."
+          end
+
+          para class: "hero-subtitle" do
+            text "The premier job board for Crystal developers and companies hiring Crystal talent"
+          end
+
+          mount SearchBar, query: nil, large: true, field_id: "hero-search"
+
+          div class: "hero-cta" do
+            a href: "/jobs/new", class: "button button-primary button-large" do
+              text "Post a Job - $99"
+            end
           end
         end
 
-        div class: "hero-cta" do
-          a href: "/jobs/new", class: "button button-primary button-large" do
-            text "Post a Job - $99"
+        tag "figure", class: "hero-figure" do
+          img(
+            src: asset("img/specimen-pyrite.webp"),
+            srcset: "#{asset("img/specimen-pyrite.webp")} 560w, #{asset("img/specimen-pyrite@2x.webp")} 1120w",
+            sizes: "(max-width: 60rem) 22rem, 33rem",
+            width: "560", height: "560",
+            alt: "A cubic pyrite specimen, brassy metallic cubes intergrown"
+          )
+          tag "figcaption" do
+            text "Fig. 1 - Pyrite, cubic system"
+          end
+        end
+      end
+
+      div class: "hero-stats" do
+        div class: "stat" do
+          strong do
+            text @total_jobs.to_s
+          end
+          span do
+            text "Active jobs"
+          end
+        end
+        div class: "stat" do
+          strong do
+            text @total_companies.to_s
+          end
+          span do
+            text "Companies hiring"
           end
         end
       end
@@ -57,7 +84,7 @@ class Home::IndexPage < MainLayout
 
         div class: "job-grid" do
           @featured_jobs.each do |job|
-            mount JobCard, job: job, featured: true
+            mount JobCard, job: job, featured: true, heading_level: 3
           end
         end
       end
@@ -73,7 +100,7 @@ class Home::IndexPage < MainLayout
 
         div class: "job-grid" do
           @recent_jobs.each do |job|
-            mount JobCard, job: job
+            mount JobCard, job: job, heading_level: 3
           end
         end
 

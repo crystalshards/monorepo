@@ -32,7 +32,7 @@ class Jobs::NewPage < MainLayout
 
   private def render_pricing_info
     div class: "pricing-info" do
-      h3 do
+      h2 do
         text "Job Posting - #{Pricing.summary}"
       end
       ul do

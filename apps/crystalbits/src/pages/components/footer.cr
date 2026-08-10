@@ -29,7 +29,7 @@ class Footer < Lucky::BaseComponent
           div class: "footer-section" do
             h3 "Newsletter"
             para "Stay updated with the latest Crystal news and tutorials."
-            mount NewsletterSignupForm, inline: true
+            mount NewsletterSignupForm, inline: true, field_id: "newsletter-email-footer"
           end
         end
 

@@ -13,7 +13,7 @@ class Components::DocSidebar < Lucky::BaseComponent
 
   private def render_package_info
     div class: "sidebar-section" do
-      h3 doc.package_name, class: "sidebar-title"
+      h2 doc.package_name, class: "sidebar-title"
 
       if description = doc.description
         para description, class: "sidebar-description"
@@ -23,7 +23,7 @@ class Components::DocSidebar < Lucky::BaseComponent
 
   private def render_version_info
     div class: "sidebar-section" do
-      h4 "Version", class: "sidebar-heading"
+      h3 "Version", class: "sidebar-heading"
 
       div class: "sidebar-version" do
         span doc_version.version, class: "version-tag"
@@ -45,7 +45,7 @@ class Components::DocSidebar < Lucky::BaseComponent
 
   private def render_quick_links
     div class: "sidebar-section" do
-      h4 "Quick Links", class: "sidebar-heading"
+      h3 "Quick Links", class: "sidebar-heading"
 
       ul class: "sidebar-links" do
         li do

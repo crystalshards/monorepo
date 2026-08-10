@@ -35,14 +35,19 @@ class Posts::IndexPage < MainLayout
   private def render_search_form
     div class: "search-form" do
       form method: "get", action: "/posts" do
+        # A placeholder is not a label: it vanishes on input and is not a
+        # dependable accessible name (WCAG 3.3.2).
+        label "Search posts", for: "post-search", class: "visually-hidden"
+
         if search_value = @search
-          tag "input", type: "text", name: "search", placeholder: "Search posts...", value: search_value, class: "search-input"
+          tag "input", type: "search", id: "post-search", name: "search", placeholder: "Search posts...", value: search_value, class: "search-input"
         else
-          tag "input", type: "text", name: "search", placeholder: "Search posts...", class: "search-input"
+          tag "input", type: "search", id: "post-search", name: "search", placeholder: "Search posts...", class: "search-input"
         end
 
         button type: "submit", class: "search-button" do
-          text "Search"
+          tag "i", class: "fa-solid fa-magnifying-glass", "aria-hidden": "true"
+          text " Search"
         end
       end
     end
@@ -51,7 +56,7 @@ class Posts::IndexPage < MainLayout
   private def render_posts
     div class: "posts-list" do
       @posts.each do |post|
-        mount PostCard, post: post, show_excerpt: true
+        mount PostCard, post: post, show_excerpt: true, heading_level: 2
       end
     end
 
@@ -66,7 +71,8 @@ class Posts::IndexPage < MainLayout
     div class: "pagination" do
       if @current_page > 1
         a href: build_pagination_url(@current_page - 1), class: "pagination-link" do
-          text "← Previous"
+          tag "i", class: "fa-solid fa-arrow-left", "aria-hidden": "true"
+          text " Previous"
         end
       end
 
@@ -76,7 +82,8 @@ class Posts::IndexPage < MainLayout
 
       if @current_page < total_pages
         a href: build_pagination_url(@current_page + 1), class: "pagination-link" do
-          text "Next →"
+          text "Next "
+          tag "i", class: "fa-solid fa-arrow-right", "aria-hidden": "true"
         end
       end
     end

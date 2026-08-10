@@ -22,13 +22,15 @@ class Docs::ShowPage < MainLayout
 
       div class: "doc-stats-block" do
         span class: "stat-item" do
+          tag "i", class: "fa-solid fa-eye icon", "aria-hidden": "true"
           strong "#{doc.total_views}"
           text " views"
         end
 
         if updated = doc.last_updated_at
           span class: "stat-item" do
-            text "Updated #{format_date(updated)}"
+            tag "i", class: "fa-regular fa-clock icon", "aria-hidden": "true"
+            text " Updated #{format_date(updated)}"
           end
         end
       end

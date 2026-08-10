@@ -39,7 +39,10 @@ class Docs::VersionPage < MainLayout
   private def render_docs_header
     div class: "docs-header" do
       div class: "docs-nav" do
-        a "← Back to #{doc.package_name}", href: "/docs/#{doc.package_name}", class: "back-link"
+        a href: "/docs/#{doc.package_name}", class: "back-link" do
+          tag "i", class: "fa-solid fa-arrow-left", "aria-hidden": "true"
+          text " Back to #{doc.package_name}"
+        end
 
         div class: "version-switcher" do
           render_version_dropdown
@@ -98,12 +101,21 @@ class Docs::VersionPage < MainLayout
     div class: "docs-content-wrapper" do
       if content = doc_content
         div class: "docs-content" do
-          raw content
+          raw demote_content_headings(content)
         end
       else
         render_content_unavailable
       end
     end
+  end
+
+  # Generated documentation bodies carry their own top-level h1, but the page
+  # chrome already prints one (package + version). Demote the content h1 to
+  # h2 so the chrome owns the only h1 and heading order never skips.
+  private def demote_content_headings(html : String) : String
+    html
+      .gsub(/<h1(?=[\s>])/i, "<h2")
+      .gsub(/<\/h1>/i, "</h2>")
   end
 
   # Rendered when storage did not hand us the documentation body. The package

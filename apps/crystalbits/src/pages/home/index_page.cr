@@ -16,9 +16,35 @@ class Home::IndexPage < MainLayout
   private def render_hero
     section class: "hero" do
       div class: "hero-content" do
-        h1 "CrystalBits"
-        para class: "hero-subtitle" do
-          text "Tutorials, news, and insights from the Crystal programming language community"
+        div do
+          para class: "eyebrow" do
+            text "The Crystal community blog"
+          end
+
+          h1 class: "hero-title" do
+            text "Sharp ideas, "
+            span class: "accent" do
+              text "cut to length"
+            end
+            text "."
+          end
+
+          para class: "hero-subtitle" do
+            text "Tutorials, news, and insights from the Crystal programming language community"
+          end
+        end
+
+        tag "figure", class: "hero-figure" do
+          img(
+            src: asset("img/specimen-garnet.webp"),
+            srcset: "#{asset("img/specimen-garnet.webp")} 560w, #{asset("img/specimen-garnet@2x.webp")} 1120w",
+            sizes: "(max-width: 60rem) 22rem, 34rem",
+            width: "560", height: "560",
+            alt: "A deep red almandine garnet crystal specimen with sharp cubic faces"
+          )
+          tag "figcaption" do
+            text "Fig. 1 - Almandine garnet, cubic system"
+          end
         end
       end
     end
@@ -41,13 +67,13 @@ class Home::IndexPage < MainLayout
             span class: "post-author" do
               text "By #{post.author_name}"
             end
-            span class: "post-separator" do
+            span class: "post-separator", "aria-hidden": "true" do
               text "•"
             end
             span class: "post-date" do
               text format_date(post.published_at)
             end
-            span class: "post-separator" do
+            span class: "post-separator", "aria-hidden": "true" do
               text "•"
             end
             span class: "post-views" do
@@ -62,7 +88,8 @@ class Home::IndexPage < MainLayout
           end
 
           a href: "/posts/#{post.slug}", class: "read-more" do
-            text "Read More →"
+            text "Read More "
+            tag "i", class: "fa-solid fa-arrow-right", "aria-hidden": "true"
           end
         end
       end
@@ -75,7 +102,7 @@ class Home::IndexPage < MainLayout
 
       div class: "posts-grid" do
         @recent_posts.each do |post|
-          mount PostCard, post: post, show_excerpt: true
+          mount PostCard, post: post, show_excerpt: true, heading_level: 3
         end
       end
 
@@ -89,7 +116,7 @@ class Home::IndexPage < MainLayout
 
   private def render_newsletter_section
     section class: "newsletter-section" do
-      mount NewsletterSignupForm, inline: false
+      mount NewsletterSignupForm, inline: false, heading_level: 2
     end
   end
 

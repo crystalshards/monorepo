@@ -3,10 +3,9 @@ class Header < Lucky::BaseComponent
     header class: "site-header" do
       nav class: "navbar", "aria-label": "Primary" do
         div class: "navbar-brand" do
+          # The mark is drawn in CSS as a bevelled square (the cube face of
+          # pyrite), never an emoji.
           a href: "/", class: "logo" do
-            span class: "logo-icon" do
-              text "💎"
-            end
             text "CrystalGigs"
           end
         end
