@@ -160,6 +160,59 @@ resource "kubernetes_deployment" "crystalshards_worker" {
             value = "crystalshards.org"
           }
 
+          # Documentation build sandbox configuration. None of these are
+          # secrets, so plain values are used. The untrusted `crystal docs`
+          # step runs as a Job in the isolated docs-sandbox namespace; the
+          # trusted fetch/upload steps move data through MinIO.
+          env {
+            name  = "DOCS_SANDBOX"
+            value = "kubernetes"
+          }
+
+          env {
+            name  = "DOCS_SANDBOX_NAMESPACE"
+            value = kubernetes_namespace.docs_sandbox.metadata[0].name
+          }
+
+          env {
+            name  = "DOCS_SANDBOX_IMAGE"
+            value = var.docs_sandbox_image
+          }
+
+          env {
+            name  = "DOCS_SANDBOX_TIMEOUT_SECONDS"
+            value = tostring(var.docs_sandbox_timeout_seconds)
+          }
+
+          env {
+            name  = "DOCS_SANDBOX_MEMORY"
+            value = var.docs_sandbox_memory
+          }
+
+          env {
+            name  = "DOCS_SANDBOX_CPUS"
+            value = var.docs_sandbox_cpus
+          }
+
+          env {
+            name  = "DOCS_SANDBOX_PIDS"
+            value = tostring(var.docs_sandbox_pids)
+          }
+
+          # Optional RuntimeClass (for example gvisor). Empty string means the
+          # cluster default runtime. NOTE: coalesce() cannot be used here; it
+          # rejects empty-string arguments and would fail at plan time when the
+          # variable is null.
+          env {
+            name  = "DOCS_SANDBOX_RUNTIME_CLASS"
+            value = var.docs_sandbox_runtime_class == null ? "" : var.docs_sandbox_runtime_class
+          }
+
+          env {
+            name  = "DOCS_SANDBOX_SCRATCH_PREFIX"
+            value = var.docs_sandbox_scratch_prefix
+          }
+
           # Resource limits for Autopilot
           resources {
             requests = {

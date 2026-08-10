@@ -6,7 +6,7 @@
 #   crystalgigs    http://localhost:3002   job board
 #   crystalbits    http://localhost:3003   blog and newsletter
 
-.PHONY: help setup install-deps build start stop services migrate seed reset test lint format dev clean logs db-console
+.PHONY: help setup install-deps build start stop services migrate seed reset test lint format dev clean logs db-console docs.real
 
 APPS       := crystalshards crystaldocs crystalgigs crystalbits
 DB_USER    ?= postgres
@@ -47,9 +47,19 @@ MINIO_ENV = MINIO_ENDPOINT=$(MINIO_ENDPOINT) MINIO_ACCESS_KEY=$(MINIO_ACCESS_KEY
             MINIO_SECRET_KEY=$(MINIO_SECRET_KEY) MINIO_DOCS_BUCKET=$(DOCS_BUCKET) \
             MINIO_PACKAGES_BUCKET=$(PACKAGES_BUCKET)
 
+# Documentation builds compile third-party shard code, and Crystal runs macros
+# while compiling, so `crystal docs` on a published shard executes that
+# author's commands. The worker refuses to build without a sandbox; locally
+# that sandbox is Docker, which gives the compile no network and none of this
+# machine's environment.
+DOCS_SANDBOX       ?= docker
+DOCS_SANDBOX_IMAGE ?= crystallang/crystal:1.21.0-alpine
+
+SANDBOX_ENV = DOCS_SANDBOX=$(DOCS_SANDBOX) DOCS_SANDBOX_IMAGE=$(DOCS_SANDBOX_IMAGE)
+
 help: ## Show this help message
 	@echo "CrystalShards Development Commands:"
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 setup: services install-deps migrate seed ## Full local setup: services, deps, migrations, sample data
 	@echo ""
@@ -111,6 +121,11 @@ seed: ## Load sample development data for all apps
 			crystal run tasks.cr -- db.seed.sample_data) || exit 1; \
 	done
 
+docs.real: ## Generate real shard docs in the sandbox and upload to MinIO (scripts/build_real_docs.sh)
+	@$(MINIO_ENV) ./scripts/build_real_docs.sh
+	@echo ""
+	@echo "Re-run 'make seed' to sync crystaldocs rows with what is now in storage."
+
 reset: ## Drop, recreate, migrate and seed every development database
 	@for app in $(APPS); do \
 		psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d postgres -q -c \
@@ -159,6 +174,7 @@ dev: ## Run all four apps and the background worker (Ctrl-C stops everything)
 		DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/crystalshards_development" \
 		REDIS_URL=redis://localhost:6379/0 \
 		$(MINIO_ENV) \
+		$(SANDBOX_ENV) \
 		./bin/worker 2>&1 | sed "s/^/[worker] /") & \
 	wait
 

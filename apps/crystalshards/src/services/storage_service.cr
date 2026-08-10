@@ -8,18 +8,38 @@ module CrystalShards
     abstract def upload_docs(shard_name : String, version : String, docs_dir : String) : Array(String)
   end
 
+  # The slice of object storage a sandboxed build depends on. Source goes in
+  # and documentation comes back out through build-scoped scratch keys, which
+  # is what lets the build pod stay unable to reach anything else.
+  module ScratchStorage
+    abstract def upload_scratch(key : String, content : String)
+    abstract def download_scratch(key : String) : String
+    abstract def delete_scratch_prefix(prefix : String)
+  end
+
   # Service for interacting with MinIO object storage
   # Handles package and documentation storage
   class StorageService
     include DocsStorage
+    include ScratchStorage
 
     # Test seam. When set, `build` returns this proc's result instead of a real
     # MinIO-backed service. Always nil in production.
     class_property builder : Proc(DocsStorage)? = nil
+    class_property scratch_builder : Proc(ScratchStorage)? = nil
 
     # Entry point for callers that only need the `DocsStorage` contract.
     def self.build : DocsStorage
       if custom = @@builder
+        custom.call
+      else
+        new
+      end
+    end
+
+    # Entry point for callers that need the `ScratchStorage` contract.
+    def self.build_scratch : ScratchStorage
+      if custom = @@scratch_builder
         custom.call
       else
         new
@@ -142,6 +162,30 @@ module CrystalShards
         true
       rescue ex : Awscr::S3::Exception
         false
+      end
+    end
+
+    # Scratch space used to hand source into a sandboxed build and take
+    # documentation back out. Keys are build-scoped and deleted when the build
+    # finishes, so nothing here is durable.
+    def upload_scratch(key : String, content : String)
+      @client.put_object(
+        MinIOConfig.settings.docs_bucket,
+        key,
+        content,
+        {"Content-Type" => "application/gzip"}
+      )
+    end
+
+    def download_scratch(key : String) : String
+      @client.get_object(MinIOConfig.settings.docs_bucket, key).body
+    end
+
+    def delete_scratch_prefix(prefix : String)
+      @client.list_objects(MinIOConfig.settings.docs_bucket, prefix: prefix).each do |resp|
+        resp.contents.each do |object|
+          @client.delete_object(MinIOConfig.settings.docs_bucket, object.key)
+        end
       end
     end
 
