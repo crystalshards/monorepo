@@ -6,7 +6,8 @@ describe Home::Index do
 
     response.status_code.should eq(200)
     response.body.should contain("CrystalShards")
-    response.body.should contain("The official package registry for the Crystal programming language")
+    response.body.should contain("Every shard, cut and")
+    response.body.should contain("indexed straight from the source repository")
   end
 
   it "displays total shard count" do

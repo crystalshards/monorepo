@@ -1,19 +1,28 @@
 class SearchBar < Lucky::BaseComponent
   needs query : String = ""
-  needs placeholder : String = "Search for shards..."
+  needs placeholder : String = "Search shards, authors or tags"
   needs large : Bool = false
+  # Ids must be unique when the bar appears more than once on a page.
+  needs field_id : String = "shard-search"
 
   def render
     form action: "/shards", method: "get", class: search_form_classes do
+      # A placeholder is not a label: it vanishes on input and is not a
+      # dependable accessible name (WCAG 3.3.2).
+      label "Search shards", for: @field_id, class: "visually-hidden"
+
       input(
         type: "search",
+        id: @field_id,
         name: "query",
         value: @query,
         placeholder: @placeholder,
         class: search_input_classes
       )
+
       button type: "submit", class: "search-button" do
-        text "Search"
+        tag "i", class: "fa-solid fa-magnifying-glass", "aria-hidden": "true"
+        text " Search"
       end
     end
   end

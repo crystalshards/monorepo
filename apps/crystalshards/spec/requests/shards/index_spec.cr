@@ -126,7 +126,10 @@ describe Shards::Index do
     response.body.should contain("test-shard")
     response.body.should contain("A test shard")
     response.body.should contain("42")
-    response.body.should contain("100 downloads")
+    # The unit is a visually-hidden label beside the figure, so assert on both
+    # rather than on one contiguous string.
+    response.body.should contain("100")
+    response.body.should contain("downloads")
     response.body.should contain("MIT")
   end
 

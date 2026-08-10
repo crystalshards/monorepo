@@ -11,28 +11,56 @@ class Home::IndexPage < MainLayout
   def content
     section class: "hero" do
       div class: "hero-content" do
-        h1 class: "hero-title" do
-          text "CrystalShards"
-        end
-
-        para class: "hero-subtitle" do
-          text "The official package registry for the Crystal programming language"
-        end
-
-        mount SearchBar, large: true
-
-        div class: "hero-stats" do
-          div class: "stat" do
-            strong do
-              text @total_shards.to_s
-            end
-            text " shards"
+        div do
+          para class: "eyebrow" do
+            text "The Crystal package registry"
           end
-          div class: "stat" do
-            strong do
-              text format_number(@total_downloads)
+
+          h1 class: "hero-title" do
+            text "Every shard, cut and "
+            span class: "accent" do
+              text "catalogued"
             end
-            text " downloads"
+            text "."
+          end
+
+          para class: "hero-subtitle" do
+            text "Versions, dependencies and generated API documentation, " \
+                 "indexed straight from the source repository."
+          end
+
+          mount SearchBar, large: true, field_id: "hero-search"
+        end
+
+        tag "figure", class: "hero-figure" do
+          img(
+            src: asset("img/specimen-beryl.webp"),
+            srcset: "#{asset("img/specimen-beryl.webp")} 560w, #{asset("img/specimen-beryl@2x.webp")} 1120w",
+            sizes: "(max-width: 60rem) 22rem, 34rem",
+            width: "560", height: "700",
+            alt: "A faceted beryl crystal specimen lit to catch each cut plane"
+          )
+          tag "figcaption" do
+            text "Fig. 1 - Beryl, hexagonal system"
+          end
+        end
+      end
+
+      div class: "hero-stats" do
+        div class: "stat" do
+          strong do
+            text @total_shards.to_s
+          end
+          span do
+            text "Shards"
+          end
+        end
+        div class: "stat" do
+          strong do
+            text format_number(@total_downloads)
+          end
+          span do
+            text "Downloads"
           end
         end
       end
@@ -46,7 +74,7 @@ class Home::IndexPage < MainLayout
 
         div class: "shard-grid" do
           @featured_shards.each do |shard|
-            mount ShardCard, shard: shard
+            mount ShardCard, shard: shard, heading_level: 3
           end
         end
       end
@@ -60,13 +88,14 @@ class Home::IndexPage < MainLayout
 
         div class: "shard-grid" do
           @recent_shards.each do |shard|
-            mount ShardCard, shard: shard
+            mount ShardCard, shard: shard, heading_level: 3
           end
         end
 
         div class: "section-footer" do
           a href: "/shards", class: "view-all-link" do
-            text "View All Shards →"
+            text "View All Shards"
+            tag "i", class: "fa-solid fa-arrow-right", "aria-hidden": "true"
           end
         end
       end
