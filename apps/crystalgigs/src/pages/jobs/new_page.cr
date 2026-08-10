@@ -154,37 +154,19 @@ class Jobs::NewPage < MainLayout
             text "Job Type"
           end
           tag "select", name: "job:job_type", id: "job_job_type", required: "required" do
-            option value: "", selected: @operation.job_type.value.nil? do
-              text "Select job type"
-            end
-            option value: "full-time", selected: @operation.job_type.value == "full-time" do
-              text "Full Time"
-            end
-            option value: "part-time", selected: @operation.job_type.value == "part-time" do
-              text "Part Time"
-            end
-            option value: "contract", selected: @operation.job_type.value == "contract" do
-              text "Contract"
-            end
-            option value: "freelance", selected: @operation.job_type.value == "freelance" do
-              text "Freelance"
-            end
-            option value: "internship", selected: @operation.job_type.value == "internship" do
-              text "Internship"
-            end
+            select_option("Select job type", "", @operation.job_type.value.nil?)
+            select_option("Full Time", "full-time", @operation.job_type.value == "full-time")
+            select_option("Part Time", "part-time", @operation.job_type.value == "part-time")
+            select_option("Contract", "contract", @operation.job_type.value == "contract")
+            select_option("Freelance", "freelance", @operation.job_type.value == "freelance")
+            select_option("Internship", "internship", @operation.job_type.value == "internship")
           end
           render_errors(@operation.job_type)
         end
       end
 
       div class: "form-checkbox" do
-        input(
-          type: "checkbox",
-          name: "job:remote",
-          id: "job_remote",
-          value: "true",
-          checked: @operation.remote.value == true
-        )
+        checkbox_input("job:remote", "job_remote", "true", @operation.remote.value == true)
         label for: "job_remote" do
           text "This is a remote position"
         end
@@ -256,21 +238,11 @@ class Jobs::NewPage < MainLayout
             text "Currency"
           end
           tag "select", name: "job:salary_currency", id: "job_salary_currency" do
-            option value: "USD", selected: @operation.salary_currency.value == "USD" do
-              text "USD"
-            end
-            option value: "EUR", selected: @operation.salary_currency.value == "EUR" do
-              text "EUR"
-            end
-            option value: "GBP", selected: @operation.salary_currency.value == "GBP" do
-              text "GBP"
-            end
-            option value: "CAD", selected: @operation.salary_currency.value == "CAD" do
-              text "CAD"
-            end
-            option value: "AUD", selected: @operation.salary_currency.value == "AUD" do
-              text "AUD"
-            end
+            select_option("USD", "USD", @operation.salary_currency.value == "USD")
+            select_option("EUR", "EUR", @operation.salary_currency.value == "EUR")
+            select_option("GBP", "GBP", @operation.salary_currency.value == "GBP")
+            select_option("CAD", "CAD", @operation.salary_currency.value == "CAD")
+            select_option("AUD", "AUD", @operation.salary_currency.value == "AUD")
           end
         end
       end

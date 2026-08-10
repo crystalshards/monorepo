@@ -72,9 +72,24 @@ class Docs::VersionPage < MainLayout
     label "Version:"
     tag "select", id: "version-select", onchange: "window.location.href = this.value" do
       versions.each do |v|
-        tag "option", value: "/docs/#{doc.package_name}/#{v.version}", selected: v.version == doc_version.version do
-          text v.version
-        end
+        version_option(v.version, v.version == doc_version.version)
+      end
+    end
+  end
+
+  # `selected` is a boolean attribute: rendering selected="false" still marks
+  # the option selected, which left every option selected and the browser
+  # showing the last one rather than the version actually being viewed.
+  private def version_option(version : String, selected : Bool)
+    href = "/docs/#{doc.package_name}/#{version}"
+
+    if selected
+      tag "option", value: href, selected: "selected" do
+        text version
+      end
+    else
+      tag "option", value: href do
+        text version
       end
     end
   end
