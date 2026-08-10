@@ -1,232 +1,180 @@
 class Db::Seed::SampleData < LuckyTask::Task
   summary "Add sample database records helpful for development"
 
-  @storage = CrystalDocs::DocsStorageService.new
-  @storage_available = false
+  # One pinned, real version per package. scripts/build_real_docs.sh builds
+  # exactly these versions into object storage, so the two stay in lockstep:
+  # the rows seeded here describe the documentation `make docs.real` produces.
+  PACKAGES = [
+    {
+      name: "kemal", version: "1.6.0", released_at: 20.months.ago,
+      description:    "Lightning Fast, Super Simple web framework for Crystal.",
+      repository_url: "https://github.com/kemalcr/kemal",
+    },
+    {
+      name: "amber", version: "1.5.0", released_at: 12.months.ago,
+      description:    "A Crystal web framework that makes building applications fast, simple, and enjoyable.",
+      repository_url: "https://github.com/amberframework/amber",
+    },
+    {
+      name: "lucky", version: "1.5.0", released_at: 6.months.ago,
+      description:    "A full-featured Crystal web framework that catches bugs for you, runs incredibly fast, and helps you write code that lasts.",
+      repository_url: "https://github.com/luckyframework/lucky",
+    },
+    {
+      name: "granite", version: "0.23.4", released_at: 24.months.ago,
+      description:    "ORM for Crystal. Inspired by ActiveRecord and Ecto.",
+      repository_url: "https://github.com/amberframework/granite",
+    },
+    {
+      name: "jennifer", version: "0.13.0", released_at: 24.months.ago,
+      description:    "Active Record pattern implementation for Crystal with flexible query chainable builder and migration system.",
+      repository_url: "https://github.com/imdrasil/jennifer.cr",
+    },
+    {
+      name: "ameba", version: "1.6.4", released_at: 15.months.ago,
+      description:    "A static code analysis tool for Crystal.",
+      repository_url: "https://github.com/crystal-ameba/ameba",
+    },
+    {
+      name: "spectator", version: "0.12.4", released_at: 14.months.ago,
+      description:    "Feature-rich spec testing framework for Crystal inspired by RSpec.",
+      repository_url: "https://github.com/icy-arctic-fox/spectator",
+    },
+    {
+      name: "crystal-pg", version: "0.30.0", released_at: 10.months.ago,
+      description:    "PostgreSQL driver for Crystal.",
+      repository_url: "https://github.com/will/crystal-pg",
+    },
+    {
+      name: "crystal-redis", version: "2.9.1", released_at: 26.months.ago,
+      description:    "Full featured Redis client for Crystal.",
+      repository_url: "https://github.com/stefanwille/crystal-redis",
+    },
+    {
+      name: "jwt", version: "1.7.2", released_at: 16.months.ago,
+      description:    "JSON Web Token implementation in Crystal.",
+      repository_url: "https://github.com/crystal-community/jwt",
+    },
+    {
+      name: "spec-kemal", version: "1.3.0", released_at: 18.months.ago,
+      description:    "Easy testing for Kemal applications.",
+      repository_url: "https://github.com/kemalcr/spec-kemal",
+    },
+  ]
+
+  @found_docs = false
+  @storage_warnings = 0
 
   def call
-    @storage_available = @storage.ensure_bucket
+    puts "Seeding documentation entries..."
 
-    unless @storage_available
-      puts "WARNING: object storage is unreachable. Seeding metadata only, and"
-      puts "         versions will be marked failed rather than claiming docs"
-      puts "         that are not there. Start MinIO and re-run to fix."
+    PACKAGES.each { |package| sync_package(package) }
+
+    if @storage_warnings > 0
+      puts ""
+      puts "WARNING: object storage was unreachable for #{@storage_warnings} version listing(s);"
+      puts "         those versions are seeded as pending with zero counts."
+      puts "         Start MinIO (make services) and re-run to reflect reality."
     end
 
-    seed_documentation
+    unless @found_docs
+      puts ""
+      puts "No generated documentation was found in object storage, so every"
+      puts "version is seeded as pending. Run 'make docs.real' to build real"
+      puts "documentation for these packages, then re-run 'make seed'."
+    end
+
     puts "Done adding sample data"
   end
 
-  private def seed_documentation
-    puts "Seeding documentation entries..."
+  # Creates the Doc row (and the curated version row) when missing, then
+  # re-derives every version row of the package from object storage.
+  private def sync_package(package) : Nil
+    doc = find_or_create_doc(package)
 
-    create_doc_with_versions(
-      package_name: "lucky",
-      description: "A full-featured Crystal web framework that catches bugs for you, runs incredibly fast, and helps you write code that lasts.",
-      repository_url: "https://github.com/luckyframework/lucky",
-      versions: [
-        {version: "0.28.0", released_at: 2.months.ago, file_count: 150, total_size: 2_500_000_i64},
-        {version: "0.29.0", released_at: 1.month.ago, file_count: 158, total_size: 2_600_000_i64},
-        {version: "1.0.0", released_at: 1.week.ago, file_count: 165, total_size: 2_800_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "kemal",
-      description: "Lightning Fast, Super Simple web framework for Crystal.",
-      repository_url: "https://github.com/kemalcr/kemal",
-      versions: [
-        {version: "1.2.0", released_at: 6.months.ago, file_count: 80, total_size: 1_200_000_i64},
-        {version: "1.3.0", released_at: 3.months.ago, file_count: 85, total_size: 1_300_000_i64},
-        {version: "1.4.0", released_at: 2.weeks.ago, file_count: 90, total_size: 1_400_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "amber",
-      description: "A Crystal web framework that makes building applications fast, simple, and enjoyable.",
-      repository_url: "https://github.com/amberframework/amber",
-      versions: [
-        {version: "1.2.0", released_at: 4.months.ago, file_count: 120, total_size: 1_800_000_i64},
-        {version: "1.3.0", released_at: 1.month.ago, file_count: 125, total_size: 1_900_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "granite",
-      description: "ORM for Crystal. Inspired by ActiveRecord and Ecto.",
-      repository_url: "https://github.com/amberframework/granite",
-      versions: [
-        {version: "0.23.0", released_at: 5.months.ago, file_count: 60, total_size: 900_000_i64},
-        {version: "0.24.0", released_at: 2.months.ago, file_count: 62, total_size: 920_000_i64},
-        {version: "0.25.0", released_at: 2.weeks.ago, file_count: 65, total_size: 950_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "jennifer",
-      description: "Active Record pattern implementation for Crystal with flexible query chainable builder and migration system.",
-      repository_url: "https://github.com/imdrasil/jennifer.cr",
-      versions: [
-        {version: "0.11.0", released_at: 6.months.ago, file_count: 95, total_size: 1_500_000_i64},
-        {version: "0.12.0", released_at: 3.months.ago, file_count: 100, total_size: 1_550_000_i64},
-        {version: "0.13.0", released_at: 3.weeks.ago, file_count: 105, total_size: 1_600_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "ameba",
-      description: "A static code analysis tool for Crystal.",
-      repository_url: "https://github.com/crystal-ameba/ameba",
-      versions: [
-        {version: "1.4.0", released_at: 4.months.ago, file_count: 40, total_size: 600_000_i64},
-        {version: "1.5.0", released_at: 1.month.ago, file_count: 42, total_size: 620_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "spec-kemal",
-      description: "Easy testing for Kemal applications.",
-      repository_url: "https://github.com/kemalcr/spec-kemal",
-      versions: [
-        {version: "1.0.0", released_at: 8.months.ago, file_count: 25, total_size: 400_000_i64},
-        {version: "1.1.0", released_at: 2.months.ago, file_count: 28, total_size: 430_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "crystal-redis",
-      description: "Full featured Redis client for Crystal.",
-      repository_url: "https://github.com/stefanwille/crystal-redis",
-      versions: [
-        {version: "2.8.0", released_at: 5.months.ago, file_count: 70, total_size: 1_100_000_i64},
-        {version: "2.9.0", released_at: 1.month.ago, file_count: 72, total_size: 1_150_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "crystal-pg",
-      description: "PostgreSQL driver for Crystal.",
-      repository_url: "https://github.com/will/crystal-pg",
-      versions: [
-        {version: "0.24.0", released_at: 7.months.ago, file_count: 55, total_size: 850_000_i64},
-        {version: "0.25.0", released_at: 3.months.ago, file_count: 58, total_size: 880_000_i64},
-        {version: "0.26.0", released_at: 2.weeks.ago, file_count: 60, total_size: 900_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "jwt",
-      description: "JSON Web Token implementation in Crystal.",
-      repository_url: "https://github.com/crystal-community/jwt",
-      versions: [
-        {version: "1.5.0", released_at: 6.months.ago, file_count: 30, total_size: 500_000_i64},
-        {version: "1.6.0", released_at: 1.month.ago, file_count: 32, total_size: 520_000_i64},
-      ]
-    )
-
-    create_doc_with_versions(
-      package_name: "spectator",
-      description: "Feature-rich spec testing framework for Crystal inspired by RSpec.",
-      repository_url: "https://github.com/icy-arctic-fox/spectator",
-      versions: [
-        {version: "0.11.0", released_at: 5.months.ago, file_count: 88, total_size: 1_300_000_i64},
-        {version: "0.12.0", released_at: 2.months.ago, file_count: 92, total_size: 1_350_000_i64},
-      ]
-    )
-  end
-
-  private def create_doc_with_versions(package_name : String, description : String? = nil,
-                                       repository_url : String? = nil,
-                                       versions : Array(NamedTuple) = [] of NamedTuple)
-    return if DocQuery.new.package_name(package_name).any?
-
-    current_version = versions.last? ? versions.last[:version] : nil
-    total_views = Random.rand(100..50000).to_i64
-
-    doc = SaveDoc.create!(
-      package_name: package_name,
-      current_version: current_version,
-      description: description,
-      repository_url: repository_url,
-      total_views: total_views,
-      last_updated_at: Time.utc
-    )
-
-    versions.each do |version_data|
-      version = version_data[:version].as(String)
-
-      # Upload real content and record what was actually written. Seeding
-      # build_status "success" with invented file counts, as this task used
-      # to, left every version page reporting that documentation was
-      # unavailable because nothing had ever been stored.
-      written = upload_placeholder_docs(package_name, version, description)
-
-      SaveDocVersion.create!(
+    rows = DocVersionQuery.new.doc_id(doc.id).to_a
+    unless rows.any? { |row| row.version == package[:version] }
+      rows << SaveDocVersion.create!(
         doc_id: doc.id,
-        version: version,
-        published_at: version_data[:released_at].as(Time),
-        build_status: written.nil? ? "failed" : "success",
-        storage_path: "#{package_name}/#{version}",
-        file_count: written.nil? ? 0 : written[:files],
-        total_size: written.nil? ? 0_i64 : written[:bytes]
+        version: package[:version],
+        published_at: package[:released_at],
+        build_status: "pending",
+        storage_path: "#{package[:name]}/#{package[:version]}",
+        file_count: 0,
+        total_size: 0_i64
       )
     end
 
-    puts "  Created documentation: #{package_name} with #{versions.size} versions"
+    documented = rows.count { |row| sync_version_row(package[:name], row) }
+
+    puts "  #{package[:name]}: #{rows.size} version(s), #{documented} with documentation in storage"
   end
 
-  # Writes a small but genuine documentation tree so the browser has something
-  # real to serve. Returns nil when the store could not be reached.
-  private def upload_placeholder_docs(package_name : String, version : String,
-                                      description : String?) : NamedTuple(files: Int32, bytes: Int64)?
-    return nil unless @storage_available
+  private def find_or_create_doc(package) : Doc
+    doc = DocQuery.new.package_name(package[:name]).first?
+    return create_doc(package) if doc.nil?
 
-    pages = {
-      "index.html"     => index_page(package_name, version, description),
-      "api/index.html" => api_page(package_name, version),
-    }
+    if doc.current_version == package[:version]
+      doc
+    else
+      SaveDoc.update!(doc, current_version: package[:version], last_updated_at: Time.utc)
+    end
+  end
 
-    files = 0
-    bytes = 0_i64
+  private def create_doc(package) : Doc
+    SaveDoc.create!(
+      package_name: package[:name],
+      current_version: package[:version],
+      description: package[:description],
+      repository_url: package[:repository_url],
+      total_views: Random.rand(100..50000).to_i64,
+      last_updated_at: Time.utc
+    )
+  end
 
-    pages.each do |path, content|
-      written = @storage.upload_doc_file(package_name, version, path, content)
-      return nil if written.nil?
+  # Points one version row at the truth in object storage. Returns whether
+  # generated documentation exists for it. A row claims success only when the
+  # store answered and <package>/<version>/index.html is actually there;
+  # anything else is pending with zero counts, never an assumed success.
+  private def sync_version_row(package_name : String, row : DocVersion) : Bool
+    listing = storage_listing(package_name, row.version)
+    @storage_warnings += 1 unless listing[:available]
 
-      files += 1
-      bytes += written
+    success = listing[:available] && listing[:index_exists]
+    @found_docs = true if success
+
+    status = success ? "success" : "pending"
+    files = success ? listing[:files] : 0
+    bytes = success ? listing[:bytes] : 0_i64
+
+    if row.build_status != status || row.file_count != files || row.total_size != bytes
+      SaveDocVersion.update!(row, build_status: status, file_count: files, total_size: bytes)
     end
 
-    {files: files, bytes: bytes}
+    success
   end
 
-  private def index_page(package_name : String, version : String, description : String?) : String
-    <<-HTML
-    <!DOCTYPE html>
-    <html lang="en">
-    <head><meta charset="utf-8"><title>#{package_name} #{version}</title></head>
-    <body>
-      <h1>#{package_name} <small>#{version}</small></h1>
-      <p>#{description || "Crystal shard documentation."}</p>
-      <p>This is sample documentation generated by the development seed.</p>
-      <ul><li><a href="api/index.html">API reference</a></li></ul>
-    </body>
-    </html>
-    HTML
-  end
+  # Lists <package>/<version>/ in the docs bucket: whether the store answered,
+  # whether index.html is among the objects, and the real file count and byte
+  # total. `available: false` means MinIO could not be reached, which says
+  # nothing about whether the documentation exists.
+  private def storage_listing(package_name : String, version : String) : NamedTuple(available: Bool, index_exists: Bool, files: Int32, bytes: Int64)
+    prefix = "#{package_name}/#{version}/"
+    files = 0
+    bytes = 0_i64
+    index_exists = false
 
-  private def api_page(package_name : String, version : String) : String
-    <<-HTML
-    <!DOCTYPE html>
-    <html lang="en">
-    <head><meta charset="utf-8"><title>#{package_name} #{version} API</title></head>
-    <body>
-      <h1>API reference</h1>
-      <p>Sample API documentation for #{package_name} #{version}.</p>
-      <p><a href="../index.html">Back to overview</a></p>
-    </body>
-    </html>
-    HTML
+    client = CrystalDocs::MinIOConfig.client
+    client.list_objects(CrystalDocs::MinIOConfig.settings.docs_bucket, prefix: prefix).each do |page|
+      page.contents.each do |object|
+        files += 1
+        bytes += object.size
+        index_exists = true if object.key == "#{prefix}index.html"
+      end
+    end
+
+    {available: true, index_exists: index_exists, files: files, bytes: bytes}
+  rescue Awscr::S3::Exception | IO::Error
+    {available: false, index_exists: false, files: 0, bytes: 0_i64}
   end
 end
