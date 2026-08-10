@@ -1,19 +1,26 @@
 require "stripe"
 
-# Payments run against Stripe in every environment. Local development and CI
-# have no Stripe credentials, so they must opt out explicitly by setting
-# PAYMENTS_DISABLED=true. There is deliberately no silent fallback to a
-# placeholder key: a misconfigured production deploy fails at boot instead of
-# quietly failing to take money.
+# Payments run against Stripe whenever credentials are configured.
+#
+# Production ALWAYS requires them: a deploy missing STRIPE_SECRET_KEY fails at
+# boot rather than quietly failing to take money. There is deliberately no
+# fallback to a placeholder key.
+#
+# Outside production, payments are disabled unless a key is supplied, so specs
+# and a fresh clone run with no configuration at all. Setting
+# PAYMENTS_DISABLED=true forces them off in any environment.
 module Payments
-  class_getter? disabled : Bool = ENV["PAYMENTS_DISABLED"]? == "true"
-
-  def self.publishable_key : String
-    ENV["STRIPE_PUBLISHABLE_KEY"]? || raise_missing_key("STRIPE_PUBLISHABLE_KEY")
+  class_getter? disabled : Bool = begin
+    if ENV["PAYMENTS_DISABLED"]? == "true"
+      true
+    else
+      !LuckyEnv.production? && ENV["STRIPE_SECRET_KEY"]?.nil?
+    end
   end
 
-  def self.raise_missing_key(name : String) : NoReturn
-    raise "Missing #{name}. Set it, or set PAYMENTS_DISABLED=true to run without payment processing."
+  def self.publishable_key : String
+    ENV["STRIPE_PUBLISHABLE_KEY"]? ||
+      raise "Missing STRIPE_PUBLISHABLE_KEY. Set it, or set PAYMENTS_DISABLED=true to run without payment processing."
   end
 end
 
