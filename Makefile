@@ -35,6 +35,18 @@ define app_test_db_url
 postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(1)_test
 endef
 
+# Object storage. DOCS_BUCKET is shared: CrystalShards builds documentation
+# into it and CrystalDocs serves it back out, so both apps must agree.
+MINIO_ENDPOINT   ?= http://localhost:9000
+MINIO_ACCESS_KEY ?= minioadmin
+MINIO_SECRET_KEY ?= minioadmin
+DOCS_BUCKET      ?= crystal-docs
+PACKAGES_BUCKET  ?= packages
+
+MINIO_ENV = MINIO_ENDPOINT=$(MINIO_ENDPOINT) MINIO_ACCESS_KEY=$(MINIO_ACCESS_KEY) \
+            MINIO_SECRET_KEY=$(MINIO_SECRET_KEY) MINIO_DOCS_BUCKET=$(DOCS_BUCKET) \
+            MINIO_PACKAGES_BUCKET=$(PACKAGES_BUCKET)
+
 help: ## Show this help message
 	@echo "CrystalShards Development Commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -60,6 +72,15 @@ services: ## Start Redis and MinIO in Docker, and verify Postgres is reachable
 			"CREATE DATABASE $${app}_test OWNER $(DB_USER)"; \
 	done
 	@echo "Databases ready."
+	@echo "Ensuring MinIO buckets ($(DOCS_BUCKET), $(PACKAGES_BUCKET))..."
+	@for i in 1 2 3 4 5 6 7 8 9 10; do \
+		curl -sf $(MINIO_ENDPOINT)/minio/health/live >/dev/null 2>&1 && break || sleep 2; \
+	done
+	@docker run --rm --network host --entrypoint sh minio/mc:latest -c \
+		"mc alias set local $(MINIO_ENDPOINT) $(MINIO_ACCESS_KEY) $(MINIO_SECRET_KEY) >/dev/null && \
+		 mc mb --ignore-existing local/$(DOCS_BUCKET) local/$(PACKAGES_BUCKET) >/dev/null" \
+		|| echo "  WARNING: could not create buckets; documentation pages will report storage unavailable."
+	@echo "Buckets ready."
 
 install-deps: ## Install Crystal dependencies for all apps
 	@for app in $(APPS); do \
@@ -86,6 +107,7 @@ seed: ## Load sample development data for all apps
 	@for app in $(APPS); do \
 		echo "Seeding $$app..."; \
 		(cd apps/$$app && DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_development" \
+			$(MINIO_ENV) \
 			crystal run tasks.cr -- db.seed.sample_data) || exit 1; \
 	done
 
@@ -129,14 +151,14 @@ dev: ## Run all four apps and the background worker (Ctrl-C stops everything)
 		(cd apps/$$app && DEV_PORT=$$port \
 			DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_development" \
 			REDIS_URL=redis://localhost:6379/0 \
-			MINIO_ENDPOINT=http://localhost:9000 MINIO_ACCESS_KEY=minioadmin MINIO_SECRET_KEY=minioadmin \
+			$(MINIO_ENV) \
 			./bin/$$app 2>&1 | sed "s/^/[$$app] /") & \
 		port=$$((port + 1)); \
 	done; \
 	(cd apps/crystalshards && \
 		DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/crystalshards_development" \
 		REDIS_URL=redis://localhost:6379/0 \
-		MINIO_ENDPOINT=http://localhost:9000 MINIO_ACCESS_KEY=minioadmin MINIO_SECRET_KEY=minioadmin \
+		$(MINIO_ENV) \
 		./bin/worker 2>&1 | sed "s/^/[worker] /") & \
 	wait
 

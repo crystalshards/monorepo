@@ -128,6 +128,48 @@ module CrystalDocs
       url.for(:get)
     end
 
+    # Create the docs bucket when it is missing. Safe to call repeatedly.
+    def ensure_bucket : Bool
+      @client.put_bucket(MinIOConfig.settings.docs_bucket)
+      true
+    rescue Awscr::S3::BucketAlreadyExists | Awscr::S3::BucketAlreadyOwnedByYou
+      true
+    rescue ex : Awscr::S3::Exception | IO::Error
+      log_unavailable(MinIOConfig.settings.docs_bucket, ex)
+      false
+    end
+
+    # Store a documentation file. Returns the number of bytes written, or nil
+    # when the store could not be reached, so callers can report honestly
+    # instead of assuming the write landed.
+    def upload_doc_file(package_name : String, version : String, file_path : String, content : String) : Int64?
+      key = docs_key(package_name, version, file_path)
+
+      begin
+        @client.put_object(
+          MinIOConfig.settings.docs_bucket,
+          key,
+          content,
+          {"Content-Type" => content_type_for(file_path)}
+        )
+
+        content.bytesize.to_i64
+      rescue ex : Awscr::S3::Exception | IO::Error
+        log_unavailable(key, ex)
+        nil
+      end
+    end
+
+    private def content_type_for(file_path : String) : String
+      case File.extname(file_path)
+      when ".html" then "text/html"
+      when ".css"  then "text/css"
+      when ".js"   then "application/javascript"
+      when ".json" then "application/json"
+      else              "application/octet-stream"
+      end
+    end
+
     private def docs_key(package_name : String, version : String, file_path : String) : String
       "#{package_name}/#{version}/#{file_path}"
     end

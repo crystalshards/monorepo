@@ -32,6 +32,10 @@ CrystalShards::MinIOConfig.configure do |config|
   config.secret_key = ENV.fetch("MINIO_SECRET_KEY", "minioadmin")
   config.region = ENV.fetch("MINIO_REGION", "us-east-1")
   config.packages_bucket = ENV.fetch("MINIO_PACKAGES_BUCKET", "packages")
-  config.docs_bucket = ENV.fetch("MINIO_DOCS_BUCKET", "docs")
+  # Must match crystaldocs' MINIO_DOCS_BUCKET: CrystalShards builds the
+  # documentation and CrystalDocs serves it out of the same bucket. These
+  # defaults previously disagreed ("docs" vs "crystal-docs"), so nothing
+  # CrystalShards uploaded was ever visible on CrystalDocs.
+  config.docs_bucket = ENV.fetch("MINIO_DOCS_BUCKET", "crystal-docs")
   config.use_ssl = ENV.fetch("MINIO_USE_SSL", "false") == "true"
 end

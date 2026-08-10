@@ -73,35 +73,17 @@ class Jobs::IndexPage < MainLayout
             text "Job Type"
           end
           tag "select", name: "job_type" do
-            option value: "", selected: @job_type.nil? do
-              text "All Types"
-            end
-            option value: "full-time", selected: @job_type == "full-time" do
-              text "Full Time"
-            end
-            option value: "part-time", selected: @job_type == "part-time" do
-              text "Part Time"
-            end
-            option value: "contract", selected: @job_type == "contract" do
-              text "Contract"
-            end
-            option value: "freelance", selected: @job_type == "freelance" do
-              text "Freelance"
-            end
-            option value: "internship", selected: @job_type == "internship" do
-              text "Internship"
-            end
+            select_option("All Types", "", @job_type.nil?)
+            select_option("Full Time", "full-time", @job_type == "full-time")
+            select_option("Part Time", "part-time", @job_type == "part-time")
+            select_option("Contract", "contract", @job_type == "contract")
+            select_option("Freelance", "freelance", @job_type == "freelance")
+            select_option("Internship", "internship", @job_type == "internship")
           end
         end
 
         div class: "filter-checkbox" do
-          input(
-            type: "checkbox",
-            name: "remote",
-            id: "remote-checkbox",
-            value: "true",
-            checked: @remote == true
-          )
+          checkbox_input("remote", "remote-checkbox", "true", @remote == true)
           label for: "remote-checkbox" do
             text "Remote only"
           end
