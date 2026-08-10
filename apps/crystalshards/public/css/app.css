@@ -435,6 +435,29 @@ a:hover {
   line-height: 1.4;
 }
 
+.readme-content {
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+/* READMEs are fetched from third-party repositories and rendered as escaped
+   text, so a plain <pre> would not wrap: long lines and unbroken badge URLs
+   stretched the whole page horizontally. */
+.readme-raw {
+  margin: 0;
+  padding: 1rem;
+  background-color: #f6f8fa;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 40rem;
+  overflow-y: auto;
+}
+
 .dependency-list {
   list-style: none;
   padding: 0;
