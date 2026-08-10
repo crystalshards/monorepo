@@ -1,9 +1,7 @@
 require "../../../spec_helper"
 
 describe Api::Posts::Create do
-  pending "creates a new post with valid params" do
-    # TODO: Fix ApiClient/BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "creates a new post with valid params" do
     params = {
       post: {
         title:       "Crystal Language Guide",
@@ -15,9 +13,6 @@ describe Api::Posts::Create do
 
     response = ApiClient.exec(Api::Posts::Create, **params)
 
-    if response.status_code != 201
-      pp! response.status_code, response.body
-    end
     response.status_code.should eq(201)
     body = JSON.parse(response.body)
 
@@ -26,9 +21,7 @@ describe Api::Posts::Create do
     body["author_name"].should eq("Crystal Developer")
   end
 
-  pending "returns errors for invalid params" do
-    # TODO: Fix ApiClient/BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "returns errors for invalid params" do
     params = {
       post: {
         title: "Crystal Guide",
@@ -42,9 +35,7 @@ describe Api::Posts::Create do
     body["errors"].as_a.should_not be_empty
   end
 
-  pending "auto-generates slug from title if not provided" do
-    # TODO: Fix ApiClient/BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "auto-generates slug from title if not provided" do
     params = {
       post: {
         title:       "Crystal Language Guide",
@@ -61,9 +52,7 @@ describe Api::Posts::Create do
     body["slug"].should eq("crystal-language-guide")
   end
 
-  pending "auto-generates excerpt from content if not provided" do
-    # TODO: Fix ApiClient/BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "auto-generates excerpt from content if not provided" do
     long_content = "A" * 300
 
     params = {
@@ -82,9 +71,7 @@ describe Api::Posts::Create do
     body["excerpt"].as_s.size.should be <= 203
   end
 
-  pending "validates slug uniqueness" do
-    # TODO: Fix ApiClient/BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "validates slug uniqueness" do
     PostFactory.create &.slug("crystal-guide")
 
     params = {

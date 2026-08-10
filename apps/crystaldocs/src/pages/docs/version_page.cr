@@ -1,7 +1,7 @@
 class Docs::VersionPage < MainLayout
   needs doc : Doc
   needs doc_version : DocVersion
-  needs doc_content : String
+  needs doc_content : String?
   needs file_path : String
 
   def page_title
@@ -81,8 +81,33 @@ class Docs::VersionPage < MainLayout
 
   private def render_docs_content
     div class: "docs-content-wrapper" do
-      div class: "docs-content" do
-        raw doc_content
+      if content = doc_content
+        div class: "docs-content" do
+          raw content
+        end
+      else
+        render_content_unavailable
+      end
+    end
+  end
+
+  # Rendered when storage did not hand us the documentation body. The package
+  # and version exist, so say what is actually wrong instead of implying the
+  # documentation was never published.
+  private def render_content_unavailable
+    div class: "docs-content docs-content-unavailable" do
+      h2 "Documentation content is temporarily unavailable"
+
+      para do
+        text "We could not load the documentation for "
+        strong "#{doc.package_name} v#{doc_version.version}"
+        text " from storage. This version is published, so the problem is on our end."
+      end
+
+      para class: "docs-content-hint" do
+        text "Try again in a moment, or "
+        a "browse the other versions", href: "/docs/#{doc.package_name}"
+        text "."
       end
     end
   end

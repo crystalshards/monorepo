@@ -1,8 +1,15 @@
 require "../../../spec_helper"
 require "digest/sha256"
 
+# Lucky's `exec` JSON encodes its named tuple and its `headers` helper rewrites
+# dashes to underscores, so neither a raw multipart body nor a real
+# `Content-Type` header survives. Send both verbatim instead.
+private def post_upload(client : ApiClient, body : String, content_type : String) : HTTP::Client::Response
+  client.raw_headers({"Content-Type" => content_type}).exec_raw(Api::Shards::Upload, body)
+end
+
 describe Api::Shards::Upload do
-  pending "uploads a package with multipart form data" do
+  it "uploads a package with multipart form data" do
     user = UserFactory.create
 
     # Create test package content
@@ -28,12 +35,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status.should eq(HTTP::Status.new(201))
     json = JSON.parse(response.body)
@@ -46,9 +48,19 @@ describe Api::Shards::Upload do
     shard = ShardQuery.new.name("multipart-shard").first?
     shard.should_not be_nil
     shard.try(&.description).should eq("A test shard uploaded via multipart")
+
+    # The persisted checksum is derived from the bytes the action actually
+    # read off the multipart part. If the package stream is closed before it
+    # is read, this is the checksum of an empty body and no longer matches.
+    persisted = ShardVersionQuery.new
+      .shard_id(shard.not_nil!.id)
+      .version("1.0.0")
+      .first
+    persisted.checksum.should eq(checksum)
+    persisted.checksum.should_not eq(Digest::SHA256.hexdigest(""))
   end
 
-  pending "validates required fields are present" do
+  it "validates required fields are present" do
     user = UserFactory.create
     io = IO::Memory.new
     builder = HTTP::FormData::Builder.new(io, "boundary123")
@@ -58,18 +70,13 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status.should eq(HTTP::Status.new(400))
     response.body.should contain("Missing required fields")
   end
 
-  pending "validates package file extension" do
+  it "validates package file extension" do
     package_content = "fake content"
     user = UserFactory.create
 
@@ -88,18 +95,13 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status.should eq(HTTP::Status.new(400))
     response.body.should contain("must be a .tar.gz archive")
   end
 
-  pending "validates checksum when provided" do
+  it "validates checksum when provided" do
     package_content = "fake tar.gz content"
     wrong_checksum = "0000000000000000000000000000000000000000000000000000000000000000"
     user = UserFactory.create
@@ -120,12 +122,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status.should eq(HTTP::Status.new(400))
     json = JSON.parse(response.body)
@@ -134,7 +131,7 @@ describe Api::Shards::Upload do
     json["actual_checksum"].should_not eq(wrong_checksum)
   end
 
-  pending "computes checksum when not provided" do
+  it "computes checksum when not provided" do
     package_content = "fake tar.gz content"
     user = UserFactory.create
 
@@ -153,12 +150,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status.should eq(HTTP::Status.new(201))
     json = JSON.parse(response.body)
@@ -168,17 +160,13 @@ describe Api::Shards::Upload do
   it "rejects non-multipart content type" do
     user = UserFactory.create
 
-    response = ApiClient.auth(user).exec(
-      Api::Shards::Upload,
-      headers: HTTP::Headers{"Content-Type" => "application/json"},
-      body: {name: "json-shard"}.to_json
-    )
+    response = post_upload(ApiClient.auth(user), {name: "json-shard"}.to_json, "application/json")
 
     response.status.should eq(HTTP::Status.new(400))
     response.body.should contain("Content-Type must be multipart/form-data")
   end
 
-  pending "handles optional fields correctly" do
+  it "handles optional fields correctly" do
     package_content = "minimal package content"
     user = UserFactory.create
     checksum = Digest::SHA256.hexdigest(package_content)
@@ -198,12 +186,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status.should eq(HTTP::Status.new(201))
 
@@ -213,7 +196,7 @@ describe Api::Shards::Upload do
     shard.try(&.homepage_url).should be_nil
   end
 
-  pending "creates shard version with correct checksum" do
+  it "creates shard version with correct checksum" do
     package_content = "versioned package content"
     checksum = Digest::SHA256.hexdigest(package_content)
     user = UserFactory.create
@@ -233,12 +216,7 @@ describe Api::Shards::Upload do
 
     builder.finish
 
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status.should eq(HTTP::Status.new(201))
     json = JSON.parse(response.body)
@@ -251,7 +229,7 @@ describe Api::Shards::Upload do
     version.try(&.checksum).should eq(checksum)
   end
 
-  pending "prevents duplicate version uploads" do
+  it "prevents duplicate version uploads" do
     package_content = "first upload content"
 
     user = UserFactory.create
@@ -268,12 +246,7 @@ describe Api::Shards::Upload do
     )
     builder.finish
 
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
     response.status.should eq(HTTP::Status.new(201))
 
     # Attempt duplicate upload with different content
@@ -290,16 +263,17 @@ describe Api::Shards::Upload do
     )
     builder2.finish
 
-    response2 = ApiClient.auth(user).exec(
-      Api::Shards::Upload,
-      headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary456"},
-      body: io2.to_s
-    )
-    response2.status.should eq(422)
+    response2 = post_upload(ApiClient.auth(user), io2.to_s, "multipart/form-data; boundary=boundary456")
+    # The (shard_id, version) collision is caught by SaveShardVersion as a
+    # validation error, not by the Postgres unique index as a 500.
+    response2.status_code.should eq(422)
     response2.body.should contain("errors")
+
+    shard = ShardQuery.new.name("duplicate-test-shard").first
+    ShardVersionQuery.new.shard_id(shard.id).version("1.0.0").select_count.should eq(1)
   end
 
-  pending "rejects packages exceeding size limit" do
+  it "rejects packages exceeding size limit" do
     # Create a package content larger than 50 MB
     large_content = "x" * (51 * 1024 * 1024)
     user = UserFactory.create
@@ -316,12 +290,7 @@ describe Api::Shards::Upload do
     )
     builder.finish
 
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status.should eq(HTTP::Status.new(413))
     json = JSON.parse(response.body)
@@ -344,16 +313,12 @@ describe Api::Shards::Upload do
     )
     builder.finish
 
-    response = ApiClient.exec(
-      Api::Shards::Upload,
-      headers: HTTP::Headers{"Content-Type" => "multipart/form-data; boundary=boundary123"},
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.new(skip_default_headers: true), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status_code.should eq(401)
   end
 
-  pending "enqueues IndexShardWorker after successful upload" do
+  it "enqueues IndexShardWorker after successful upload" do
     package_content = "worker test content"
     checksum = Digest::SHA256.hexdigest(package_content)
     user = UserFactory.create
@@ -375,12 +340,7 @@ describe Api::Shards::Upload do
 
     # Mock or capture worker enqueue calls if testing framework supports it
     # For now, verify the request succeeds (worker enqueue is gracefully handled in tests)
-    response = ApiClient.auth_multipart(user).headers(
-      "Content-Type": "multipart/form-data; boundary=boundary123"
-    ).exec(
-      Api::Shards::Upload,
-      body: io.to_s
-    )
+    response = post_upload(ApiClient.auth_multipart(user), io.to_s, "multipart/form-data; boundary=boundary123")
 
     response.status.should eq(HTTP::Status.new(201))
     json = JSON.parse(response.body)

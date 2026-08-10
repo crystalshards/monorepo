@@ -1,5 +1,6 @@
 ENV["LUCKY_ENV"] = "test"
 ENV["DEV_PORT"] = "5001"
+ENV["GITHUB_WEBHOOK_SECRET"] ||= "test_webhook_secret_for_specs"
 require "spec"
 require "../src/app"
 require "./support/**"

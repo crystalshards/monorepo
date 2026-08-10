@@ -10,7 +10,7 @@ class Job < BaseModel
     column salary_min : Int32?
     column salary_max : Int32?
     column salary_currency : String = "USD"
-    column apply_url : String
+    column apply_url : String?
     column apply_email : String?
     column tags : Array(String) = [] of String
     column published_at : Time?

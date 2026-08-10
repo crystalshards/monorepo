@@ -11,6 +11,25 @@ abstract class BaseProvider
   abstract def clone_repository(target_dir : String) : Bool
   abstract def checkout_version(repo_dir : String, version : String) : Bool
 
+  # Providers that can serve a README override this. Returning nil means
+  # "no README available", never "pretend there is one".
+  def fetch_readme(version : String? = nil) : String?
+    nil
+  end
+
+  # The registry stores normalized versions ("1.2.3") but Crystal shards are
+  # conventionally tagged "v1.2.3". Fetching the normalized string straight
+  # from a forge 404s, so resolve against both spellings.
+  def candidate_refs(version : String?) : Array(String)
+    return ["HEAD"] unless version && !version.empty?
+
+    if version.starts_with?('v')
+      [version, version.lchop('v')]
+    else
+      [version, "v#{version}"]
+    end
+  end
+
   def extract_repo_path : String?
     nil
   end

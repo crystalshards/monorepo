@@ -59,13 +59,13 @@ struct UpdateDependenciesWorker < BaseJob
 
     dependent_shard = ShardQuery.new.name(dep_name).first?
 
-    SaveDependency.create do |operation|
-      operation.shard_version_id.value = shard_version.id.not_nil!
-      operation.name.value = dep_name
-      operation.version_requirement.value = version_requirement
-      operation.scope.value = scope
-      operation.dependent_shard_id.value = dependent_shard.try(&.id)
-    end
+    SaveDependency.create!(
+      shard_version_id: shard_version.id.not_nil!,
+      name: dep_name,
+      version_requirement: version_requirement,
+      scope: scope,
+      dependent_shard_id: dependent_shard.try(&.id)
+    )
   end
 
   private def extract_version_requirement(dep_spec : JSON::Any) : String

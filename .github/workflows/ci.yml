@@ -116,7 +116,9 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.6.0
+          # 1.6.0 embeds a HashiCorp GPG key that has since expired, so it can
+          # no longer verify any provider release ("openpgp: key expired").
+          terraform_version: 1.15.8
 
       - name: Terraform Format
         working-directory: ./terraform

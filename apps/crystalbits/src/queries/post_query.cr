@@ -11,8 +11,11 @@ class PostQuery < Post::BaseQuery
     where("? = ANY(tags)", tag)
   end
 
+  # The OR has to be parenthesized. Avram splices a raw clause into the WHERE
+  # list joined by AND, and AND binds tighter than OR, so an unwrapped
+  # "a OR b" lets a content match bypass every other condition in the chain.
   def search(query : String)
-    where("title ILIKE ? OR content ILIKE ?", "%#{query}%", "%#{query}%")
+    where("(title ILIKE ? OR content ILIKE ?)", "%#{query}%", "%#{query}%")
   end
 
   def recent

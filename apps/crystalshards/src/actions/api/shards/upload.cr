@@ -36,7 +36,8 @@ class Api::Shards::Upload < ApiAction
     homepage_url : String? = nil
     documentation_url : String? = nil
     license : String? = nil
-    package_file : HTTP::FormData::Part? = nil
+    package_filename : String? = nil
+    package_content : String? = nil
     checksum : String? = nil
 
     HTTP::FormData.parse(request) do |part|
@@ -56,25 +57,27 @@ class Api::Shards::Upload < ApiAction
       when "license"
         license = part.body.gets_to_end
       when "package"
-        package_file = part
+        # A part's IO is only readable while that part is being yielded, so
+        # take the filename and the bytes now. Stashing the part and reading
+        # it after the parse loop raises IO::Error "Closed stream".
+        package_filename = part.filename
+        package_content = part.body.gets_to_end
       when "checksum"
         checksum = part.body.gets_to_end
       end
     end
 
-    unless shard_name && version && repository_url && package_file
+    unless shard_name && version && repository_url && package_content
       return json({
         error: "Missing required fields: name, version, repository_url, and package file",
       }, status: 400)
     end
 
-    unless package_file.filename.try(&.ends_with?(".tar.gz"))
+    unless package_filename.try(&.ends_with?(".tar.gz"))
       return json({
         error: "Package file must be a .tar.gz archive",
       }, status: 400)
     end
-
-    package_content = package_file.body.gets_to_end
 
     if package_content.bytesize > MAX_PACKAGE_SIZE
       return json({

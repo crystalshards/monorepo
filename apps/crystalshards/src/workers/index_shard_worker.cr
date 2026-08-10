@@ -2,6 +2,26 @@ require "./base_worker"
 require "../providers/provider_factory"
 
 struct IndexShardWorker < BaseJob
+  # The jobs this worker chains once a shard version has been indexed.
+  enum Followup
+    UpdateDependencies
+    BuildDocs
+  end
+
+  # Test seam. Every follow-up job is scheduled through this proc, which
+  # defaults to the real JoobQ enqueue so production keeps working unchanged
+  # when nothing installs a fake. Specs swap it out to observe chaining
+  # without a Redis connection, and must restore it in an `ensure`.
+  class_property dispatcher : Proc(Followup, String, String, Nil) = ->(followup : Followup, shard_name : String, version : String) {
+    case followup
+    in Followup::UpdateDependencies
+      UpdateDependenciesWorker.enqueue(shard_name: shard_name, version: version)
+    in Followup::BuildDocs
+      BuildDocsWorker.enqueue(shard_name: shard_name, version: version)
+    end
+    nil
+  }
+
   def initialize(@shard_name : String, @version : String)
     @queue = "index"
   end
@@ -27,15 +47,9 @@ struct IndexShardWorker < BaseJob
 
     fetch_and_parse_shard_yml(shard, shard_version)
 
-    UpdateDependenciesWorker.enqueue(
-      shard_name: @shard_name.not_nil!,
-      version: @version.not_nil!
-    )
-
-    BuildDocsWorker.enqueue(
-      shard_name: @shard_name.not_nil!,
-      version: @version.not_nil!
-    )
+    dispatch = @@dispatcher
+    dispatch.call(Followup::UpdateDependencies, @shard_name, @version)
+    dispatch.call(Followup::BuildDocs, @shard_name, @version)
 
     log_info "Successfully indexed #{@shard_name}@#{@version}"
   rescue ex : Exception
@@ -54,22 +68,37 @@ struct IndexShardWorker < BaseJob
 
     update_from_shard_yml(shard, shard_version, shard_yml)
 
+    update_readme(shard, provider, shard_version.version)
+
     if provider.supports_api?
       update_provider_metadata(shard, provider)
     end
+  end
+
+  private def update_readme(shard : Shard, provider : BaseProvider, version : String)
+    readme = provider.fetch_readme(version)
+    return unless readme
+
+    operation = SaveShard.new(shard)
+    operation.readme_content.value = readme
+    operation.update!
+
+    log_info "Stored README for #{shard.name}"
+  rescue ex : Exception
+    log_error "Failed to fetch README for #{shard.name}", ex
   end
 
   private def update_provider_metadata(shard : Shard, provider : BaseProvider)
     metadata = provider.fetch_metadata
     return unless metadata
 
-    SaveShard.update(shard) do |operation|
-      operation.github_stars.value = metadata.stars if metadata.stars
-      operation.github_forks.value = metadata.forks if metadata.forks
-      operation.provider.value = provider.provider_name
-      operation.repository_type.value = provider.repository_type
-      operation.last_synced_at.value = Time.utc
-    end
+    operation = SaveShard.new(shard)
+    operation.github_stars.value = metadata.stars if metadata.stars
+    operation.github_forks.value = metadata.forks if metadata.forks
+    operation.provider.value = provider.provider_name
+    operation.repository_type.value = provider.repository_type
+    operation.last_synced_at.value = Time.utc
+    operation.update!
 
     log_info "Updated provider metadata for #{shard.name}"
   rescue ex : Exception
@@ -82,16 +111,16 @@ struct IndexShardWorker < BaseJob
     homepage = shard_yml["homepage"]?.try(&.as_s?)
     crystal = shard_yml["crystal"]?.try(&.as_s?)
 
-    SaveShard.update(shard) do |operation|
-      operation.description.value = description if description
-      operation.license.value = license if license
-      operation.homepage_url.value = homepage if homepage
-    end
+    shard_operation = SaveShard.new(shard)
+    shard_operation.description.value = description if description
+    shard_operation.license.value = license if license
+    shard_operation.homepage_url.value = homepage if homepage
+    shard_operation.update!
 
-    SaveShardVersion.update(shard_version) do |operation|
-      operation.crystal_version.value = crystal if crystal
-      operation.metadata.value = JSON.parse(shard_yml.to_json)
-    end
+    version_operation = SaveShardVersion.new(shard_version)
+    version_operation.crystal_version.value = crystal if crystal
+    version_operation.metadata.value = JSON.parse(shard_yml.to_json)
+    version_operation.update!
 
     log_info "Updated shard metadata from shard.yml"
   end

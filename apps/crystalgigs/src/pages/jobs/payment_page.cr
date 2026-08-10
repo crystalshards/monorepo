@@ -36,10 +36,10 @@ class Jobs::PaymentPage < MainLayout
           div class: "pricing-summary" do
             div class: "pricing-row" do
               span do
-                text "30-day job posting"
+                text "#{Pricing.duration_days}-day job posting"
               end
               strong do
-                text "$99.00"
+                text "#{Pricing.price_label}.00"
               end
             end
             div class: "pricing-row pricing-total" do
@@ -47,28 +47,20 @@ class Jobs::PaymentPage < MainLayout
                 text "Total"
               end
               strong do
-                text "$99.00 USD"
+                text "#{Pricing.price_label}.00 #{Pricing::CURRENCY.upcase}"
               end
             end
           end
 
-          div id: "payment-form" do
-            form action: "/jobs/#{@job.id}/checkout", method: "post", id: "stripe-payment-form" do
-              div id: "card-element" do
-              end
-
-              div id: "card-errors", role: "alert" do
-              end
-
-              button type: "submit", id: "submit-payment", class: "button button-primary button-large" do
-                text "Pay $99 & Publish Job"
-              end
-            end
+          if Payments.disabled?
+            render_payments_disabled_form
+          else
+            render_stripe_form
           end
 
           div class: "payment-security" do
             para class: "security-note" do
-              text "🔒 Secure payment powered by Stripe"
+              text "Secure payment powered by Stripe"
             end
             para class: "security-note" do
               text "Your payment information is encrypted and secure"
@@ -78,11 +70,43 @@ class Jobs::PaymentPage < MainLayout
       end
     end
 
-    script src: "https://js.stripe.com/v3/" do
+    unless Payments.disabled?
+      script src: "https://js.stripe.com/v3/" do
+      end
+
+      script do
+        raw stripe_initialization_script
+      end
+    end
+  end
+
+  private def render_payments_disabled_form
+    div class: "payment-disabled-notice" do
+      para do
+        text "Payment processing is disabled in this environment. Publishing this job will not charge anything."
+      end
     end
 
-    script do
-      raw stripe_initialization_script
+    form_for Jobs::Checkout.with(job_id: @job.id), class: "job-form" do
+      button type: "submit", id: "submit-payment", class: "button button-primary button-large" do
+        text "Publish Job (no charge)"
+      end
+    end
+  end
+
+  private def render_stripe_form
+    div id: "payment-form" do
+      form_for Jobs::Checkout.with(job_id: @job.id), id: "stripe-payment-form" do
+        div id: "card-element" do
+        end
+
+        div id: "card-errors", role: "alert" do
+        end
+
+        button type: "submit", id: "submit-payment", class: "button button-primary button-large" do
+          text "Pay #{Pricing.price_label} & Publish Job"
+        end
+      end
     end
   end
 
@@ -151,6 +175,6 @@ class Jobs::PaymentPage < MainLayout
   end
 
   private def stripe_publishable_key : String
-    ENV["STRIPE_PUBLISHABLE_KEY"]? || "pk_test_placeholder"
+    Payments.publishable_key
   end
 end

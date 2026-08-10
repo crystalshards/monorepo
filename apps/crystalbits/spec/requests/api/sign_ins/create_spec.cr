@@ -1,9 +1,7 @@
 require "../../../spec_helper"
 
 describe Api::SignIns::Create do
-  pending "returns a token" do
-    # TODO: Fix ApiClient/BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "returns a token" do
     UserToken.stub_token("fake-token") do
       user = UserFactory.create
 
@@ -13,9 +11,7 @@ describe Api::SignIns::Create do
     end
   end
 
-  pending "returns an error if credentials are invalid" do
-    # TODO: Fix ApiClient/BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "returns an error if credentials are invalid" do
     user = UserFactory.create
     invalid_params = valid_params(user).merge(password: "incorrect")
 

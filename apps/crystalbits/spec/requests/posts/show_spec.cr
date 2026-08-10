@@ -15,9 +15,7 @@ describe Posts::Show do
     response.body.should contain("This is the full content")
   end
 
-  pending "increments view count" do
-    # TODO: Fix view count increment logic in Posts::Show action
-    # See issue #49 for investigation details
+  it "increments view count" do
     post = PostFactory.create do |p|
       p.view_count(10)
       p.published_at(Time.utc - 1.day)
@@ -25,13 +23,11 @@ describe Posts::Show do
 
     BrowserClient.exec(Posts::Show.with(post.slug))
 
-    post.reload
-    post.view_count.should eq(11)
+    # Avram's #reload returns a fresh record rather than mutating in place.
+    post.reload.view_count.should eq(11)
   end
 
-  pending "increments view count on each visit" do
-    # TODO: Fix view count increment logic in Posts::Show action
-    # See issue #49 for investigation details
+  it "increments view count on each visit" do
     post = PostFactory.create do |p|
       p.view_count(5)
       p.published_at(Time.utc - 1.day)
@@ -41,8 +37,7 @@ describe Posts::Show do
       BrowserClient.exec(Posts::Show.with(post.slug))
     end
 
-    post.reload
-    post.view_count.should eq(8)
+    post.reload.view_count.should eq(8)
   end
 
   it "displays post metadata" do
@@ -98,27 +93,31 @@ describe Posts::Show do
     response.body.should contain("Subscribe to our newsletter")
   end
 
-  pending "returns 404 for unpublished post" do
-    # TODO: Fix 404 handling in Posts::Show action
-    # See issue #49 for investigation details
+  it "returns 404 for unpublished post" do
+    # Lucky::ErrorHandler rescues Avram::RecordNotFoundError and renders
+    # Errors::Show, so the exception never escapes the HTTP stack. The
+    # observable contract is the 404 response.
     post = PostFactory.create &.published_at(nil)
 
-    expect_raises(Avram::RecordNotFoundError) do
-      BrowserClient.exec(Posts::Show.with(post.slug))
-    end
+    response = BrowserClient.exec(Posts::Show.with(post.slug))
+
+    response.status_code.should eq(404)
+    response.body.should contain("Not found")
   end
 
-  pending "returns 404 for non-existent post" do
-    # TODO: Fix 404 handling in Posts::Show action
-    # See issue #49 for investigation details
-    expect_raises(Avram::RecordNotFoundError) do
-      BrowserClient.exec(Posts::Show.with("non-existent-slug"))
-    end
+  it "returns 404 for non-existent post" do
+    response = BrowserClient.exec(Posts::Show.with("non-existent-slug"))
+
+    response.status_code.should eq(404)
+    response.body.should contain("Not found")
   end
 
   it "formats date properly" do
+    # Avram reads timestamps back in Time::Location.local, and the page formats
+    # them in that zone. Build the date in local time so the rendered day is
+    # the one asserted on regardless of the machine's zone.
     post = PostFactory.create do |p|
-      p.published_at(Time.utc(2025, 3, 15))
+      p.published_at(Time.local(2025, 3, 15, 12, 0, 0))
     end
 
     response = BrowserClient.exec(Posts::Show.with(post.slug))

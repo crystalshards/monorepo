@@ -21,8 +21,10 @@ class NewsletterSignupForm < Lucky::BaseComponent
       para "Get the latest Crystal tutorials, news, and updates delivered to your inbox."
     end
 
-    form method: "post", action: Newsletter::Subscribe.path, class: "newsletter-form" do
-      tag "input", type: "email", name: "email", placeholder: "your@email.com", required: "true", class: "newsletter-input"
+    # form_for emits Lucky's authenticity token. A raw form tag does not, and
+    # Lucky::ProtectFromForgery rejects the POST with 403.
+    form_for Newsletter::Subscribe, class: "newsletter-form" do
+      tag "input", type: "email", name: "subscriber:email", placeholder: "your@email.com", required: "true", class: "newsletter-input"
       button type: "submit", class: "newsletter-button" do
         text "Subscribe"
       end
@@ -34,8 +36,8 @@ class NewsletterSignupForm < Lucky::BaseComponent
   end
 
   private def render_inline_form
-    form method: "post", action: Newsletter::Subscribe.path, class: "newsletter-form-inline" do
-      tag "input", type: "email", name: "email", placeholder: "your@email.com", required: "true", class: "newsletter-input-inline"
+    form_for Newsletter::Subscribe, class: "newsletter-form-inline" do
+      tag "input", type: "email", name: "subscriber:email", placeholder: "your@email.com", required: "true", class: "newsletter-input-inline"
       button type: "submit", class: "newsletter-button-inline" do
         text "Subscribe"
       end
