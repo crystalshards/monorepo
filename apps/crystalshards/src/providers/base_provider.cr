@@ -11,6 +11,12 @@ abstract class BaseProvider
   abstract def clone_repository(target_dir : String) : Bool
   abstract def checkout_version(repo_dir : String, version : String) : Bool
 
+  # Providers that can serve a README override this. Returning nil means
+  # "no README available", never "pretend there is one".
+  def fetch_readme(version : String? = nil) : String?
+    nil
+  end
+
   def extract_repo_path : String?
     nil
   end

@@ -93,9 +93,7 @@ class Shards::ShowPage < MainLayout
             end
           end
 
-          if @latest_version
-            render_readme_section
-          end
+          render_readme_section
 
           if @dependencies.any?
             render_dependencies_section
@@ -226,16 +224,18 @@ class Shards::ShowPage < MainLayout
       end
 
       div class: "readme-content" do
-        para do
-          text "This shard provides #{@shard.description || "Crystal functionality"}."
-        end
-
-        para do
-          text "For detailed documentation and usage examples, please visit the "
-          a href: @shard.repository_url, target: "_blank" do
-            text "repository"
+        if readme = @shard.readme_content
+          pre class: "readme-raw" do
+            text readme
           end
-          text "."
+        else
+          para do
+            text "No README has been indexed for this shard yet. You can read it on the "
+            a href: @shard.repository_url, target: "_blank" do
+              text "repository"
+            end
+            text "."
+          end
         end
       end
     end

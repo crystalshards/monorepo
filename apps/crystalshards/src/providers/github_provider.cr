@@ -22,6 +22,25 @@ class GithubProvider < BaseProvider
     nil
   end
 
+  README_FILENAMES = %w[README.md readme.md README.markdown README]
+
+  def fetch_readme(version : String? = nil) : String?
+    repo_path = extract_repo_path
+    return nil unless repo_path
+
+    ref = version || "HEAD"
+
+    README_FILENAMES.each do |filename|
+      response = HTTP::Client.get("#{GITHUB_RAW_BASE}/#{repo_path}/#{ref}/#{filename}")
+      return response.body if response.status_code == 200
+    end
+
+    nil
+  rescue ex : Exception
+    Log.error { "Failed to fetch README from GitHub: #{ex.message}" }
+    nil
+  end
+
   def fetch_metadata : RepositoryMetadata?
     repo_path = extract_repo_path
     return nil unless repo_path

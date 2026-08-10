@@ -54,9 +54,24 @@ struct IndexShardWorker < BaseJob
 
     update_from_shard_yml(shard, shard_version, shard_yml)
 
+    update_readme(shard, provider, shard_version.version)
+
     if provider.supports_api?
       update_provider_metadata(shard, provider)
     end
+  end
+
+  private def update_readme(shard : Shard, provider : BaseProvider, version : String)
+    readme = provider.fetch_readme(version)
+    return unless readme
+
+    SaveShard.update(shard) do |operation|
+      operation.readme_content.value = readme
+    end
+
+    log_info "Stored README for #{shard.name}"
+  rescue ex : Exception
+    log_error "Failed to fetch README for #{shard.name}", ex
   end
 
   private def update_provider_metadata(shard : Shard, provider : BaseProvider)
