@@ -12,6 +12,10 @@ terraform = "latest"
 [env]
 LUCKY_ENV = "development"
 CRYSTAL_WORKERS = "4"
+# Crystal's stdlib needs OpenSSL 3. Without this, linking fails with missing
+# EVP_CIPHER_block_size / EVP_MD_size symbols when a machine's global
+# PKG_CONFIG_PATH points at openssl@1.1.
+PKG_CONFIG_PATH = "/opt/homebrew/opt/openssl@3/lib/pkgconfig"
 
 [tasks.setup]
 description = "Setup development environment"

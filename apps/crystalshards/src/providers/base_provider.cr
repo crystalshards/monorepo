@@ -17,6 +17,19 @@ abstract class BaseProvider
     nil
   end
 
+  # The registry stores normalized versions ("1.2.3") but Crystal shards are
+  # conventionally tagged "v1.2.3". Fetching the normalized string straight
+  # from a forge 404s, so resolve against both spellings.
+  def candidate_refs(version : String?) : Array(String)
+    return ["HEAD"] unless version && !version.empty?
+
+    if version.starts_with?('v')
+      [version, version.lchop('v')]
+    else
+      [version, "v#{version}"]
+    end
+  end
+
   def extract_repo_path : String?
     nil
   end

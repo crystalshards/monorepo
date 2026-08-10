@@ -1,9 +1,7 @@
 require "../../spec_helper"
 
 describe Newsletter::Confirm do
-  pending "confirms subscription with valid token" do
-    # TODO: Fix BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "confirms subscription with valid token" do
     subscriber = SubscriberFactory.create do |s|
       s.email("test@example.com")
       s.confirmed(false)
@@ -13,15 +11,14 @@ describe Newsletter::Confirm do
     response = BrowserClient.exec(Newsletter::Confirm.with("valid-token"))
 
     response.status.should eq(HTTP::Status.new(200))
-    subscriber.reload
+    # Avram's #reload returns a fresh record rather than mutating in place.
+    subscriber = subscriber.reload
     subscriber.confirmed.should be_true
     subscriber.confirmed_at.should_not be_nil
     subscriber.confirmation_token.should be_nil
   end
 
-  pending "shows success message" do
-    # TODO: Fix BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "shows success message" do
     subscriber = SubscriberFactory.create do |s|
       s.confirmed(false)
       s.confirmation_token("valid-token")
@@ -30,7 +27,7 @@ describe Newsletter::Confirm do
     response = BrowserClient.exec(Newsletter::Confirm.with("valid-token"))
 
     response.status.should eq(HTTP::Status.new(200))
-    response.body.should contain("You're Subscribed!")
+    HTML.unescape(response.body).should contain("You're Subscribed!")
     response.body.should contain(subscriber.email)
   end
 
@@ -52,9 +49,7 @@ describe Newsletter::Confirm do
     response.status.should eq(HTTP::Status.new(302))
   end
 
-  pending "sets confirmed_at timestamp" do
-    # TODO: Fix BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "sets confirmed_at timestamp" do
     subscriber = SubscriberFactory.create do |s|
       s.confirmed(false)
       s.confirmation_token("valid-token")
@@ -64,15 +59,12 @@ describe Newsletter::Confirm do
     BrowserClient.exec(Newsletter::Confirm.with("valid-token"))
     after = Time.utc
 
-    subscriber.reload
-    confirmed_at = subscriber.confirmed_at.not_nil!
+    confirmed_at = subscriber.reload.confirmed_at.not_nil!
     confirmed_at.should be >= before
     confirmed_at.should be <= after
   end
 
-  pending "clears confirmation token after confirming" do
-    # TODO: Fix BrowserClient to send form-encoded data instead of JSON
-    # See issue #49 for investigation details
+  it "clears confirmation token after confirming" do
     subscriber = SubscriberFactory.create do |s|
       s.confirmed(false)
       s.confirmation_token("valid-token")
@@ -80,7 +72,6 @@ describe Newsletter::Confirm do
 
     BrowserClient.exec(Newsletter::Confirm.with("valid-token"))
 
-    subscriber.reload
-    subscriber.confirmation_token.should be_nil
+    subscriber.reload.confirmation_token.should be_nil
   end
 end

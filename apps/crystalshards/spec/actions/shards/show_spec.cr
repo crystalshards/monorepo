@@ -143,6 +143,7 @@ describe Shards::Show do
     it "displays README section" do
       shard = ShardFactory.create &.name("readme-shard")
         .description("A shard with documentation")
+        .readme_content("# readme-shard\n\nThis shard provides documentation.")
 
       ShardVersionFactory.create &.shard_id(shard.id)
 
@@ -150,6 +151,17 @@ describe Shards::Show do
 
       response.body.should contain("README")
       response.body.should contain("This shard provides")
+    end
+
+    it "falls back to a repository link when no README has been indexed" do
+      shard = ShardFactory.create &.name("bare-shard")
+        .repository_url("https://github.com/user/bare-shard")
+      ShardVersionFactory.create &.shard_id(shard.id)
+
+      response = ApiClient.exec(Shards::Show.with(shard_name: "bare-shard"))
+
+      response.body.should contain("No README has been indexed")
+      response.body.should contain("https://github.com/user/bare-shard")
     end
 
     it "marks yanked versions appropriately" do

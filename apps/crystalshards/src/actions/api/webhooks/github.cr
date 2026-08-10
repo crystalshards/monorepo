@@ -71,25 +71,31 @@ class Api::Webhooks::Github < ApiAction
     shard_name = repo_full_name.split("/").last
     version = tag_name.sub(/^v/, "")
 
-    if already_indexed?(shard_name, version)
+    shard = ShardQuery.new.name(shard_name).first?
+    unless shard
+      # Releases only keep already-registered shards current. Registration
+      # happens through the publish API, not through an inbound webhook.
+      Log.info { "Ignoring GitHub webhook for unregistered shard: #{shard_name}" }
+      return
+    end
+
+    if ShardVersionQuery.new.shard_id(shard.id.not_nil!).version(version).first?
       Log.info { "Shard version already indexed: #{shard_name}@#{version}" }
       return
     end
 
+    # The version row must exist before the job runs: IndexShardWorker looks it
+    # up and gives up if it is missing.
+    SaveShardVersion.create!(
+      shard_id: shard.id.not_nil!,
+      version: version,
+      yanked: false,
+      released_at: Time.utc
+    )
+
     IndexShardWorker.enqueue(shard_name: shard_name, version: version)
 
     Log.info { "Enqueued IndexShardWorker for #{shard_name}@#{version}" }
-  end
-
-  private def already_indexed?(shard_name : String, version : String) : Bool
-    shard = ShardQuery.new.name(shard_name).first?
-    return false unless shard
-
-    !ShardVersionQuery.new
-      .shard_id(shard.id.not_nil!)
-      .version(version)
-      .first?
-      .nil?
   end
 
   # Constant-time comparison to prevent timing attacks.

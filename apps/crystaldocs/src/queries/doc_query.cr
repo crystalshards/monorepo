@@ -19,6 +19,6 @@ class DocQuery < Doc::BaseQuery
   end
 
   def published
-    where_not_nil(:current_version)
+    current_version.is_not_nil
   end
 end

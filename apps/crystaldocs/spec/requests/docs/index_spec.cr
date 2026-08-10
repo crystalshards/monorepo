@@ -5,9 +5,9 @@ describe Docs::Index do
     doc1 = DocFactory.create &.package_name("http-client")
     doc2 = DocFactory.create &.package_name("database")
 
-    response = ApiClient.exec(Docs::Index)
+    response = BrowserClient.exec(Docs::Index)
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("http-client")
     response.body.should contain("database")
   end
@@ -16,9 +16,9 @@ describe Docs::Index do
     http_doc = DocFactory.create &.package_name("http-client")
     db_doc = DocFactory.create &.package_name("database")
 
-    response = ApiClient.exec(Docs::Index, query: "http")
+    response = BrowserClient.exec(Docs::Index.with(query: "http"))
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("http-client")
     response.body.should_not contain("database")
   end
@@ -27,22 +27,25 @@ describe Docs::Index do
     http_doc = DocFactory.create &.package_name("client")
       .description("HTTP client library for Crystal")
 
-    db_doc = DocFactory.create &.package_name("orm")
+    # The excluded package needs a name that cannot occur in the page's own
+    # markup: "orm" is a substring of the search bar's <form class="search-form">,
+    # so asserting on it tested the layout rather than the query.
+    db_doc = DocFactory.create &.package_name("postgres-driver")
       .description("Database abstraction layer")
 
-    response = ApiClient.exec(Docs::Index, query: "HTTP")
+    response = BrowserClient.exec(Docs::Index.with(query: "HTTP"))
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("client")
-    response.body.should_not contain("orm")
+    response.body.should_not contain("postgres-driver")
   end
 
   it "shows search results count" do
     DocFactory.create &.package_name("test-package")
 
-    response = ApiClient.exec(Docs::Index, query: "test")
+    response = BrowserClient.exec(Docs::Index.with(query: "test"))
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("Found 1 package")
   end
 
@@ -51,29 +54,29 @@ describe Docs::Index do
       DocFactory.create &.package_name("package-#{i}")
     end
 
-    response = ApiClient.exec(Docs::Index, page: 1)
+    response = BrowserClient.exec(Docs::Index.with(page: 1))
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("Page 1")
 
-    response_page2 = ApiClient.exec(Docs::Index, page: 2)
-    response_page2.should send_html(200)
+    response_page2 = BrowserClient.exec(Docs::Index.with(page: 2))
+    response_page2.status_code.should eq(200)
     response_page2.body.should contain("Page 2")
   end
 
   it "handles empty search results" do
     DocFactory.create &.package_name("existing-package")
 
-    response = ApiClient.exec(Docs::Index, query: "nonexistent")
+    response = BrowserClient.exec(Docs::Index.with(query: "nonexistent"))
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("No packages found")
   end
 
   it "shows empty state when no documentation exists" do
-    response = ApiClient.exec(Docs::Index)
+    response = BrowserClient.exec(Docs::Index)
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("No documentation available yet")
   end
 
@@ -84,9 +87,9 @@ describe Docs::Index do
     new_doc = DocFactory.create &.package_name("new-package")
       .last_updated_at(Time.utc - 1.hour)
 
-    response = ApiClient.exec(Docs::Index)
+    response = BrowserClient.exec(Docs::Index)
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     # New package should appear before old package in HTML
     new_pos = response.body.index("new-package")
     old_pos = response.body.index("old-package")

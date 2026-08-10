@@ -15,18 +15,18 @@ module CrystalShards
         config.expires = 1.day
       end
 
-      # Register job types and create queues
+      # JoobQ.forge starts JoobQ.queues, which QueueFactory builds from
+      # config.queue_configs. Assigning config.queues directly does nothing:
+      # forge never reads that hash, so the worker would idle with no queues.
       JoobQ::QueueFactory.register_job_type(IndexShardWorker)
       JoobQ::QueueFactory.register_job_type(BuildDocsWorker)
       JoobQ::QueueFactory.register_job_type(UpdateDependenciesWorker)
 
-      # Populate schema registry
       JoobQ::QueueFactory.populate_schema_registry(JoobQ.config.job_registry)
 
-      # Create queues manually
-      JoobQ.config.queues["index"] = JoobQ::Queue(IndexShardWorker).new("index", 5, nil)
-      JoobQ.config.queues["docs"] = JoobQ::Queue(BuildDocsWorker).new("docs", 3, nil)
-      JoobQ.config.queues["deps"] = JoobQ::Queue(UpdateDependenciesWorker).new("deps", 2, nil)
+      JoobQ.config.queue_configs["index"] = {job_class_name: "IndexShardWorker", workers: 5, throttle: nil}
+      JoobQ.config.queue_configs["docs"] = {job_class_name: "BuildDocsWorker", workers: 3, throttle: nil}
+      JoobQ.config.queue_configs["deps"] = {job_class_name: "UpdateDependenciesWorker", workers: 2, throttle: nil}
 
       Log.info { "JoobQ configured with #{ENV.fetch("REDIS_URL", "redis://localhost:6379")}" }
 

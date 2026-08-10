@@ -302,8 +302,11 @@ class Shards::ShowPage < MainLayout
     url.gsub(%r{https?://github\.com/}, "").gsub(/\.git$/, "")
   end
 
+  # Timestamps are UTC instants. Rendering them in the database session's
+  # zone would shift the displayed day depending on where the server runs,
+  # so pin the display to UTC.
   private def format_date(time : Time) : String
-    time.to_s("%b %-d, %Y")
+    time.to_utc.to_s("%b %-d, %Y")
   end
 
   private def version_li_class(version : ShardVersion) : String

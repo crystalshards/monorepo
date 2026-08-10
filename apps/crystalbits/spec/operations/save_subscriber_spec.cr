@@ -40,9 +40,7 @@ describe SaveSubscriber do
       subscriber.email.should eq("test@example.com")
     end
 
-    pending "trims whitespace from email" do
-      # TODO: Fix normalization to happen before validation
-      # See issue #49 for investigation details
+    it "trims whitespace from email" do
       operation = SaveSubscriber.new(email: "  test@example.com  ")
 
       subscriber = operation.save!
@@ -75,9 +73,7 @@ describe SaveSubscriber do
   end
 
   describe "update" do
-    pending "can confirm subscriber" do
-      # TODO: Fix uniqueness validation to skip on update
-      # See issue #49 for investigation details
+    it "can confirm subscriber" do
       subscriber = SubscriberFactory.create do |s|
         s.email("test@example.com")
         s.confirmed(false)
@@ -88,14 +84,13 @@ describe SaveSubscriber do
         confirmed_at: Time.utc
       )
 
-      subscriber.reload
+      # Avram's #reload returns a fresh record rather than mutating in place.
+      subscriber = subscriber.reload
       subscriber.confirmed.should be_true
       subscriber.confirmed_at.should_not be_nil
     end
 
-    pending "can unsubscribe subscriber" do
-      # TODO: Fix uniqueness validation to skip on update
-      # See issue #49 for investigation details
+    it "can unsubscribe subscriber" do
       subscriber = SubscriberFactory.create do |s|
         s.confirmed(true)
         s.unsubscribed_at(nil)
@@ -103,8 +98,7 @@ describe SaveSubscriber do
 
       SaveSubscriber.update!(subscriber, unsubscribed_at: Time.utc)
 
-      subscriber.reload
-      subscriber.unsubscribed_at.should_not be_nil
+      subscriber.reload.unsubscribed_at.should_not be_nil
     end
   end
 end

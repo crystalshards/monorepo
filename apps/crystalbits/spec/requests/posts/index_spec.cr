@@ -24,9 +24,7 @@ describe Posts::Index do
     response.body.should contain(regular_post.title)
   end
 
-  pending "paginates posts" do
-    # TODO: Fix pagination logic in Posts::Index action
-    # See issue #49 for investigation details
+  it "paginates posts" do
     # Create 25 posts
     25.times do |i|
       PostFactory.create &.published_at(Time.utc - i.days).title("Post #{i}")
@@ -47,9 +45,7 @@ describe Posts::Index do
     response.body.should_not contain("Post 0")
   end
 
-  pending "filters posts by tag" do
-    # TODO: Fix tag filtering logic in Posts::Index action
-    # See issue #49 for investigation details
+  it "filters posts by tag" do
     crystal_post = PostFactory.create &.tags(["crystal", "tutorial"]).published_at(Time.utc - 1.day)
     ruby_post = PostFactory.create &.tags(["ruby", "tutorial"]).published_at(Time.utc - 2.days)
 
@@ -60,9 +56,7 @@ describe Posts::Index do
     response.body.should_not contain(ruby_post.title)
   end
 
-  pending "searches posts by title" do
-    # TODO: Fix search logic in Posts::Index action
-    # See issue #49 for investigation details
+  it "searches posts by title" do
     matching_post = PostFactory.create &.title("Building Web Apps").published_at(Time.utc - 1.day)
     non_matching_post = PostFactory.create &.title("Database Tutorial").published_at(Time.utc - 2.days)
 
@@ -73,9 +67,7 @@ describe Posts::Index do
     response.body.should_not contain(non_matching_post.title)
   end
 
-  pending "searches posts by content" do
-    # TODO: Fix search logic in Posts::Index action
-    # See issue #49 for investigation details
+  it "searches posts by content" do
     matching_post = PostFactory.create do |post|
       post.title("Crystal Guide")
       post.content("Learn about Crystal web frameworks")

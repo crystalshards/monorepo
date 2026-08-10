@@ -8,9 +8,9 @@ describe Docs::Show do
     version = DocVersionFactory.create &.doc_id(doc.id)
       .version("1.0.0")
 
-    response = ApiClient.exec(Docs::Show, package_name: "test-package")
+    response = BrowserClient.exec(Docs::Show.with(package_name: "test-package"))
 
-    response.status.should eq(302)
+    response.status_code.should eq(302)
     response.headers["Location"].should eq("/docs/test-package/1.0.0")
   end
 
@@ -18,20 +18,21 @@ describe Docs::Show do
     doc = DocFactory.create &.package_name("test-package")
       .current_version(nil)
 
-    response = ApiClient.exec(Docs::Show, package_name: "test-package")
+    response = BrowserClient.exec(Docs::Show.with(package_name: "test-package"))
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("test-package")
   end
 
   it "returns 404 for non-existent package" do
-    expect_raises(Lucky::RouteNotFoundError) do
-      ApiClient.exec(Docs::Show, package_name: "nonexistent")
-    end
+    response = BrowserClient.exec(Docs::Show.with(package_name: "nonexistent"))
+
+    response.status_code.should eq(404)
   end
 
   it "displays available versions list" do
     doc = DocFactory.create &.package_name("test-package")
+      .current_version(nil)
 
     version1 = DocVersionFactory.create &.doc_id(doc.id)
       .version("1.0.0")
@@ -39,9 +40,9 @@ describe Docs::Show do
     version2 = DocVersionFactory.create &.doc_id(doc.id)
       .version("2.0.0")
 
-    response = ApiClient.exec(Docs::Show, package_name: "test-package")
+    response = BrowserClient.exec(Docs::Show.with(package_name: "test-package"))
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("Available Versions")
     response.body.should contain("1.0.0")
     response.body.should contain("2.0.0")
@@ -49,11 +50,12 @@ describe Docs::Show do
 
   it "displays package statistics" do
     doc = DocFactory.create &.package_name("test-package")
+      .current_version(nil)
       .total_views(100)
 
-    response = ApiClient.exec(Docs::Show, package_name: "test-package")
+    response = BrowserClient.exec(Docs::Show.with(package_name: "test-package"))
 
-    response.should send_html(200)
+    response.status_code.should eq(200)
     response.body.should contain("100")
     response.body.should contain("views")
   end

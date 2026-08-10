@@ -10,13 +10,12 @@ class GithubProvider < BaseProvider
     repo_path = extract_repo_path
     return nil unless repo_path
 
-    ref = version || "HEAD"
-    url = "#{GITHUB_RAW_BASE}/#{repo_path}/#{ref}/shard.yml"
+    candidate_refs(version).each do |ref|
+      response = HTTP::Client.get("#{GITHUB_RAW_BASE}/#{repo_path}/#{ref}/shard.yml")
+      return YAML.parse(response.body) if response.status_code == 200
+    end
 
-    response = HTTP::Client.get(url)
-    return nil unless response.status_code == 200
-
-    YAML.parse(response.body)
+    nil
   rescue ex : Exception
     Log.error { "Failed to fetch shard.yml from GitHub: #{ex.message}" }
     nil
@@ -28,11 +27,11 @@ class GithubProvider < BaseProvider
     repo_path = extract_repo_path
     return nil unless repo_path
 
-    ref = version || "HEAD"
-
-    README_FILENAMES.each do |filename|
-      response = HTTP::Client.get("#{GITHUB_RAW_BASE}/#{repo_path}/#{ref}/#{filename}")
-      return response.body if response.status_code == 200
+    candidate_refs(version).each do |ref|
+      README_FILENAMES.each do |filename|
+        response = HTTP::Client.get("#{GITHUB_RAW_BASE}/#{repo_path}/#{ref}/#{filename}")
+        return response.body if response.status_code == 200
+      end
     end
 
     nil

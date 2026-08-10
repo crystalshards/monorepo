@@ -17,8 +17,17 @@ class ProviderFactory
   class UnsupportedProviderError < Exception
   end
 
+  # Test seam. When set, `create` delegates to this proc instead of sniffing
+  # the repository URL, which lets specs hand a worker a provider that never
+  # touches the network. Always nil in production.
+  class_property builder : Proc(String, BaseProvider)? = nil
+
   def self.create(repository_url : String) : BaseProvider
-    detect_and_create(repository_url)
+    if custom = @@builder
+      custom.call(repository_url)
+    else
+      detect_and_create(repository_url)
+    end
   end
 
   def self.detect_provider_type(repository_url : String) : String

@@ -96,7 +96,7 @@ class Jobs::PaymentPage < MainLayout
 
   private def render_stripe_form
     div id: "payment-form" do
-      form action: "/jobs/#{@job.id}/checkout", method: "post", id: "stripe-payment-form" do
+      form_for Jobs::Checkout.with(job_id: @job.id), id: "stripe-payment-form" do
         div id: "card-element" do
         end
 

@@ -1,9 +1,31 @@
 require "../../config/minio"
 
 module CrystalShards
+  # The slice of object storage that documentation publishing depends on.
+  # BuildDocsWorker talks to this rather than to StorageService directly, so a
+  # spec can substitute a fake without a MinIO endpoint.
+  module DocsStorage
+    abstract def upload_docs(shard_name : String, version : String, docs_dir : String) : Array(String)
+  end
+
   # Service for interacting with MinIO object storage
   # Handles package and documentation storage
   class StorageService
+    include DocsStorage
+
+    # Test seam. When set, `build` returns this proc's result instead of a real
+    # MinIO-backed service. Always nil in production.
+    class_property builder : Proc(DocsStorage)? = nil
+
+    # Entry point for callers that only need the `DocsStorage` contract.
+    def self.build : DocsStorage
+      if custom = @@builder
+        custom.call
+      else
+        new
+      end
+    end
+
     def initialize
       @client = MinIOConfig.client
     end

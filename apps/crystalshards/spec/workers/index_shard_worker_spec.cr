@@ -1,79 +1,155 @@
 require "../spec_helper"
 
 describe IndexShardWorker do
-  describe "successful indexing" do
-    it "processes shard metadata from shard.yml correctly" do
+  describe "shard.yml metadata" do
+    it "copies description, license and homepage onto the shard" do
       shard = ShardFactory.create &.name("test-shard")
         .repository_url("https://github.com/user/test-shard")
         .description("Initial description")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
 
-      shard_version = ShardVersionFactory.create &.shard_id(shard.id)
-        .version("1.0.0")
-        .released_at(Time.utc)
-
-      # Setup mock provider with shard.yml content
-      shard_yml = YAML.parse(%(
+      provider = MockProvider.new("https://github.com/user/test-shard")
+      provider.shard_yml_content = YAML.parse(<<-YAML)
         name: test-shard
         version: 1.0.0
         description: Updated description from shard.yml
         license: MIT
         homepage: https://example.com
         crystal: ">= 1.0.0"
-      ))
+        YAML
 
-      mock_provider = MockProvider.new("https://github.com/user/test-shard")
-      mock_provider.shard_yml_content = shard_yml
-      mock_provider.api_support = false
-
-      # Temporarily replace ProviderFactory
-      original_create = ProviderFactory.method(:create)
-      ProviderFactory.define_singleton_method(:create) do |url|
-        mock_provider
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do
+          IndexShardWorker.new(shard_name: "test-shard", version: "1.0.0").perform
+        end
       end
 
-      begin
-        worker = IndexShardWorker.new(
-          shard_name: "test-shard",
-          version: "1.0.0"
-        )
-
-        worker.perform
-
-        # Verify shard was updated with shard.yml metadata
-        updated_shard = ShardQuery.new.name("test-shard").first
-        updated_shard.description.should eq("Updated description from shard.yml")
-        updated_shard.license.should eq("MIT")
-        updated_shard.homepage_url.should eq("https://example.com")
-
-        # Verify shard version was updated
-        updated_version = ShardVersionQuery.new
-          .shard_id(shard.id)
-          .version("1.0.0")
-          .first
-
-        updated_version.crystal_version.should eq(">= 1.0.0")
-        updated_version.metadata.should_not be_nil
-      ensure
-        # Restore original method
-        ProviderFactory.define_singleton_method(:create, &original_create)
-      end
+      updated = ShardQuery.new.name("test-shard").first
+      updated.description.should eq("Updated description from shard.yml")
+      updated.license.should eq("MIT")
+      updated.homepage_url.should eq("https://example.com")
     end
 
-    it "fetches and updates GitHub metadata when repository is on GitHub" do
-      shard = ShardFactory.create &.name("github-shard")
-        .repository_url("https://github.com/crystal-lang/crystal")
+    it "records the crystal requirement and the whole shard.yml as version metadata" do
+      shard = ShardFactory.create &.name("meta-shard")
+      version = ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
 
-      shard_version = ShardVersionFactory.create &.shard_id(shard.id)
-        .version("1.0.0")
-        .released_at(Time.utc)
-
-      # Setup mock provider with metadata
-      shard_yml = YAML.parse(%(
-        name: github-shard
+      provider = MockProvider.new(shard.repository_url)
+      provider.shard_yml_content = YAML.parse(<<-YAML)
+        name: meta-shard
         version: 1.0.0
-      ))
+        crystal: ">= 1.0.0"
+        dependencies:
+          kemal:
+            github: kemalcr/kemal
+        YAML
 
-      metadata = BaseProvider::RepositoryMetadata.new(
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do
+          IndexShardWorker.new(shard_name: "meta-shard", version: "1.0.0").perform
+        end
+      end
+
+      updated = ShardVersionQuery.new.shard_id(shard.id).version("1.0.0").first
+      updated.crystal_version.should eq(">= 1.0.0")
+
+      metadata = updated.metadata.should_not be_nil
+      metadata["name"].as_s.should eq("meta-shard")
+      metadata["dependencies"]["kemal"]["github"].as_s.should eq("kemalcr/kemal")
+    end
+
+    it "leaves fields the shard.yml omits untouched" do
+      shard = ShardFactory.create &.name("partial-shard")
+        .description("Existing description")
+        .license("Apache-2.0")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+
+      provider = MockProvider.new(shard.repository_url)
+      provider.shard_yml_content = YAML.parse(<<-YAML)
+        name: partial-shard
+        homepage: https://partial.example.com
+        YAML
+
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do
+          IndexShardWorker.new(shard_name: "partial-shard", version: "1.0.0").perform
+        end
+      end
+
+      updated = ShardQuery.new.name("partial-shard").first
+      updated.homepage_url.should eq("https://partial.example.com")
+      updated.description.should eq("Existing description")
+      updated.license.should eq("Apache-2.0")
+    end
+
+    it "leaves the shard alone when the repository has no shard.yml" do
+      shard = ShardFactory.create &.name("no-yml").description("Untouched")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+
+      provider = MockProvider.new(shard.repository_url)
+      provider.shard_yml_content = nil
+
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do
+          IndexShardWorker.new(shard_name: "no-yml", version: "1.0.0").perform
+        end
+      end
+
+      updated = ShardQuery.new.name("no-yml").first
+      updated.description.should eq("Untouched")
+      ShardVersionQuery.new.shard_id(shard.id).version("1.0.0").first.metadata.should be_nil
+    end
+  end
+
+  describe "readme" do
+    it "stores the readme the provider returns" do
+      shard = ShardFactory.create &.name("readme-shard")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+
+      provider = MockProvider.new(shard.repository_url)
+      provider.shard_yml_content = YAML.parse("name: readme-shard")
+      provider.readme_content = "# readme-shard\n\nUsage instructions."
+
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do
+          IndexShardWorker.new(shard_name: "readme-shard", version: "1.0.0").perform
+        end
+      end
+
+      ShardQuery.new.name("readme-shard").first.readme_content
+        .should eq("# readme-shard\n\nUsage instructions.")
+    end
+
+    it "leaves readme_content nil when the provider has no readme" do
+      shard = ShardFactory.create &.name("no-readme")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+
+      provider = MockProvider.new(shard.repository_url)
+      provider.shard_yml_content = YAML.parse("name: no-readme\ndescription: Indexed anyway")
+      provider.readme_content = nil
+
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do
+          IndexShardWorker.new(shard_name: "no-readme", version: "1.0.0").perform
+        end
+      end
+
+      updated = ShardQuery.new.name("no-readme").first
+      updated.readme_content.should be_nil
+      # The rest of the indexing run still happened.
+      updated.description.should eq("Indexed anyway")
+    end
+  end
+
+  describe "provider metadata" do
+    it "records stars, forks and sync time when the provider exposes an api" do
+      shard = ShardFactory.create &.name("api-shard")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+
+      provider = MockProvider.new(shard.repository_url)
+      provider.shard_yml_content = YAML.parse("name: api-shard")
+      provider.api_support = true
+      provider.metadata = BaseProvider::RepositoryMetadata.new(
         stars: 100,
         forks: 50,
         description: "GitHub description",
@@ -81,272 +157,129 @@ describe IndexShardWorker do
         default_branch: "main"
       )
 
-      mock_provider = MockProvider.new("https://github.com/crystal-lang/crystal")
-      mock_provider.shard_yml_content = shard_yml
-      mock_provider.metadata = metadata
-      mock_provider.api_support = true
-
-      original_create = ProviderFactory.method(:create)
-      ProviderFactory.define_singleton_method(:create) do |url|
-        mock_provider
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do
+          IndexShardWorker.new(shard_name: "api-shard", version: "1.0.0").perform
+        end
       end
 
-      begin
-        worker = IndexShardWorker.new(
-          shard_name: "github-shard",
-          version: "1.0.0"
-        )
+      updated = ShardQuery.new.name("api-shard").first
+      updated.github_stars.should eq(100)
+      updated.github_forks.should eq(50)
+      updated.last_synced_at.should_not be_nil
+      # MockProvider inherits BaseProvider#provider_name, which strips the
+      # "_provider" suffix off the underscored class name.
+      updated.provider.should eq("mock")
+    end
 
-        worker.perform
+    it "does not touch provider metadata when the provider has no api" do
+      shard = ShardFactory.create &.name("no-api")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
 
-        updated_shard = ShardQuery.new.name("github-shard").first
-        updated_shard.github_stars.should eq(100)
-        updated_shard.github_forks.should eq(50)
-        updated_shard.last_synced_at.should_not be_nil
-      ensure
-        ProviderFactory.define_singleton_method(:create, &original_create)
+      provider = MockProvider.new(shard.repository_url)
+      provider.shard_yml_content = YAML.parse("name: no-api")
+      provider.api_support = false
+      provider.metadata = BaseProvider::RepositoryMetadata.new(stars: 100, forks: 50)
+
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do
+          IndexShardWorker.new(shard_name: "no-api", version: "1.0.0").perform
+        end
       end
+
+      updated = ShardQuery.new.name("no-api").first
+      updated.github_stars.should be_nil
+      updated.github_forks.should be_nil
+      updated.last_synced_at.should be_nil
+      updated.provider.should eq("github")
     end
   end
 
   describe "worker chaining" do
-    it "enqueues UpdateDependenciesWorker after indexing" do
+    it "schedules dependency and docs jobs for the indexed version" do
       shard = ShardFactory.create &.name("chain-test")
-        .repository_url("https://github.com/user/chain-test")
+      ShardVersionFactory.create &.shard_id(shard.id).version("2.1.0")
 
-      shard_version = ShardVersionFactory.create &.shard_id(shard.id)
-        .version("1.0.0")
-        .released_at(Time.utc)
+      provider = MockProvider.new(shard.repository_url)
+      provider.shard_yml_content = YAML.parse("name: chain-test")
 
-      shard_yml = YAML.parse(%(
-        name: chain-test
-        version: 1.0.0
-      ))
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do |followups|
+          IndexShardWorker.new(shard_name: "chain-test", version: "2.1.0").perform
 
-      mock_provider = MockProvider.new("https://github.com/user/chain-test")
-      mock_provider.shard_yml_content = shard_yml
-
-      original_create = ProviderFactory.method(:create)
-      ProviderFactory.define_singleton_method(:create) do |url|
-        mock_provider
-      end
-
-      # Track enqueued workers
-      enqueued_update_deps = false
-      original_enqueue = UpdateDependenciesWorker.method(:enqueue)
-      UpdateDependenciesWorker.define_singleton_method(:enqueue) do |shard_name, version|
-        enqueued_update_deps = true
-        nil
-      end
-
-      begin
-        worker = IndexShardWorker.new(
-          shard_name: "chain-test",
-          version: "1.0.0"
-        )
-
-        worker.perform
-
-        enqueued_update_deps.should be_true
-      ensure
-        ProviderFactory.define_singleton_method(:create, &original_create)
-        UpdateDependenciesWorker.define_singleton_method(:enqueue, &original_enqueue)
+          followups.should eq([
+            {IndexShardWorker::Followup::UpdateDependencies, "chain-test", "2.1.0"},
+            {IndexShardWorker::Followup::BuildDocs, "chain-test", "2.1.0"},
+          ])
+        end
       end
     end
 
-    it "enqueues BuildDocsWorker after indexing" do
-      shard = ShardFactory.create &.name("build-test")
-        .repository_url("https://github.com/user/build-test")
+    it "still schedules the follow-up jobs when shard.yml could not be fetched" do
+      shard = ShardFactory.create &.name("resilient")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
 
-      shard_version = ShardVersionFactory.create &.shard_id(shard.id)
-        .version("1.0.0")
-        .released_at(Time.utc)
+      provider = MockProvider.new(shard.repository_url)
+      provider.should_fail = true
 
-      shard_yml = YAML.parse(%(
-        name: build-test
-        version: 1.0.0
-      ))
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do |followups|
+          IndexShardWorker.new(shard_name: "resilient", version: "1.0.0").perform
 
-      mock_provider = MockProvider.new("https://github.com/user/build-test")
-      mock_provider.shard_yml_content = shard_yml
-
-      original_create = ProviderFactory.method(:create)
-      ProviderFactory.define_singleton_method(:create) do |url|
-        mock_provider
-      end
-
-      enqueued_build_docs = false
-      original_enqueue = BuildDocsWorker.method(:enqueue)
-      BuildDocsWorker.define_singleton_method(:enqueue) do |shard_name, version|
-        enqueued_build_docs = true
-        nil
-      end
-
-      begin
-        worker = IndexShardWorker.new(
-          shard_name: "build-test",
-          version: "1.0.0"
-        )
-
-        worker.perform
-
-        enqueued_build_docs.should be_true
-      ensure
-        ProviderFactory.define_singleton_method(:create, &original_create)
-        BuildDocsWorker.define_singleton_method(:enqueue, &original_enqueue)
+          followups.map(&.[0]).should eq([
+            IndexShardWorker::Followup::UpdateDependencies,
+            IndexShardWorker::Followup::BuildDocs,
+          ])
+        end
       end
     end
   end
 
-  describe "error handling" do
-    it "handles non-existent shards gracefully" do
-      worker = IndexShardWorker.new(
-        shard_name: "nonexistent",
-        version: "1.0.0"
-      )
+  describe "missing records" do
+    it "returns without raising or chaining when the shard is unknown" do
+      WorkerSeams.capturing_followups do |followups|
+        IndexShardWorker.new(shard_name: "nonexistent", version: "1.0.0").perform
 
-      # Should not raise, just log error and return
-      worker.perform
+        followups.should be_empty
+      end
 
-      # Verify shard was not created
       ShardQuery.new.name("nonexistent").first?.should be_nil
     end
 
-    it "handles non-existent shard versions gracefully" do
-      shard = ShardFactory.create &.name("version-test")
-        .repository_url("https://github.com/user/version-test")
+    it "returns without raising or chaining when the version is unknown" do
+      shard = ShardFactory.create &.name("version-test").description("Untouched")
 
-      worker = IndexShardWorker.new(
-        shard_name: "version-test",
-        version: "99.99.99"
-      )
+      WorkerSeams.capturing_followups do |followups|
+        IndexShardWorker.new(shard_name: "version-test", version: "99.99.99").perform
 
-      # Should not raise, just log error and return
-      worker.perform
-
-      # Verify no version was created
-      ShardVersionQuery.new
-        .shard_id(shard.id)
-        .version("99.99.99")
-        .first?.should be_nil
-    end
-
-    it "handles missing shard.yml gracefully" do
-      shard = ShardFactory.create &.name("no-yml")
-        .repository_url("https://github.com/user/no-yml")
-
-      shard_version = ShardVersionFactory.create &.shard_id(shard.id)
-        .version("1.0.0")
-        .released_at(Time.utc)
-
-      mock_provider = MockProvider.new("https://github.com/user/no-yml")
-      mock_provider.shard_yml_content = nil
-
-      original_create = ProviderFactory.method(:create)
-      ProviderFactory.define_singleton_method(:create) do |url|
-        mock_provider
+        followups.should be_empty
       end
 
-      begin
-        worker = IndexShardWorker.new(
-          shard_name: "no-yml",
-          version: "1.0.0"
-        )
-
-        # Should not raise, just log error
-        worker.perform
-
-        # Still enqueues downstream workers even if shard.yml is missing
-        # This is the current behavior - workers are resilient
-      ensure
-        ProviderFactory.define_singleton_method(:create, &original_create)
-      end
-    end
-
-    it "handles provider fetch errors gracefully" do
-      shard = ShardFactory.create &.name("error-shard")
-        .repository_url("https://github.com/user/error-shard")
-
-      shard_version = ShardVersionFactory.create &.shard_id(shard.id)
-        .version("1.0.0")
-        .released_at(Time.utc)
-
-      mock_provider = MockProvider.new("https://github.com/user/error-shard")
-      mock_provider.should_fail = true
-
-      original_create = ProviderFactory.method(:create)
-      ProviderFactory.define_singleton_method(:create) do |url|
-        mock_provider
-      end
-
-      begin
-        worker = IndexShardWorker.new(
-          shard_name: "error-shard",
-          version: "1.0.0"
-        )
-
-        worker.perform
-
-        # Worker completes even if provider fails
-      ensure
-        ProviderFactory.define_singleton_method(:create, &original_create)
-      end
+      ShardQuery.new.name("version-test").first.description.should eq("Untouched")
+      ShardVersionQuery.new.shard_id(shard.id).version("99.99.99").first?.should be_nil
     end
   end
 
-  describe "idempotency" do
-    it "can be run multiple times safely" do
-      shard = ShardFactory.create &.name("idempotent-test")
-        .repository_url("https://github.com/user/idempotent-test")
-        .description("Initial")
+  describe "repeat runs" do
+    it "converges on the latest shard.yml without duplicating rows" do
+      shard = ShardFactory.create &.name("idempotent-test").description("Initial")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
 
-      shard_version = ShardVersionFactory.create &.shard_id(shard.id)
-        .version("1.0.0")
-        .released_at(Time.utc)
+      provider = MockProvider.new(shard.repository_url)
+      provider.shard_yml_content = YAML.parse("name: idempotent-test\ndescription: Updated description")
 
-      shard_yml = YAML.parse(%(
-        name: idempotent-test
-        version: 1.0.0
-        description: Updated description
-      ))
-
-      mock_provider = MockProvider.new("https://github.com/user/idempotent-test")
-      mock_provider.shard_yml_content = shard_yml
-
-      original_create = ProviderFactory.method(:create)
-      ProviderFactory.define_singleton_method(:create) do |url|
-        mock_provider
+      WorkerSeams.with_provider(provider) do
+        WorkerSeams.capturing_followups do
+          worker = IndexShardWorker.new(shard_name: "idempotent-test", version: "1.0.0")
+          worker.perform
+          worker.perform
+          worker.perform
+        end
       end
 
-      # Suppress worker enqueuing for this test
-      original_update_enqueue = UpdateDependenciesWorker.method(:enqueue)
-      original_build_enqueue = BuildDocsWorker.method(:enqueue)
-      UpdateDependenciesWorker.define_singleton_method(:enqueue) { |shard_name, version| nil }
-      BuildDocsWorker.define_singleton_method(:enqueue) { |shard_name, version| nil }
-
-      begin
-        worker = IndexShardWorker.new(
-          shard_name: "idempotent-test",
-          version: "1.0.0"
-        )
-
-        # Run multiple times
-        worker.perform
-        worker.perform
-        worker.perform
-
-        # Should still only have one shard and one version
-        ShardQuery.new.name("idempotent-test").select_count.should eq(1)
-        ShardVersionQuery.new.shard_id(shard.id).select_count.should eq(1)
-
-        # Description should be updated
-        updated_shard = ShardQuery.new.name("idempotent-test").first
-        updated_shard.description.should eq("Updated description")
-      ensure
-        ProviderFactory.define_singleton_method(:create, &original_create)
-        UpdateDependenciesWorker.define_singleton_method(:enqueue, &original_update_enqueue)
-        BuildDocsWorker.define_singleton_method(:enqueue, &original_build_enqueue)
-      end
+      ShardQuery.new.name("idempotent-test").select_count.should eq(1)
+      ShardVersionQuery.new.shard_id(shard.id).select_count.should eq(1)
+      ShardQuery.new.name("idempotent-test").first.description.should eq("Updated description")
     end
   end
 end
