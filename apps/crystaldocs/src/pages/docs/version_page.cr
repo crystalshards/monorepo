@@ -69,7 +69,7 @@ class Docs::VersionPage < MainLayout
   private def render_version_dropdown
     versions = doc.doc_versions.sort_by(&.published_at).reverse
 
-    label "Version:"
+    label "Version:", for: "version-select"
     tag "select", id: "version-select", onchange: "window.location.href = this.value" do
       versions.each do |v|
         version_option(v.version, v.version == doc_version.version)

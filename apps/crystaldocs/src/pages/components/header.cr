@@ -1,7 +1,7 @@
 class Components::Header < Lucky::BaseComponent
   def render
     header class: "site-header" do
-      nav class: "navbar" do
+      nav class: "navbar", "aria-label": "Primary" do
         div class: "navbar-brand" do
           a href: "/", class: "logo" do
             text "CrystalDocs"

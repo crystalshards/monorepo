@@ -57,11 +57,12 @@ class Jobs::IndexPage < MainLayout
         end
 
         div class: "filter-group" do
-          label do
+          label for: "filter-location" do
             text "Location"
           end
           input(
             type: "text",
+            id: "filter-location",
             name: "location",
             value: @location || "",
             placeholder: "e.g., San Francisco, Remote"
@@ -69,10 +70,10 @@ class Jobs::IndexPage < MainLayout
         end
 
         div class: "filter-group" do
-          label do
+          label for: "filter-job-type" do
             text "Job Type"
           end
-          tag "select", name: "job_type" do
+          tag "select", name: "job_type", id: "filter-job-type" do
             select_option("All Types", "", @job_type.nil?)
             select_option("Full Time", "full-time", @job_type == "full-time")
             select_option("Part Time", "part-time", @job_type == "part-time")
