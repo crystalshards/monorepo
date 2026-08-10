@@ -1,7 +1,7 @@
 class Header < Lucky::BaseComponent
   def render
     header class: "site-header" do
-      nav class: "navbar" do
+      nav class: "navbar", "aria-label": "Primary" do
         div class: "navbar-brand" do
           a href: "/", class: "logo" do
             text "CrystalShards"
@@ -15,7 +15,7 @@ class Header < Lucky::BaseComponent
           a href: "/shards", class: "nav-link" do
             text "Browse Shards"
           end
-          a href: "https://crystaldocs.org", class: "nav-link", target: "_blank" do
+          a href: "https://crystaldocs.org", class: "nav-link", target: "_blank", rel: "noopener" do
             text "Documentation"
           end
         end

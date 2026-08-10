@@ -11,7 +11,9 @@
   --white: #fff;
   --link-color: #0066cc;
   --link-hover: #004499;
-  --success-color: #28a745;
+  /* White on the old #28a745 measured 3.13:1, under the 4.5:1 needed for the
+     12px build-status badge. #1e7e34 measures 5.14:1. */
+  --success-color: #1e7e34;
   --warning-color: #ffc107;
   --danger-color: #dc3545;
   --code-bg: #f6f8fa;

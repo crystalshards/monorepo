@@ -11,3 +11,10 @@ apps/*/crystalbits
 
 # Test logs and temporary files
 apps/*/tmp/
+
+# Local scratch space for drafts and mockups, never committed
+.claude/.scratch/
+
+# Compiled app binaries and debug symbols
+apps/*/bin/
+apps/*/*.dwarf

@@ -225,13 +225,16 @@ class Shards::ShowPage < MainLayout
 
       div class: "readme-content" do
         if readme = @shard.readme_content
-          pre class: "readme-raw" do
+          # The block scrolls, so it must be focusable or a keyboard user
+          # cannot reach its content (WCAG 2.1.1).
+          tag "pre", class: "readme-raw", tabindex: "0", role: "region",
+            "aria-label": "README for #{@shard.name}" do
             text readme
           end
         else
           para do
             text "No README has been indexed for this shard yet. You can read it on the "
-            a href: @shard.repository_url, target: "_blank" do
+            a href: @shard.repository_url, target: "_blank", rel: "noopener" do
               text "repository"
             end
             text "."
