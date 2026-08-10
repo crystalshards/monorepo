@@ -1,4 +1,8 @@
 class Header < Lucky::BaseComponent
+  # Search belongs in the masthead so it works from any page, rather than
+  # only existing on the posts index.
+  needs query : String = ""
+
   def render
     header class: "site-header" do
       nav class: "navbar", "aria-label": "Primary" do
@@ -8,10 +12,9 @@ class Header < Lucky::BaseComponent
           end
         end
 
+        mount SearchBar, query: @query, field_id: "masthead-search", compact: true
+
         div class: "navbar-menu" do
-          a href: "/", class: "nav-link" do
-            text "Home"
-          end
           a href: "/posts", class: "nav-link" do
             text "All Posts"
           end

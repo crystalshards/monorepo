@@ -20,14 +20,17 @@ class Shards::IndexPage < MainLayout
           text page_title
         end
 
-        if @query
+        if q = @query
           para class: "search-results-count" do
-            text "Found #{@total_count} shard#{@total_count == 1 ? "" : "s"}"
+            text "Found #{@total_count} shard#{@total_count == 1 ? "" : "s"} matching "
+            strong do
+              text q
+            end
           end
         end
       end
 
-      mount SearchBar, query: @query || ""
+      # Search lives in the masthead now, so there is no second field here.
 
       render_filters_and_sorting
 

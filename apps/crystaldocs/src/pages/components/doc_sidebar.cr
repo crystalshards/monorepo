@@ -52,6 +52,16 @@ class Components::DocSidebar < Lucky::BaseComponent
           a "Overview", href: "/docs/#{doc.package_name}/#{doc_version.version}", class: link_class("index.html")
         end
 
+        # The generated documentation served as itself, rather than embedded
+        # in this page. Linking the stored index rather than guessing at an
+        # inner filename keeps this correct whatever shape a build produced:
+        # the document's own links take over from there.
+        li do
+          a "Full documentation",
+            href: "/docs/#{doc.package_name}/#{doc_version.version}/index.html",
+            class: "sidebar-link"
+        end
+
         if repository_url = doc.repository_url
           li do
             a "Repository", href: repository_url, target: "_blank", rel: "noopener"

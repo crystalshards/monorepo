@@ -6,8 +6,10 @@ describe Home::Index do
 
     response.status_code.should eq(200)
     response.body.should contain("CrystalShards")
-    response.body.should contain("Every shard, cut and")
+    response.body.should contain("The package registry for")
     response.body.should contain("indexed straight from the source repository")
+    # The landing page leads with how to add a dependency, not a hero image.
+    response.body.should contain("shards install")
   end
 
   it "displays total shard count" do
@@ -40,7 +42,7 @@ describe Home::Index do
 
     response.status_code.should eq(200)
     response.body.should contain("new-shard")
-    response.body.should contain("Recently Updated")
+    response.body.should contain("Recently updated")
   end
 
   it "includes search bar" do
