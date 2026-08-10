@@ -1,4 +1,5 @@
 require "./shards"
+require "./pricing"
 
 require "../config/server"
 require "./app_database"

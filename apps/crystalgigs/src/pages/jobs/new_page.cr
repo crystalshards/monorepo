@@ -33,14 +33,14 @@ class Jobs::NewPage < MainLayout
   private def render_pricing_info
     div class: "pricing-info" do
       h3 do
-        text "Job Posting - $99 for 60 days"
+        text "Job Posting - #{Pricing.summary}"
       end
       ul do
         li do
           text "Reach thousands of Crystal developers"
         end
         li do
-          text "60 days of visibility"
+          text "#{Pricing.duration_days} days of visibility"
         end
         li do
           text "Featured in weekly newsletter"
