@@ -67,11 +67,13 @@ install-deps: ## Install Crystal dependencies for all apps
 		(cd apps/$$app && shards install) || exit 1; \
 	done
 
-build: ## Build all applications
+build: ## Build all applications and the background worker
 	@for app in $(APPS); do \
 		echo "Building $$app..."; \
 		(cd apps/$$app && crystal build src/$$app.cr -o bin/$$app) || exit 1; \
 	done
+	@echo "Building crystalshards worker..."
+	@cd apps/crystalshards && crystal build src/worker.cr -o bin/worker
 
 migrate: ## Run database migrations for all apps
 	@for app in $(APPS); do \
@@ -114,11 +116,12 @@ format: ## Format all Crystal source
 		crystal tool format apps/$$app/src apps/$$app/spec; \
 	done
 
-dev: ## Run all four apps locally (Ctrl-C stops everything)
+dev: ## Run all four apps and the background worker (Ctrl-C stops everything)
 	@echo "crystalshards  http://localhost:3000"
 	@echo "crystaldocs    http://localhost:3001"
 	@echo "crystalgigs    http://localhost:3002"
 	@echo "crystalbits    http://localhost:3003"
+	@echo "worker         JoobQ queues: index, docs, deps"
 	@echo ""
 	@trap 'kill 0' EXIT INT TERM; \
 	port=3000; \
@@ -130,6 +133,11 @@ dev: ## Run all four apps locally (Ctrl-C stops everything)
 			./bin/$$app 2>&1 | sed "s/^/[$$app] /") & \
 		port=$$((port + 1)); \
 	done; \
+	(cd apps/crystalshards && \
+		DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/crystalshards_development" \
+		REDIS_URL=redis://localhost:6379/0 \
+		MINIO_ENDPOINT=http://localhost:9000 MINIO_ACCESS_KEY=minioadmin MINIO_SECRET_KEY=minioadmin \
+		./bin/worker 2>&1 | sed "s/^/[worker] /") & \
 	wait
 
 stop: ## Stop supporting Docker services
