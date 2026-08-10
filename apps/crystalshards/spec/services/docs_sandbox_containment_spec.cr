@@ -66,9 +66,13 @@ describe "documentation sandbox containment" do
     begin
       built = CrystalShards::DockerDocsSandbox.new.build_docs(source, output)
 
+      # A missing probe file must fail rather than read as empty. Otherwise a
+      # build that never ran satisfies every "should_not contain" assertion
+      # below and the spec passes while proving nothing.
       read = ->(name : String) {
         path = File.join(output, name)
-        File.exists?(path) ? File.read(path).strip : ""
+        fail "the build produced no #{name}, so it did not run" unless File.exists?(path)
+        File.read(path).strip
       }
 
       # The credential is the whole game: this is what an attacker publishes a

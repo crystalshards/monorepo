@@ -19,6 +19,14 @@ module CrystalShards
       work_dir = File.tempname("docs_sandbox_work")
       Dir.mkdir_p(work_dir)
 
+      # The container runs as an unprivileged fixed uid, which will not match
+      # whoever owns these directories on the host. Without this the build
+      # cannot write its own output, and on a machine where the runtime
+      # silently remaps ownership the failure only appears somewhere else.
+      # These are ephemeral directories we created and delete below.
+      File.chmod(output_dir, 0o777)
+      File.chmod(work_dir, 0o777)
+
       args = docker_args(source_dir, output_dir, work_dir)
       log_info "Building documentation under #{description}"
 
