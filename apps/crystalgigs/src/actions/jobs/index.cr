@@ -7,6 +7,7 @@ class Jobs::Index < BrowserAction
 
   get "/jobs" do
     per_page = 20
+    search_term = normalized_query
 
     jobs_query = JobQuery.new
       .active_only
@@ -14,7 +15,7 @@ class Jobs::Index < BrowserAction
       .not_expired
       .recent
 
-    if q = query
+    if q = search_term
       jobs_query = jobs_query.search(q)
     end
 
@@ -41,12 +42,20 @@ class Jobs::Index < BrowserAction
 
     html Jobs::IndexPage,
       jobs: jobs,
-      query: query,
+      query: search_term,
       location: location,
       job_type: job_type,
       remote: remote,
       current_page: current_page,
       total_pages: total_pages,
       total_count: total_count
+  end
+
+  # A blank query param ("" or whitespace) is no query at all: it should
+  # neither filter the results nor be named in the results count.
+  private def normalized_query : String?
+    q = query
+    return if q.nil?
+    q.strip.empty? ? nil : q
   end
 end

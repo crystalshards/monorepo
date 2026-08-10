@@ -22,8 +22,6 @@ class Jobs::IndexPage < MainLayout
       end
     end
 
-    mount SearchBar, query: @query
-
     render_filters
 
     section class: "jobs-list-section" do
@@ -34,7 +32,14 @@ class Jobs::IndexPage < MainLayout
       end
 
       para class: "jobs-count" do
-        text "#{@total_count} job#{"s" unless @total_count == 1} found"
+        if q = @query
+          text "Found #{@total_count} job#{"s" unless @total_count == 1} matching "
+          strong do
+            text q
+          end
+        else
+          text "#{@total_count} job#{"s" unless @total_count == 1} found"
+        end
       end
 
       if @jobs.any?

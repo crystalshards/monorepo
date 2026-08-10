@@ -1,4 +1,10 @@
 class Header < Lucky::BaseComponent
+  # Search sits in the masthead, not in a landing hero. Finding a role is the
+  # primary job of a job board, so it is reachable from every page and near
+  # the top of the tab order rather than 574px down a marketing block. Hex and
+  # RubyGems both do this; our previous landing pushed it below the fold.
+  needs query : String? = nil
+
   def render
     header class: "site-header" do
       nav class: "navbar", "aria-label": "Primary" do
@@ -9,6 +15,8 @@ class Header < Lucky::BaseComponent
             text "CrystalGigs"
           end
         end
+
+        mount SearchBar, query: @query, field_id: "masthead-search", compact: true
 
         div class: "navbar-menu" do
           a href: "/", class: "nav-link" do

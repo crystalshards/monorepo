@@ -13,38 +13,20 @@ class Home::IndexPage < MainLayout
     render_newsletter_section
   end
 
+  # A publication's landing page should get you into an article. The lead is
+  # the featured post itself, not a decorative image above it.
   private def render_hero
-    section class: "hero" do
-      div class: "hero-content" do
-        div do
-          para class: "eyebrow" do
-            text "The Crystal community blog"
-          end
-
-          h1 class: "hero-title" do
-            text "Sharp ideas, "
-            span class: "accent" do
-              text "cut to length"
-            end
-            text "."
-          end
-
-          para class: "hero-subtitle" do
-            text "Tutorials, news, and insights from the Crystal programming language community"
+    section class: "intro" do
+      div class: "intro-copy" do
+        h1 class: "intro-title" do
+          text "Sharp ideas, "
+          span class: "accent" do
+            text "cut to length"
           end
         end
 
-        tag "figure", class: "hero-figure" do
-          img(
-            src: asset("img/specimen-garnet.webp"),
-            srcset: "#{asset("img/specimen-garnet.webp")} 560w, #{asset("img/specimen-garnet@2x.webp")} 1120w",
-            sizes: "(max-width: 60rem) 22rem, 34rem",
-            width: "560", height: "560",
-            alt: "A deep red almandine garnet crystal specimen with sharp cubic faces"
-          )
-          tag "figcaption" do
-            text "Fig. 1 - Almandine garnet, cubic system"
-          end
+        para class: "intro-lede" do
+          text "Tutorials, news and insights from the Crystal community."
         end
       end
     end

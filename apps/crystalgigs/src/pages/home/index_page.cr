@@ -8,69 +8,107 @@ class Home::IndexPage < MainLayout
     "Find Crystal Programming Jobs"
   end
 
+  # The landing page of a job board exists to get someone to a role. Search
+  # lives in the masthead, so the page itself leads with what the board is and
+  # what you do next. There is no hero image; a decorative photograph pushed
+  # the jobs a full screen further down.
   def content
-    section class: "hero" do
-      div class: "hero-content" do
-        div do
-          para class: "eyebrow" do
-            text "The Crystal job board"
-          end
+    render_intro
+    render_getting_started
+    render_job_lists
+    render_hiring_cta
+  end
 
-          h1 class: "hero-title" do
-            text "Find your next "
-            span class: "accent" do
-              text "Crystal job"
-            end
-            text "."
-          end
-
-          para class: "hero-subtitle" do
-            text "The premier job board for Crystal developers and companies hiring Crystal talent"
-          end
-
-          mount SearchBar, query: nil, large: true, field_id: "hero-search"
-
-          div class: "hero-cta" do
-            a href: "/jobs/new", class: "button button-primary button-large" do
-              text "Post a Job - $99"
-            end
+  private def render_intro
+    section class: "intro" do
+      div class: "intro-copy" do
+        h1 class: "intro-title" do
+          text "Crystal jobs, posted by the "
+          span class: "accent" do
+            text "people hiring"
           end
         end
 
-        tag "figure", class: "hero-figure" do
-          img(
-            src: asset("img/specimen-pyrite.webp"),
-            srcset: "#{asset("img/specimen-pyrite.webp")} 560w, #{asset("img/specimen-pyrite@2x.webp")} 1120w",
-            sizes: "(max-width: 60rem) 22rem, 33rem",
-            width: "560", height: "560",
-            alt: "A cubic pyrite specimen, brassy metallic cubes intergrown"
-          )
-          tag "figcaption" do
-            text "Fig. 1 - Pyrite, cubic system"
+        para class: "intro-lede" do
+          text "The job board for the Crystal community: every role comes " \
+               "straight from the company trying to fill it."
+        end
+
+        div class: "intro-cta" do
+          a href: "/jobs/new", class: "button button-primary button-large" do
+            text "Post a Job - #{Pricing.price_label}"
           end
         end
       end
 
-      div class: "hero-stats" do
-        div class: "stat" do
-          strong do
-            text @total_jobs.to_s
-          end
-          span do
+      dl class: "intro-stats" do
+        div do
+          tag "dt" do
             text "Active jobs"
           end
-        end
-        div class: "stat" do
-          strong do
-            text @total_companies.to_s
+          tag "dd" do
+            text @total_jobs.to_s
           end
-          span do
+        end
+        div do
+          tag "dt" do
             text "Companies hiring"
+          end
+          tag "dd" do
+            text @total_companies.to_s
           end
         end
       end
     end
+  end
 
+  # The three things you actually do on a job board, with the exact URL you
+  # paste to do each.
+  private def render_getting_started
+    section class: "section" do
+      h2 class: "visually-hidden" do
+        text "Getting started"
+      end
+
+      div class: "recipe-grid" do
+        recipe(
+          "Browse roles",
+          "Every active posting, newest first.",
+          "crystalgigs.com/jobs"
+        )
+        recipe(
+          "Remote only",
+          "Narrow the board to roles marked remote.",
+          "crystalgigs.com/jobs?remote=true"
+        )
+        recipe(
+          "Post a role",
+          "#{Pricing.summary}, live as soon as payment clears.",
+          "crystalgigs.com/jobs/new"
+        )
+      end
+    end
+  end
+
+  private def recipe(title : String, blurb : String, snippet : String)
+    article class: "recipe" do
+      h3 do
+        text title
+      end
+      para do
+        text blurb
+      end
+      div class: "code-block" do
+        pre do
+          code do
+            text snippet
+          end
+        end
+      end
+    end
+  end
+
+  private def render_job_lists
     if @featured_jobs.any?
       section class: "section" do
         div class: "section-header" do
@@ -111,7 +149,9 @@ class Home::IndexPage < MainLayout
         end
       end
     end
+  end
 
+  private def render_hiring_cta
     section class: "section section-cta" do
       div class: "cta-box" do
         h2 do

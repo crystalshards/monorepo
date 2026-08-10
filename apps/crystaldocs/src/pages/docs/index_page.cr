@@ -19,11 +19,12 @@ class Docs::IndexPage < MainLayout
     div class: "page-header" do
       h1 page_title
 
-      mount Components::SearchBar, query: query
-
+      # Search itself lives in the masthead; here we only report what the
+      # current query matched.
       if query
         para class: "search-results-count" do
-          text "Found #{total_count} package#{"s" unless total_count == 1}"
+          text "Found #{total_count} package#{"s" unless total_count == 1} matching "
+          strong query.to_s
         end
       end
     end

@@ -33,24 +33,7 @@ class Posts::IndexPage < MainLayout
   end
 
   private def render_search_form
-    div class: "search-form" do
-      form method: "get", action: "/posts" do
-        # A placeholder is not a label: it vanishes on input and is not a
-        # dependable accessible name (WCAG 3.3.2).
-        label "Search posts", for: "post-search", class: "visually-hidden"
-
-        if search_value = @search
-          tag "input", type: "search", id: "post-search", name: "search", placeholder: "Search posts...", value: search_value, class: "search-input"
-        else
-          tag "input", type: "search", id: "post-search", name: "search", placeholder: "Search posts...", class: "search-input"
-        end
-
-        button type: "submit", class: "search-button" do
-          tag "i", class: "fa-solid fa-magnifying-glass", "aria-hidden": "true"
-          text " Search"
-        end
-      end
-    end
+    mount SearchBar, query: @search || "", field_id: "posts-search"
   end
 
   private def render_posts

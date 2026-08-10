@@ -65,6 +65,17 @@ describe Jobs::Index do
     response.body.should_not contain("Ruby Developer")
   end
 
+  it "treats a blank query as no query" do
+    JobFactory.create &.title("Crystal Developer").published_at(Time.utc).active(true)
+
+    response = BrowserClient.exec(Jobs::Index.with(query: ""))
+
+    # A blank param filters nothing out and is not named as a search term.
+    response.status_code.should eq(200)
+    response.body.should contain("Crystal Developer")
+    response.body.should_not contain("matching")
+  end
+
   it "paginates results" do
     25.times do |i|
       JobFactory.create &.title("Job #{i}").published_at(Time.utc).active(true)

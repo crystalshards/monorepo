@@ -8,64 +8,95 @@ class Home::IndexPage < MainLayout
     "Crystal Shard Documentation"
   end
 
+  # The landing page of a documentation host exists to get someone to the
+  # docs they need. Search lives in the masthead, so the page itself leads
+  # with what you actually do next: pin a version, deep-link a type, publish
+  # your own. There is no hero image; a decorative photograph pushed the
+  # documentation a full screen further down.
   def content
-    render_hero
+    render_intro
+    render_recipes
     render_recent_docs
     render_popular_docs
   end
 
-  private def render_hero
-    section class: "hero" do
-      div class: "hero-content" do
-        div do
-          para class: "eyebrow" do
-            text "Crystal shard documentation hosting"
+  private def render_intro
+    section class: "intro" do
+      div class: "intro-copy" do
+        h1 class: "intro-title" do
+          text "Documentation for every "
+          span class: "accent" do
+            text "Crystal shard"
           end
-
-          h1 class: "hero-title" do
-            text "Crystal"
-            span class: "accent" do
-              text "Docs"
-            end
-          end
-
-          para class: "hero-subtitle" do
-            text "Generated API documentation for every published shard, " \
-                 "served straight from the source repository."
-          end
-
-          mount Components::SearchBar, query: nil, large: true, field_id: "hero-search"
         end
 
-        tag "figure", class: "hero-figure" do
-          img(
-            src: asset("img/specimen-quartz.webp"),
-            srcset: "#{asset("img/specimen-quartz.webp")} 560w, #{asset("img/specimen-quartz@2x.webp")} 1120w",
-            sizes: "(max-width: 60rem) 22rem, 34rem",
-            width: "560", height: "700",
-            alt: "A clear quartz crystal point with a faceted, pyramidal tip, photographed on a light studio backdrop"
-          )
-          tag "figcaption" do
-            text "Fig. 1 - Quartz, trigonal system"
-          end
+        para class: "intro-lede" do
+          text "Generated API documentation for every published shard, " \
+               "served straight from the source repository."
         end
       end
 
-      div class: "hero-stats" do
-        div class: "stat" do
-          strong do
-            text total_packages.to_s
-          end
-          span do
+      dl class: "intro-stats" do
+        div do
+          tag "dt" do
             text "Packages"
           end
-        end
-        div class: "stat" do
-          strong do
-            text total_versions.to_s
+          tag "dd" do
+            text format_number(total_packages)
           end
-          span do
+        end
+        div do
+          tag "dt" do
             text "Versions"
+          end
+          tag "dd" do
+            text format_number(total_versions)
+          end
+        end
+      end
+    end
+  end
+
+  # The fastest path from landing to reading docs is the exact URL you paste
+  # or the exact command you run, so each card is copy-pasteable.
+  private def render_recipes
+    section class: "section" do
+      h2 class: "visually-hidden" do
+        text "Using CrystalDocs"
+      end
+
+      div class: "recipe-grid" do
+        recipe(
+          "Pin a version",
+          "The version in the path is the version you read. Omit it and you follow the current release.",
+          "https://crystaldocs.org/docs/kemal/1.6.0"
+        )
+        recipe(
+          "Link a type or method",
+          "Types are files below the version, and namespaces nest. Methods are anchors on the type page, like #size-instance-method.",
+          "https://crystaldocs.org/docs/kemal/1.6.0/Kemal/Config.html"
+        )
+        recipe(
+          "Publish your docs",
+          "Tag a release on the repository and the builder picks it up. There is nothing to upload.",
+          "git tag -a v1.0.0 -m \"Release v1.0.0\"\ngit push --tags"
+        )
+      end
+    end
+  end
+
+  private def recipe(title : String, blurb : String, snippet : String)
+    article class: "recipe" do
+      h3 do
+        text title
+      end
+      para do
+        text blurb
+      end
+      div class: "code-block" do
+        pre do
+          code do
+            text snippet
           end
         end
       end
@@ -115,5 +146,9 @@ class Home::IndexPage < MainLayout
     div class: "empty-state" do
       para message
     end
+  end
+
+  private def format_number(number : Int64) : String
+    number.to_s.reverse.gsub(/(\d{3})(?=\d)/, "\\1,").reverse
   end
 end

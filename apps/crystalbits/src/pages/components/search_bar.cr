@@ -1,26 +1,24 @@
 class SearchBar < Lucky::BaseComponent
   needs query : String = ""
-  needs placeholder : String = "Search shards, authors or tags"
-  needs large : Bool = false
-  # The masthead variant is icon-only and narrower, so it can live in the
-  # navbar without crowding it.
+  needs placeholder : String = "Search posts"
+  # The masthead variant is icon-only and narrower so it fits the navbar.
   needs compact : Bool = false
-  # Ids must be unique when the bar appears more than once on a page.
-  needs field_id : String = "shard-search"
+  # Ids must be unique if the bar ever appears twice on one page.
+  needs field_id : String = "post-search"
 
   def render
-    form action: "/shards", method: "get", class: search_form_classes do
+    form action: "/posts", method: "get", class: form_classes do
       # A placeholder is not a label: it vanishes on input and is not a
       # dependable accessible name (WCAG 3.3.2).
-      label "Search shards", for: @field_id, class: "visually-hidden"
+      label "Search posts", for: @field_id, class: "visually-hidden"
 
       input(
         type: "search",
         id: @field_id,
-        name: "query",
+        name: "search",
         value: @query,
         placeholder: @placeholder,
-        class: search_input_classes
+        class: "search-input"
       )
 
       button type: "submit", class: "search-button" do
@@ -36,16 +34,9 @@ class SearchBar < Lucky::BaseComponent
     end
   end
 
-  private def search_form_classes : String
+  private def form_classes : String
     classes = ["search-form"]
-    classes << "search-form-large" if @large
     classes << "search-form-compact" if @compact
-    classes.join(" ")
-  end
-
-  private def search_input_classes : String
-    classes = ["search-input"]
-    classes << "search-input-large" if @large
     classes.join(" ")
   end
 end
