@@ -11,8 +11,12 @@ abstract class MainLayout
       mount Head, page_title: page_title
 
       body do
+        # First focusable element on the page, so keyboard users can bypass
+        # the masthead instead of tabbing it on every navigation (WCAG 2.4.1).
+        a "Skip to main content", href: "#main", class: "skip-link"
+
         mount Header
-        main class: "container" do
+        tag "main", class: "container", id: "main" do
           content
         end
         mount Footer

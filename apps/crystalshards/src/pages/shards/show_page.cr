@@ -34,8 +34,9 @@ class Shards::ShowPage < MainLayout
         div class: "shard-stats-block" do
           if stars = @shard.github_stars
             div class: "stat-item" do
+              tag "i", class: "fa-solid fa-star icon", "aria-hidden": "true"
               strong do
-                text "⭐ #{stars}"
+                text stars.to_s
               end
               text " stars"
             end

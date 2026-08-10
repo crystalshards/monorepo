@@ -107,7 +107,9 @@ describe Shards::Show do
 
       response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
 
-      response.body.should contain("⭐ 42")
+      # Assert on the count and its visible unit, not on an icon glyph: the
+      # star is decorative and aria-hidden, so it carries no meaning.
+      response.body.should contain("42")
       response.body.should contain("stars")
     end
 
@@ -117,7 +119,8 @@ describe Shards::Show do
 
       response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
 
-      response.body.should_not contain("⭐")
+      response.body.should_not contain("stars")
+      response.body.should_not contain("fa-star")
     end
 
     it "shows total downloads" do
