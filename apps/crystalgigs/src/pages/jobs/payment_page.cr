@@ -20,7 +20,7 @@ class Jobs::PaymentPage < MainLayout
           end
 
           div class: "preview-card" do
-            mount JobCard, job: @job
+            mount JobCard, job: @job, heading_level: 3
           end
 
           a href: "/jobs/#{@job.id}/edit", class: "button button-secondary" do

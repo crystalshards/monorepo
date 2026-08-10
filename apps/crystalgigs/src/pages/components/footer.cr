@@ -3,7 +3,7 @@ class Footer < Lucky::BaseComponent
     footer class: "site-footer" do
       div class: "footer-content" do
         div class: "footer-section" do
-          h4 do
+          h2 do
             text "CrystalGigs"
           end
           para do
@@ -12,7 +12,7 @@ class Footer < Lucky::BaseComponent
         end
 
         div class: "footer-section" do
-          h4 do
+          h2 do
             text "For Job Seekers"
           end
           ul do
@@ -30,7 +30,7 @@ class Footer < Lucky::BaseComponent
         end
 
         div class: "footer-section" do
-          h4 do
+          h2 do
             text "For Employers"
           end
           ul do
@@ -48,7 +48,7 @@ class Footer < Lucky::BaseComponent
         end
 
         div class: "footer-section" do
-          h4 do
+          h2 do
             text "Crystal Ecosystem"
           end
           ul do

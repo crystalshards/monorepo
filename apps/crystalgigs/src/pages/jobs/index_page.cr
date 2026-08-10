@@ -27,6 +27,12 @@ class Jobs::IndexPage < MainLayout
     render_filters
 
     section class: "jobs-list-section" do
+      # The results are a peer section of the filters, so the heading order
+      # stays h1, h2, h2 and the cards can sit at h3.
+      h2 class: "visually-hidden" do
+        text "Job results"
+      end
+
       para class: "jobs-count" do
         text "#{@total_count} job#{"s" unless @total_count == 1} found"
       end
@@ -34,7 +40,7 @@ class Jobs::IndexPage < MainLayout
       if @jobs.any?
         div class: "job-list" do
           @jobs.each do |job|
-            mount JobCard, job: job, featured: job.featured
+            mount JobCard, job: job, featured: job.featured, heading_level: 3
           end
         end
 
@@ -47,7 +53,7 @@ class Jobs::IndexPage < MainLayout
 
   private def render_filters
     section class: "filters-section" do
-      h3 do
+      h2 do
         text "Filter Jobs"
       end
 

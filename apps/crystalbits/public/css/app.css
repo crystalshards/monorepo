@@ -1,744 +1,623 @@
-/* CrystalBits.org Styles - Blog Platform */
+/* ============================================================================
+   CrystalBits - Mineral design system
+
+   Art direction is taken from the subject: bits are cut from crystal, so the
+   surfaces are cut rather than rounded, edges are hairlines, and the accent is
+   the garnet red of the specimen photography rather than an arbitrary brand
+   colour. Type is the IBM Plex superfamily: Condensed carries the vertical,
+   cut feel in headings, Sans does the reading, Mono carries dates, counts and
+   code because they are data, not prose.
+
+   CrystalBits is the reading surface of the family, so the post body gets the
+   typographic care: a 68ch measure, a 1.75 line height, and real styles for
+   blockquotes, lists and inline code.
+
+   Light is the default because this is a long-form reading surface. Dark is
+   the same system with the polarity inverted, and is honoured automatically
+   via prefers-color-scheme.
+
+   Accessibility decisions that are load bearing, do not undo them casually:
+   - --focus is 2px at >= 3:1 against both grounds. Never set outline:none
+     without an equivalent replacement.
+   - --edge-strong is the border for anything whose boundary is the only
+     indicator of a control. Plain --edge is decorative and deliberately faint.
+   - Interactive targets get --tap (24px) minimum height.
+   - Links inside prose are underlined; the accent alone does not carry meaning.
+   ========================================================================= */
 
 :root {
-  --primary-color: #5e5e5e;
-  --primary-hover: #4a4a4a;
-  --secondary-color: #e8e8e8;
-  --text-color: #333;
-  --text-light: #666;
-  --border-color: #ddd;
-  --bg-color: #f9f9f9;
-  --white: #fff;
-  --link-color: #0066cc;
-  --link-hover: #004499;
-  --success-color: #28a745;
-  --warning-color: #ffc107;
-  --danger-color: #dc3545;
-  --code-bg: #f6f8fa;
+  /* ---- ground and ink -------------------------------------------------- */
+  --paper:        #f4f6f6;
+  --surface:      #ffffff;
+  --surface-sunk: #eef1f1;
+  --ink:          #0e1416;   /* 17.13:1 on --paper */
+  --ink-muted:    #55666b;   /* 6.05:1 on --surface */
+  --ink-faint:    #5f7075;   /* 5.17:1 on --surface, 4.77:1 on --paper */
+
+  /* ---- edges ----------------------------------------------------------- */
+  --edge:         #d8dfe0;   /* decorative hairline */
+  --edge-strong:  #98a7aa;   /* 3.02:1 on --surface, for control boundaries */
+
+  /* ---- accent, sampled from the specimen ------------------------------- */
+  --accent:       #96233a;   /* 8.08:1 on --surface */
+  --accent-deep:  #6b182a;   /* 11.74:1 with white */
+  --accent-wash:  #f6e5e8;
+  --on-accent:    #ffffff;   /* 8.08:1 on --accent */
+
+  /* ---- status ---------------------------------------------------------- */
+  --ok:           #1e7e34;   /* 5.14:1 with white */
+  --warn:         #a15c00;   /* 4.62:1 on --surface */
+  --danger:       #b3261e;   /* 5.94:1 with white */
+  --ore:          #8a5a2b;   /* metadata icon tint, 5.28:1 on --surface */
+
+  /* ---- focus ----------------------------------------------------------- */
+  --focus:        #96233a;
+  --focus-ring:   0 0 0 2px var(--surface), 0 0 0 4px var(--focus);
+
+  /* ---- type ------------------------------------------------------------ */
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cond: "IBM Plex Sans Condensed", var(--sans);
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --step--1: 0.8125rem;
+  --step-0:  1rem;
+  --step-1:  1.125rem;
+  --step-2:  clamp(1.25rem, 1.1rem + 0.6vw, 1.5rem);
+  --step-3:  clamp(1.5rem, 1.3rem + 1vw, 1.9rem);
+  --step-4:  clamp(2.1rem, 1.6rem + 2.4vw, 3.1rem);
+  --step-5:  clamp(2.6rem, 1.8rem + 3.6vw, 3.9rem);
+
+  /* ---- space and geometry ---------------------------------------------- */
+  --gap:   1.125rem;
+  --pad:   1.375rem;
+  --bay:   4rem;
+  --shell: 74rem;
+  --facet: 14px;   /* the cut corner */
+  --tap:   24px;   /* WCAG 2.2 target minimum */
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:        #070a0b;
+    --surface:      #101718;
+    --surface-sunk: #0b1112;
+    --ink:          #e9f1f0;   /* 17.31:1 on --paper */
+    --ink-muted:    #9fb2b3;   /* 8.24:1 on --surface */
+    --ink-faint:    #83989a;   /* 5.94:1 on --surface */
+
+    --edge:         #222e30;
+    --edge-strong:  #4a5c5e;   /* 3.06:1 on --surface */
+
+    --accent:       #f0808f;   /* 7.07:1 on --surface */
+    --accent-deep:  #ca6a79;   /* 5.15:1 with --on-accent */
+    --accent-wash:  #361318;
+    --on-accent:    #2a0710;   /* 7.21:1 on --accent */
+
+    --ok:           #4ade80;
+    --warn:         #f0b357;
+    --danger:       #ff7b72;
+    --ore:          #d9a066;
+
+    --focus:        #f0808f;
+    --focus-ring:   0 0 0 2px var(--paper), 0 0 0 4px var(--focus);
+  }
 }
+
+/* ============================================================================
+   Base
+   ========================================================================= */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  line-height: 1.6;
-  color: var(--text-color);
-  background-color: var(--bg-color);
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 var(--step-0)/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-a {
-  color: var(--link-color);
-  text-decoration: none;
-  transition: color 0.2s;
+h1, h2, h3, h4 {
+  font-family: var(--cond);
+  font-weight: 700;
+  line-height: 1.08;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.5em;
+}
+h1 { font-size: var(--step-4); }
+h2 { font-size: var(--step-3); }
+h3 { font-size: var(--step-2); }
+h4 { font-size: var(--step-1); }
+
+p { margin: 0 0 1em; }
+
+a { color: var(--accent); text-underline-offset: 0.18em; }
+
+/* Prose links carry an underline: the accent alone is not a sufficient cue. */
+p a, li a, .post-body a, .post-excerpt a, .featured-excerpt a { text-decoration: underline; }
+
+/* Navigational and component links opt out, they have their own affordances. */
+.nav-link, .logo, .post-title a, .featured-title a, .read-more,
+.pagination-link, .footer-links a, .tag, .btn-primary, .btn-secondary,
+.search-button { text-decoration: none; }
+
+img { max-width: 100%; height: auto; display: block; }
+
+code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
+
+/* One focus treatment, everywhere. */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 1px;
 }
 
-a:hover {
-  color: var(--link-hover);
-  text-decoration: underline;
+::selection { background: var(--accent); color: var(--on-accent); }
+
+/* ============================================================================
+   Primitives
+   ========================================================================= */
+
+.container { max-width: var(--shell); margin: 0 auto; padding: 0 1.5rem; }
+
+/* The cut corner. One clipped bevel, never a uniform radius. */
+.facet {
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
 }
 
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-}
-
-/* Header */
-.site-header {
-  background-color: var(--white);
-  border-bottom: 1px solid var(--border-color);
-  padding: 1rem 0;
-  position: sticky;
-  top: 0;
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
   z-index: 100;
+  padding: 0.7rem 1.1rem;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  transition: top 0.12s ease-out;
 }
+.skip-link:focus { top: 0.5rem; }
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip-path: inset(50%);
+  overflow: hidden; white-space: nowrap;
+}
+
+.text-muted { color: var(--ink-muted); }
+
+/* ============================================================================
+   Header
+   ========================================================================= */
+
+.site-header { background: var(--surface); border-bottom: 1px solid var(--edge); }
 
 .navbar {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+  display: flex; align-items: center; gap: 2rem;
+  max-width: var(--shell); margin: 0 auto; padding: 0 1.5rem;
+  min-height: 4.125rem;
 }
 
-.navbar-brand .logo {
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: var(--primary-color);
-  text-decoration: none;
+.navbar-brand { display: flex; align-items: center; }
+
+.logo {
+  display: inline-flex; align-items: center; gap: 0.65rem;
+  font: 700 1.3rem/1 var(--cond); letter-spacing: 0.005em;
+  color: var(--ink);
+}
+/* The mark is a drawn hexagonal section, not an emoji. */
+.logo::before {
+  content: "";
+  width: 1.32rem; height: 1.55rem;
+  background: var(--accent);
+  clip-path: polygon(50% 0, 100% 27%, 100% 73%, 50% 100%, 0 73%, 0 27%);
 }
 
-.navbar-menu {
-  display: flex;
-  gap: 1.5rem;
-}
+.navbar-menu { display: flex; flex-wrap: wrap; gap: 1.6rem; margin-left: auto; }
 
 .nav-link {
-  color: var(--text-color);
-  text-decoration: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  transition: background-color 0.2s;
+  display: inline-flex; align-items: center;
+  min-height: var(--tap);
+  color: var(--ink-muted);
+  font-size: 0.925rem; font-weight: 500;
+  border-bottom: 2px solid transparent;
+}
+.nav-link:hover { color: var(--ink); border-bottom-color: var(--accent); }
+
+/* ============================================================================
+   Hero, the specimen plate
+   ========================================================================= */
+
+.hero { padding: clamp(2.5rem, 5vw, 4.5rem) 0 clamp(2rem, 4vw, 3.5rem); }
+
+.hero-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(2rem, 5vw, 3.5rem);
+  align-items: center;
+  max-width: var(--shell); margin: 0 auto; padding: 0 1.5rem;
 }
 
-.nav-link:hover {
-  background-color: var(--secondary-color);
-  text-decoration: none;
+.hero-title { font-size: var(--step-5); margin: 0 0 0.4em; }
+.hero-title .accent { color: var(--accent); }
+
+.hero-subtitle {
+  font-size: var(--step-1); color: var(--ink-muted);
+  max-width: 46ch; margin: 0;
 }
 
-/* Footer */
+.hero-figure { margin: 0; position: relative; }
+.hero-figure img {
+  width: 100%;
+  clip-path: polygon(0 24px, 24px 0, 100% 0, 100% calc(100% - 24px), calc(100% - 24px) 100%, 0 100%);
+  background: var(--surface-sunk);
+}
+.hero-figure figcaption {
+  margin-top: 0.75rem;
+  font: 400 0.72rem/1.4 var(--mono);
+  letter-spacing: 0.04em; color: var(--ink-faint);
+}
+
+.eyebrow {
+  font: 500 0.72rem/1 var(--mono);
+  letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--accent); margin: 0 0 1.25rem;
+}
+
+/* ============================================================================
+   Sections
+   ========================================================================= */
+
+.featured-section, .recent-posts-section, .newsletter-section,
+.posts-section {
+  max-width: 56rem; margin: 0 auto;
+  padding: var(--bay) 1.5rem 0;
+}
+
+/* The article column leaves room for the prose inside to hold its 68ch
+   measure (68ch at the body size plus the horizontal padding). */
+.post-content {
+  max-width: 50rem; margin: 0 auto;
+  padding: var(--bay) 1.5rem 0;
+}
+
+/* ============================================================================
+   Post cards and the featured post
+   ========================================================================= */
+
+.posts-grid, .posts-list { display: grid; gap: var(--gap); margin-top: 1.5rem; }
+
+.post-card, .featured-post {
+  --facet: 16px;
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  padding: var(--pad) var(--pad) 1.1rem;
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.post-card:hover { border-color: var(--accent); }
+/* The cut corner catches light, the way a real bevel would. */
+.post-card::after {
+  content: "";
+  position: absolute; top: 0; right: 0;
+  width: calc(var(--facet) + 8px); height: calc(var(--facet) + 8px);
+  background: linear-gradient(225deg, var(--accent) 0 50%, transparent 50%);
+  opacity: 0.28; transition: opacity 0.14s ease;
+}
+.post-card:hover::after { opacity: 0.9; }
+
+/* The featured post is the same card with a garnet leading edge. */
+.featured-post { border-left: 3px solid var(--accent); }
+
+.post-card .post-header { margin-bottom: 0.75rem; }
+
+.post-title {
+  font: 600 var(--step-2)/1.2 var(--sans);
+  letter-spacing: 0; margin: 0 0 0.5rem;
+}
+.post-title a { color: var(--ink); }
+.post-title a:hover { color: var(--accent); }
+
+.featured-title {
+  font: 600 var(--step-3)/1.15 var(--sans);
+  letter-spacing: 0; margin: 0 0 0.75rem;
+}
+.featured-title a { color: var(--ink); }
+.featured-title a:hover { color: var(--accent); }
+
+.post-meta {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+  font: 400 0.78rem/1.4 var(--mono); color: var(--ink-muted);
+}
+.post-separator { color: var(--ink-faint); }
+
+.post-excerpt, .featured-excerpt {
+  color: var(--ink-muted); line-height: 1.65; margin: 0.75rem 0 0;
+}
+
+.read-more {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  min-height: var(--tap);
+  margin-top: 1rem;
+  color: var(--accent); font-weight: 500; font-size: 0.95rem;
+}
+.read-more:hover { text-decoration: underline; }
+
+/* ---- tags -------------------------------------------------------------- */
+
+.post-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+
+.tag {
+  display: inline-flex; align-items: center;
+  min-height: var(--tap);
+  font: 500 0.72rem/1.55 var(--mono);
+  padding: 0.05rem 0.45rem;
+  color: var(--accent); background: var(--accent-wash);
+  border: 1px solid transparent;
+}
+a.tag:hover { border-color: var(--accent); }
+
+/* ============================================================================
+   Post detail, the reading surface
+   ========================================================================= */
+
+.post-content > .post-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--edge);
+}
+.post-content .post-title { font-size: var(--step-4); }
+
+.post-body {
+  font-size: var(--step-1);
+  line-height: 1.75;
+  overflow-wrap: break-word;
+}
+.post-body > * { max-width: 68ch; }
+
+.post-body p { margin: 0 0 1.5em; }
+
+.post-body h1, .post-body h2, .post-body h3, .post-body h4 {
+  margin: 2em 0 0.6em;
+}
+.post-body h1 { font-size: var(--step-3); }
+.post-body h2 { font-size: var(--step-2); }
+.post-body h3 { font-size: var(--step-1); }
+.post-body h4 { font-size: var(--step-0); }
+
+.post-body ul, .post-body ol { margin: 0 0 1.5em; padding-left: 1.5em; }
+.post-body li { margin-bottom: 0.4em; }
+.post-body li::marker { color: var(--accent); }
+
+.post-body blockquote {
+  margin: 1.75em 0;
+  padding: 0.25rem 0 0.25rem 1.25rem;
+  border-left: 3px solid var(--accent);
+  color: var(--ink-muted);
+}
+.post-body blockquote p:last-child { margin-bottom: 0; }
+
+/* Inline code is data, so it sets in Mono on a sunk chip. */
+.post-body code {
+  background: var(--surface-sunk);
+  border: 1px solid var(--edge);
+  padding: 0.1rem 0.35rem;
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+
+.post-body pre {
+  background: var(--surface-sunk);
+  border: 1px solid var(--edge);
+  padding: 1rem 1.15rem;
+  margin: 0 0 1.5em;
+  overflow-x: auto;
+}
+.post-body pre code {
+  background: none; border: 0; padding: 0;
+  font-size: 0.85rem; line-height: 1.55;
+  overflow-wrap: normal;
+}
+
+.post-body img { margin: 1.5rem 0; }
+
+.post-body hr { border: 0; border-top: 1px solid var(--edge); margin: 2.5em 0; }
+
+.post-tags-section {
+  border-top: 1px solid var(--edge);
+  margin-top: 2.5rem; padding-top: 1.5rem;
+}
+.post-tags-section h2 {
+  font: 500 0.7rem/1 var(--mono);
+  letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--ink-muted); margin-bottom: 0.85rem;
+}
+
+/* ============================================================================
+   Newsletter
+   ========================================================================= */
+
+.newsletter-signup, .newsletter-cta {
+  --facet: 16px;
+  background: var(--surface); border: 1px solid var(--edge);
+  padding: clamp(1.5rem, 3vw, 2.25rem);
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+}
+.newsletter-cta { margin-top: var(--bay); }
+.newsletter-cta .newsletter-signup { border: 0; padding: 0; clip-path: none; }
+
+.newsletter-header h2, .newsletter-header h3 { margin-bottom: 0.4rem; }
+.newsletter-header p { color: var(--ink-muted); margin-bottom: 1.25rem; }
+
+.newsletter-cta > h2 { margin-bottom: 0.4rem; }
+.newsletter-cta > p { color: var(--ink-muted); }
+
+.newsletter-form, .newsletter-form-inline { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.newsletter-form { max-width: 30rem; }
+
+.newsletter-input, .newsletter-input-inline {
+  flex: 1 1 12rem; min-width: 0;
+  min-height: 2.5rem;
+  border: 1px solid var(--edge-strong);
+  background: var(--surface); color: var(--ink);
+  padding: 0.6rem 0.85rem; font: 400 1rem var(--sans);
+}
+.newsletter-input-inline { font-size: 0.9rem; }
+.newsletter-input::placeholder, .newsletter-input-inline::placeholder { color: var(--ink-faint); }
+
+.newsletter-button, .newsletter-button-inline {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 2.5rem; padding: 0.6rem 1.35rem;
+  border: 1px solid var(--accent);
+  background: var(--accent); color: var(--on-accent);
+  font: 600 0.92rem var(--sans); cursor: pointer;
+}
+.newsletter-button:hover, .newsletter-button-inline:hover {
+  background: var(--accent-deep); border-color: var(--accent-deep);
+}
+
+.newsletter-note {
+  margin: 0.85rem 0 0;
+  font: 400 0.78rem var(--mono); color: var(--ink-faint);
+}
+
+.newsletter-signup-inline { margin-top: 1rem; }
+
+/* ============================================================================
+   Search, buttons, pagination
+   ========================================================================= */
+
+.search-form form {
+  display: flex; width: 100%;
+  border: 1px solid var(--ink); background: var(--surface);
+}
+.search-form form:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.search-input {
+  flex: 1; min-width: 0;
+  border: 0; background: none; color: var(--ink);
+  padding: 0.85rem 1rem; font: 400 1rem var(--sans);
+}
+.search-input::placeholder { color: var(--ink-faint); }
+/* The ring lands on the wrapping form via focus-within instead. */
+.search-input:focus { outline: none; }
+.search-button {
+  border: 0; cursor: pointer;
+  background: var(--ink); color: var(--paper);
+  font: 600 0.9rem var(--sans); padding: 0 1.5rem;
+  min-height: var(--tap);
+  display: inline-flex; align-items: center; gap: 0.4rem;
+}
+.search-button:hover { background: var(--accent); color: var(--on-accent); }
+
+.btn-primary, .btn-secondary {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
+  min-height: 2.5rem; padding: 0.6rem 1.35rem;
+  font: 600 0.92rem var(--sans); cursor: pointer;
+  border: 1px solid var(--accent);
+}
+.btn-primary { background: var(--accent); color: var(--on-accent); }
+.btn-primary:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+.btn-secondary { background: var(--surface); color: var(--accent); }
+.btn-secondary:hover { background: var(--accent-wash); }
+
+.view-all { margin-top: 1.5rem; }
+
+.pagination {
+  display: flex; align-items: center; justify-content: center; gap: 1rem;
+  padding: 2rem 0 0;
+}
+.pagination-link {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  min-height: var(--tap);
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--edge-strong); color: var(--ink);
+  font-size: 0.9rem;
+}
+.pagination-link:hover { border-color: var(--accent); color: var(--accent); }
+.pagination-current { font: 400 0.82rem var(--mono); color: var(--ink-muted); }
+
+/* ============================================================================
+   Confirmation pages
+   ========================================================================= */
+
+.confirmation-message, .confirmation-success, .unsubscribe-message {
+  --facet: 16px;
+  max-width: 38rem; margin: 0 auto;
+  background: var(--surface); border: 1px solid var(--edge);
+  padding: clamp(1.75rem, 4vw, 2.75rem);
+  margin-top: var(--bay);
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+}
+.confirmation-message h1, .confirmation-success h1, .unsubscribe-message h1 {
+  font-size: var(--step-3);
+}
+.confirmation-message p, .confirmation-success p, .unsubscribe-message p {
+  color: var(--ink-muted);
+}
+.confirmation-icon { color: var(--accent); margin-right: 0.35rem; }
+
+.confirmation-actions, .unsubscribe-actions {
+  display: flex; flex-wrap: wrap; gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* ============================================================================
+   Footer
+   ========================================================================= */
+
 .site-footer {
-  background-color: var(--white);
-  border-top: 1px solid var(--border-color);
-  margin-top: 4rem;
-  padding: 3rem 0;
+  border-top: 1px solid var(--edge); background: var(--surface);
+  padding: 2.25rem 0; margin-top: var(--bay);
+  font-size: 0.9rem; color: var(--ink-muted);
 }
 
 .footer-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
   gap: 2rem;
 }
 
 .footer-section h3 {
-  margin-bottom: 1rem;
-  font-size: 1.1rem;
+  font: 500 0.7rem/1 var(--mono);
+  letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--ink-muted); margin-bottom: 0.85rem;
 }
+.footer-section p { font-size: 0.9rem; }
 
-.footer-section p {
-  color: var(--text-light);
-  margin-bottom: 0.5rem;
-}
-
-.footer-links {
-  list-style: none;
-  padding: 0;
-}
-
-.footer-links li {
-  margin-bottom: 0.5rem;
-}
-
+.footer-links { list-style: none; margin: 0; padding: 0; }
 .footer-links a {
-  color: var(--text-light);
+  display: inline-flex; align-items: center; min-height: var(--tap);
+  color: var(--ink-muted);
 }
+.footer-links a:hover { color: var(--accent); text-decoration: underline; }
 
 .footer-bottom {
-  max-width: 1200px;
-  margin: 2rem auto 0;
-  padding: 2rem 20px 0;
-  border-top: 1px solid var(--border-color);
-  text-align: center;
-  color: var(--text-light);
+  border-top: 1px solid var(--edge);
+  margin-top: 2rem; padding-top: 1.5rem;
+  font: 400 0.78rem var(--mono); color: var(--ink-faint);
 }
+.footer-bottom p { margin: 0; }
 
-/* Hero Section */
-.hero {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: var(--white);
-  padding: 4rem 2rem;
-  text-align: center;
-}
-
-.hero-content {
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.hero h1 {
-  font-size: 3.5rem;
-  font-weight: bold;
-  margin-bottom: 1rem;
-}
-
-.hero-subtitle {
-  font-size: 1.25rem;
-  margin-bottom: 0;
-  opacity: 0.9;
-}
-
-/* Featured Post Section */
-.featured-section {
-  max-width: 900px;
-  margin: 3rem auto;
-  padding: 0 20px;
-}
-
-.featured-section h2 {
-  font-size: 2rem;
-  margin-bottom: 1.5rem;
-  color: var(--text-color);
-}
-
-.featured-post {
-  background-color: var(--white);
-  border: 2px solid var(--link-color);
-  border-radius: 8px;
-  padding: 2.5rem;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.featured-article .featured-title {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
-}
-
-.featured-article .featured-title a {
-  color: var(--text-color);
-  text-decoration: none;
-}
-
-.featured-article .featured-title a:hover {
-  color: var(--link-color);
-}
-
-.featured-excerpt {
-  font-size: 1.2rem;
-  color: var(--text-light);
-  margin: 1.5rem 0;
-  line-height: 1.7;
-}
-
-.read-more {
-  display: inline-block;
-  margin-top: 1rem;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--link-color);
-}
-
-/* Recent Posts Section */
-.recent-posts-section {
-  max-width: 900px;
-  margin: 3rem auto;
-  padding: 0 20px;
-}
-
-.recent-posts-section h2 {
-  font-size: 2rem;
-  margin-bottom: 2rem;
-  color: var(--text-color);
-}
-
-.posts-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-
-/* Posts Section */
-.posts-section {
-  max-width: 900px;
-  margin: 3rem auto;
-  padding: 0 20px;
-}
-
-.posts-header h1 {
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
-}
-
-.posts-list {
-  margin-top: 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 2rem;
-}
-
-/* Post Card */
-.post-card {
-  background-color: var(--white);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 2rem;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.post-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.post-header {
-  margin-bottom: 1rem;
-}
-
-.post-title {
-  font-size: 1.75rem;
-  margin-bottom: 0.5rem;
-}
-
-.post-title a {
-  color: var(--text-color);
-  text-decoration: none;
-}
-
-.post-title a:hover {
-  color: var(--link-color);
-}
-
-.post-meta {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  font-size: 0.9rem;
-  color: var(--text-light);
-  flex-wrap: wrap;
-}
-
-.post-separator {
-  margin: 0 0.25rem;
-}
-
-.post-excerpt {
-  color: var(--text-light);
-  font-size: 1.05rem;
-  line-height: 1.7;
-  margin: 1rem 0;
-}
-
-.post-tags {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-top: 1rem;
-}
-
-.tag {
-  display: inline-block;
-  padding: 0.25rem 0.75rem;
-  background-color: var(--secondary-color);
-  border-radius: 20px;
-  font-size: 0.85rem;
-  color: var(--text-color);
-  text-decoration: none;
-  transition: background-color 0.2s;
-}
-
-.tag:hover {
-  background-color: var(--border-color);
-  text-decoration: none;
-}
-
-/* Individual Post Page */
-.post-content {
-  max-width: 800px;
-  margin: 3rem auto;
-  padding: 0 20px;
-}
-
-.post-content .post-header {
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.post-content .post-title {
-  font-size: 2.75rem;
-  line-height: 1.2;
-  margin-bottom: 1rem;
-}
-
-.post-body {
-  background-color: var(--white);
-  padding: 3rem;
-  border-radius: 8px;
-  margin-bottom: 3rem;
-  font-size: 1.1rem;
-  line-height: 1.8;
-}
-
-.post-body h1,
-.post-body h2,
-.post-body h3,
-.post-body h4 {
-  margin-top: 2rem;
-  margin-bottom: 1rem;
-  color: var(--text-color);
-}
-
-.post-body h1 {
-  font-size: 2rem;
-}
-
-.post-body h2 {
-  font-size: 1.75rem;
-}
-
-.post-body h3 {
-  font-size: 1.5rem;
-}
-
-.post-body p {
-  margin-bottom: 1.5rem;
-}
-
-.post-body ul,
-.post-body ol {
-  margin-bottom: 1.5rem;
-  padding-left: 2rem;
-}
-
-.post-body li {
-  margin-bottom: 0.5rem;
-}
-
-.post-body pre {
-  background-color: var(--code-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 1.5rem;
-  overflow-x: auto;
-  margin-bottom: 1.5rem;
-}
-
-.post-body code {
-  background-color: var(--code-bg);
-  padding: 0.2rem 0.4rem;
-  border-radius: 3px;
-  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-  font-size: 0.9em;
-}
-
-.post-body pre code {
-  background-color: transparent;
-  padding: 0;
-}
-
-.post-body blockquote {
-  border-left: 4px solid var(--link-color);
-  padding-left: 1.5rem;
-  margin: 1.5rem 0;
-  color: var(--text-light);
-  font-style: italic;
-}
-
-.post-body img {
-  max-width: 100%;
-  height: auto;
-  border-radius: 4px;
-  margin: 1.5rem 0;
-}
-
-.post-tags-section {
-  background-color: var(--white);
-  padding: 2rem;
-  border-radius: 8px;
-  margin-bottom: 2rem;
-}
-
-.post-tags-section h3 {
-  margin-bottom: 1rem;
-  font-size: 1.2rem;
-}
-
-/* Newsletter */
-.newsletter-section {
-  max-width: 900px;
-  margin: 4rem auto;
-  padding: 0 20px;
-}
-
-.newsletter-signup {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: var(--white);
-  padding: 3rem;
-  border-radius: 8px;
-  text-align: center;
-}
-
-.newsletter-header h2 {
-  font-size: 2rem;
-  margin-bottom: 1rem;
-}
-
-.newsletter-header p {
-  font-size: 1.1rem;
-  opacity: 0.9;
-  margin-bottom: 2rem;
-}
-
-.newsletter-form {
-  display: flex;
-  gap: 1rem;
-  max-width: 500px;
-  margin: 0 auto;
-}
-
-.newsletter-input {
-  flex: 1;
-  padding: 0.875rem 1.25rem;
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-}
-
-.newsletter-button {
-  padding: 0.875rem 2rem;
-  background-color: var(--white);
-  color: var(--link-color);
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.newsletter-button:hover {
-  background-color: var(--secondary-color);
-}
-
-.newsletter-note {
-  margin-top: 1rem;
-  font-size: 0.9rem;
-  opacity: 0.8;
-}
-
-.newsletter-signup-inline {
-  margin-top: 1rem;
-}
-
-.newsletter-form-inline {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.newsletter-input-inline {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 0.9rem;
-}
-
-.newsletter-button-inline {
-  padding: 0.5rem 1rem;
-  background-color: var(--primary-color);
-  color: var(--white);
-  border: none;
-  border-radius: 4px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.newsletter-button-inline:hover {
-  background-color: var(--primary-hover);
-}
-
-.newsletter-cta {
-  background-color: var(--white);
-  padding: 3rem;
-  border-radius: 8px;
-  border: 2px solid var(--link-color);
-  text-align: center;
-}
-
-.newsletter-cta h3 {
-  font-size: 1.75rem;
-  margin-bottom: 1rem;
-}
-
-.newsletter-cta p {
-  color: var(--text-light);
-  margin-bottom: 2rem;
-}
-
-/* Confirmation Pages */
-.confirmation-message,
-.confirmation-success,
-.unsubscribe-message {
-  max-width: 600px;
-  margin: 4rem auto;
-  padding: 3rem;
-  background-color: var(--white);
-  border-radius: 8px;
-  text-align: center;
-}
-
-.confirmation-message h1,
-.confirmation-success h1,
-.unsubscribe-message h1 {
-  font-size: 2.5rem;
-  margin-bottom: 1.5rem;
-  color: var(--text-color);
-}
-
-.confirmation-message p,
-.confirmation-success p,
-.unsubscribe-message p {
-  font-size: 1.1rem;
-  color: var(--text-light);
-  margin-bottom: 1rem;
-}
-
-.confirmation-actions,
-.unsubscribe-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: center;
-  margin-top: 2rem;
-}
-
-/* Search Form */
-.search-form {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 2rem;
-}
-
-.search-input {
-  flex: 1;
-  padding: 0.75rem 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 1rem;
-}
-
-.search-button {
-  padding: 0.75rem 1.5rem;
-  background-color: var(--primary-color);
-  color: var(--white);
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.search-button:hover {
-  background-color: var(--primary-hover);
-}
-
-/* Pagination */
-.pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 2rem;
-  margin-top: 3rem;
-  padding: 2rem 0;
-}
+/* ============================================================================
+   Responsive
+   ========================================================================= */
 
-.pagination-link {
-  padding: 0.75rem 1.5rem;
-  background-color: var(--white);
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  color: var(--link-color);
-  text-decoration: none;
-  transition: background-color 0.2s;
+@media (max-width: 60rem) {
+  .hero-content { grid-template-columns: minmax(0, 1fr); }
+  .hero-figure { order: -1; max-width: 22rem; }
 }
 
-.pagination-link:hover {
-  background-color: var(--secondary-color);
-  text-decoration: none;
+@media (max-width: 40rem) {
+  :root { --bay: 2.75rem; }
+  .navbar { flex-wrap: wrap; gap: 0.75rem; padding-top: 0.75rem; padding-bottom: 0.75rem; }
+  .navbar-menu { margin-left: 0; width: 100%; gap: 1.1rem; }
 }
-
-.pagination-current {
-  color: var(--text-light);
-  font-weight: 500;
-}
-
-/* View All Button */
-.view-all {
-  text-align: center;
-  margin-top: 2rem;
-}
-
-.btn-primary {
-  display: inline-block;
-  padding: 0.875rem 2rem;
-  background-color: var(--link-color);
-  color: var(--white);
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  text-decoration: none;
-  transition: background-color 0.2s;
-}
-
-.btn-primary:hover {
-  background-color: var(--link-hover);
-  text-decoration: none;
-}
-
-.btn-secondary {
-  display: inline-block;
-  padding: 0.875rem 2rem;
-  background-color: var(--white);
-  color: var(--link-color);
-  border: 1px solid var(--link-color);
-  border-radius: 4px;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  text-decoration: none;
-  transition: all 0.2s;
-}
-
-.btn-secondary:hover {
-  background-color: var(--link-color);
-  color: var(--white);
-  text-decoration: none;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .hero h1 {
-    font-size: 2.5rem;
-  }
-
-  .hero-subtitle {
-    font-size: 1rem;
-  }
-
-  .navbar-menu {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .footer-content {
-    grid-template-columns: 1fr;
-  }
-
-  .featured-post {
-    padding: 1.5rem;
-  }
-
-  .featured-article .featured-title {
-    font-size: 1.75rem;
-  }
-
-  .post-content .post-title {
-    font-size: 2rem;
-  }
-
-  .post-body {
-    padding: 1.5rem;
-  }
-
-  .newsletter-form {
-    flex-direction: column;
-  }
-
-  .confirmation-actions,
-  .unsubscribe-actions {
-    flex-direction: column;
-  }
 
-  .search-form {
-    flex-direction: column;
-  }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

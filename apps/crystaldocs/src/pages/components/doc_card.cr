@@ -1,10 +1,14 @@
 class Components::DocCard < Lucky::BaseComponent
   needs doc : Doc
+  # Cards appear under an h1 on the browse page and under an h2 in homepage
+  # sections, so the level is set by the caller rather than baked into the
+  # visual style.
+  needs heading_level : Int32 = 2
 
   def render
-    div class: "doc-card" do
+    article class: "doc-card" do
       div class: "doc-card-header" do
-        h3 class: "doc-name" do
+        tag "h#{heading_level}", class: "doc-name" do
           a doc.package_name, href: "/docs/#{doc.package_name}"
         end
 
@@ -19,9 +23,16 @@ class Components::DocCard < Lucky::BaseComponent
 
       div class: "doc-meta" do
         if updated = doc.last_updated_at
-          span "Updated #{time_ago(updated)}"
+          span do
+            # The glyph is decorative; the text carries the meaning.
+            tag "i", class: "fa-regular fa-clock icon", "aria-hidden": "true"
+            text " Updated #{time_ago(updated)}"
+          end
         end
-        span "#{doc.total_views} views"
+        span do
+          tag "i", class: "fa-solid fa-eye icon", "aria-hidden": "true"
+          text " #{doc.total_views} views"
+        end
       end
     end
   end

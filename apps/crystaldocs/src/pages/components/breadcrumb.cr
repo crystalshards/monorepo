@@ -8,9 +8,10 @@ class Components::Breadcrumb < Lucky::BaseComponent
           li class: "breadcrumb-item" do
             if index < items.size - 1
               a item.label, href: item.href
-              span " / ", class: "breadcrumb-separator"
+              # The slash is a visual separator; the ol already conveys order.
+              span " / ", class: "breadcrumb-separator", "aria-hidden": "true"
             else
-              span item.label, class: "breadcrumb-current"
+              span item.label, class: "breadcrumb-current", "aria-current": "page"
             end
           end
         end

@@ -24,13 +24,13 @@ class Posts::ShowPage < MainLayout
         span class: "post-author" do
           text "By #{@post.author_name}"
         end
-        span class: "post-separator" do
+        span class: "post-separator", "aria-hidden": "true" do
           text "•"
         end
         span class: "post-date" do
           text format_date(@post.published_at)
         end
-        span class: "post-separator" do
+        span class: "post-separator", "aria-hidden": "true" do
           text "•"
         end
         span class: "post-views" do
@@ -50,7 +50,9 @@ class Posts::ShowPage < MainLayout
     return if @post.tags.empty?
 
     div class: "post-tags-section" do
-      h3 "Tags"
+      # Directly under the article's h1, so this is an h2: heading order must
+      # not skip a level.
+      h2 "Tags"
       div class: "post-tags" do
         @post.tags.each do |tag|
           a href: "/posts?tag=#{tag}", class: "tag" do
@@ -63,9 +65,9 @@ class Posts::ShowPage < MainLayout
 
   private def render_newsletter_cta
     div class: "newsletter-cta" do
-      h3 "Enjoyed this post?"
+      h2 "Enjoyed this post?"
       para "Subscribe to our newsletter for more Crystal tutorials and updates."
-      mount NewsletterSignupForm, inline: false
+      mount NewsletterSignupForm, inline: false, heading_level: 3
     end
   end
 
