@@ -5,7 +5,7 @@ module CrystalShards
   # BuildDocsWorker talks to this rather than to StorageService directly, so a
   # spec can substitute a fake without a MinIO endpoint.
   module DocsStorage
-    abstract def upload_docs(shard_name : String, version : String, docs_dir : String) : Array(String)
+    abstract def upload_docs_json(shard_name : String, version : String, docs_json_path : String) : String
   end
 
   # The slice of object storage a sandboxed build depends on. Source goes in
@@ -109,54 +109,41 @@ module CrystalShards
       end
     end
 
-    # Upload documentation files to MinIO
-    # Uploads all HTML files from a directory
-    def upload_docs(shard_name : String, version : String, docs_dir : String) : Array(String)
-      uploaded_keys = [] of String
+    # Upload the generated documentation for a shard version. There is
+    # exactly one artifact per version, the `crystal docs --format=json`
+    # document, stored at <name>/<version>/docs.json. No generated HTML is
+    # ever stored: we render documentation ourselves, and shard-authored
+    # markup served from our origin would be stored XSS.
+    # Returns the object key.
+    def upload_docs_json(shard_name : String, version : String, docs_json_path : String) : String
+      key = docs_json_key(shard_name, version)
 
-      Dir.glob("#{docs_dir}/**/*") do |file_path|
-        next if File.directory?(file_path)
-
-        relative_path = file_path.sub("#{docs_dir}/", "")
-        key = docs_key(shard_name, version, relative_path)
-
-        content_type = case File.extname(file_path)
-                       when ".html" then "text/html"
-                       when ".css"  then "text/css"
-                       when ".js"   then "application/javascript"
-                       when ".json" then "application/json"
-                       else              "application/octet-stream"
-                       end
-
-        File.open(file_path, "r") do |file|
-          @client.put_object(
-            MinIOConfig.settings.docs_bucket,
-            key,
-            file.gets_to_end,
-            {
-              "Content-Type"    => content_type,
-              "X-Shard-Name"    => shard_name,
-              "X-Shard-Version" => version,
-            }
-          )
-        end
-
-        uploaded_keys << key
+      File.open(docs_json_path, "r") do |file|
+        @client.put_object(
+          MinIOConfig.settings.docs_bucket,
+          key,
+          file.gets_to_end,
+          {
+            "Content-Type"    => "application/json",
+            "X-Shard-Name"    => shard_name,
+            "X-Shard-Version" => version,
+          }
+        )
       end
 
-      uploaded_keys
+      key
     end
 
-    # Get documentation file from MinIO
-    def download_doc(shard_name : String, version : String, file_path : String) : String
-      key = docs_key(shard_name, version, file_path)
+    # Download the generated docs.json for a shard version.
+    def download_docs_json(shard_name : String, version : String) : String
+      key = docs_json_key(shard_name, version)
       response = @client.get_object(MinIOConfig.settings.docs_bucket, key)
       response.body
     end
 
     # Check if documentation exists for a shard version
-    def docs_exist?(shard_name : String, version : String) : Bool
-      key = docs_key(shard_name, version, "index.html")
+    def docs_json_exists?(shard_name : String, version : String) : Bool
+      key = docs_json_key(shard_name, version)
       begin
         @client.head_object(MinIOConfig.settings.docs_bucket, key)
         true
@@ -210,8 +197,9 @@ module CrystalShards
       "#{shard_name}/#{version}/#{shard_name}-#{version}.tar.gz"
     end
 
-    private def docs_key(shard_name : String, version : String, file_path : String) : String
-      "#{shard_name}/#{version}/#{file_path}"
+    # The storage layout is fixed: exactly one artifact per package version.
+    private def docs_json_key(shard_name : String, version : String) : String
+      "#{shard_name}/#{version}/docs.json"
     end
   end
 end

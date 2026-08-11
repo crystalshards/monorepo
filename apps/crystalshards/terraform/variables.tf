@@ -36,7 +36,10 @@ variable "minio_backup_bucket" {
 variable "docs_sandbox_image" {
   description = "Container image used for untrusted documentation builds in the docs-sandbox namespace"
   type        = string
-  default     = "crystallang/crystal:1.17.1-alpine"
+  # Must track the toolchain the platform builds with. On an older compiler a
+  # shard using newer standard library types fails to document for a reason
+  # that has nothing to do with the shard.
+  default = "crystallang/crystal:1.21.0-alpine"
 }
 
 variable "docs_sandbox_timeout_seconds" {
@@ -129,4 +132,32 @@ variable "docs_sandbox_max_memory" {
   description = "Maximum memory a single build container may request or limit"
   type        = string
   default     = "8Gi"
+}
+
+# Storage credentials handed to the documentation build Jobs. These are
+# separate from the application's credentials on purpose: a build should be
+# able to read its source tarball and write its docs.json, and do nothing
+# else. Point them at a least privilege MinIO user scoped to the docs bucket
+# rather than reusing the platform root credentials.
+variable "docs_sandbox_storage_endpoint" {
+  description = "Object storage endpoint reachable from the docs-sandbox namespace"
+  type        = string
+}
+
+variable "docs_sandbox_storage_access_key" {
+  description = "Access key for the docs bucket, scoped to documentation builds"
+  type        = string
+  sensitive   = true
+}
+
+variable "docs_sandbox_storage_secret_key" {
+  description = "Secret key for the docs bucket, scoped to documentation builds"
+  type        = string
+  sensitive   = true
+}
+
+variable "docs_sandbox_secret_name" {
+  description = "Name of the storage credential Secret in the docs-sandbox namespace"
+  type        = string
+  default     = "docs-sandbox-storage"
 }

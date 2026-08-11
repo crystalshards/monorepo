@@ -1,3 +1,5 @@
+require "json"
+
 module CrystalShards
   # Runs `crystal docs` on untrusted source.
   #
@@ -26,11 +28,32 @@ module CrystalShards
     # Generates documentation from `source_dir` into `output_dir`.
     # Returns false when the build failed; raises `Unavailable` when the
     # sandbox itself could not be started.
+    #
+    # "Failed" covers more than a non-zero exit: the build writes exactly one
+    # artifact, `docs.json`, and `crystal docs` can exit 0 having written
+    # nothing useful. A build that did not leave a parseable, non-empty
+    # docs.json behind did not succeed.
     abstract def build_docs(source_dir : String, output_dir : String) : Bool
 
     # Human-readable description used in logs, so it is always obvious from
     # the log which confinement a build actually ran under.
     abstract def description : String
+
+    # The one artifact a build is expected to leave in `output_dir`.
+    DOCS_JSON = "docs.json"
+
+    # Whether `path` holds a usable documentation artifact: present, non-empty
+    # and parseable as JSON. Anything less is a failed build, whatever the
+    # compiler's exit status said.
+    def self.valid_docs_json?(path : String) : Bool
+      return false unless File.exists?(path)
+      return false unless File.size(path) > 0
+
+      JSON.parse(File.read(path))
+      true
+    rescue JSON::ParseException
+      false
+    end
 
     # Test seam. When set, `build` returns this proc's result.
     class_property builder : Proc(DocsSandbox)? = nil

@@ -52,29 +52,26 @@ module CrystalShards
     property uploaded_docs : Array(String) = [] of String
     property should_fail : Bool = false
 
-    def upload_docs(shard_name : String, version : String, docs_dir : String) : Array(String)
+    def upload_docs_json(shard_name : String, version : String, docs_json_path : String) : String
       raise "Storage upload failed" if should_fail
 
-      # Simulate uploaded files
-      files = Dir.glob("#{docs_dir}/**/*").reject { |f| File.directory?(f) }
-      @uploaded_docs = files.map do |file|
-        relative = file.sub("#{docs_dir}/", "")
-        "#{shard_name}/#{version}/#{relative}"
-      end
-      @uploaded_docs
+      key = "#{shard_name}/#{version}/docs.json"
+      @uploaded_docs << key
+      key
     end
   end
 
   # Stands in for git/shards/crystal behind `CrystalShards::DocsBuilder.builder`.
   #
-  # Records the arguments it was handed and writes `docs_files` into the work
-  # directory. Set `should_fail` to model a `crystal docs` run that produced
-  # nothing, or `raise_with` to model a clone that blew up.
+  # Records the arguments it was handed and writes `docs_json` into the work
+  # directory as the build's one artifact. Set `should_fail` to model a
+  # `crystal docs` run that produced nothing, or `raise_with` to model a
+  # clone that blew up.
   class MockDocsBuilder < DocsBuilder
     record Call, repository_url : String, version : String, commit_sha : String?, work_dir : String
 
     property calls : Array(Call) = [] of Call
-    property docs_files : Hash(String, String) = {"index.html" => "<html>docs</html>"}
+    property docs_json : String = %({"repository_name":"mock","program":{"full_name":"mock","name":"mock"}})
     property should_fail : Bool = false
     property raise_with : String? = nil
 
@@ -89,10 +86,9 @@ module CrystalShards
 
       docs_dir = File.join(work_dir, "docs")
       Dir.mkdir_p(docs_dir)
-      docs_files.each do |name, contents|
-        File.write(File.join(docs_dir, name), contents)
-      end
-      docs_dir
+      docs_json_path = File.join(docs_dir, "docs.json")
+      File.write(docs_json_path, docs_json)
+      docs_json_path
     end
   end
 end

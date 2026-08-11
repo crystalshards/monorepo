@@ -34,4 +34,7 @@ dependencies:
   awscr-s3:
     github: taylorfinnell/awscr-s3
     version: ~> 0.10.0
+  markd:
+    github: icyleaf/markd
+    version: ~> 0.5.0
 development_dependencies: {}

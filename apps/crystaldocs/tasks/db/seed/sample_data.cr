@@ -134,17 +134,19 @@ class Db::Seed::SampleData < LuckyTask::Task
 
   # Points one version row at the truth in object storage. Returns whether
   # generated documentation exists for it. A row claims success only when the
-  # store answered and <package>/<version>/index.html is actually there;
+  # store answered and <package>/<version>/docs.json is actually there;
   # anything else is pending with zero counts, never an assumed success.
   private def sync_version_row(package_name : String, row : DocVersion) : Bool
     listing = storage_listing(package_name, row.version)
     @storage_warnings += 1 unless listing[:available]
 
-    success = listing[:available] && listing[:index_exists]
+    success = listing[:available] && listing[:json_exists]
     @found_docs = true if success
 
+    # One artifact per version, the docs.json itself, so a documented version
+    # holds exactly one file and its real byte size.
     status = success ? "success" : "pending"
-    files = success ? listing[:files] : 0
+    files = success ? 1 : 0
     bytes = success ? listing[:bytes] : 0_i64
 
     if row.build_status != status || row.file_count != files || row.total_size != bytes
@@ -155,26 +157,26 @@ class Db::Seed::SampleData < LuckyTask::Task
   end
 
   # Lists <package>/<version>/ in the docs bucket: whether the store answered,
-  # whether index.html is among the objects, and the real file count and byte
-  # total. `available: false` means MinIO could not be reached, which says
+  # whether docs.json is among the objects, and its real byte size.
+  # `available: false` means MinIO could not be reached, which says
   # nothing about whether the documentation exists.
-  private def storage_listing(package_name : String, version : String) : NamedTuple(available: Bool, index_exists: Bool, files: Int32, bytes: Int64)
+  private def storage_listing(package_name : String, version : String) : NamedTuple(available: Bool, json_exists: Bool, bytes: Int64)
     prefix = "#{package_name}/#{version}/"
-    files = 0
     bytes = 0_i64
-    index_exists = false
+    json_exists = false
 
     client = CrystalDocs::MinIOConfig.client
     client.list_objects(CrystalDocs::MinIOConfig.settings.docs_bucket, prefix: prefix).each do |page|
       page.contents.each do |object|
-        files += 1
-        bytes += object.size
-        index_exists = true if object.key == "#{prefix}index.html"
+        if object.key == "#{prefix}docs.json"
+          json_exists = true
+          bytes = object.size
+        end
       end
     end
 
-    {available: true, index_exists: index_exists, files: files, bytes: bytes}
+    {available: true, json_exists: json_exists, bytes: bytes}
   rescue Awscr::S3::Exception | IO::Error
-    {available: false, index_exists: false, files: 0, bytes: 0_i64}
+    {available: false, json_exists: false, bytes: 0_i64}
   end
 end

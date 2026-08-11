@@ -92,10 +92,15 @@ describe "documentation sandbox containment" do
       read.call("whoami.txt").should contain("uid=1000")
 
       # The build ran and produced real documentation, so the confinement is
-      # not passing merely by breaking the build.
+      # not passing merely by breaking the build. The one artifact is the
+      # JSON document; it has to exist, parse, and contain the module the
+      # fixture defines.
       built.should be_true
-      File.exists?(File.join(output, "index.html")).should be_true
-      File.exists?(File.join(output, "Hostile.html")).should be_true
+      docs_json_path = File.join(output, "docs.json")
+      fail "the build produced no docs.json, so it did not run" unless File.exists?(docs_json_path)
+      document = JSON.parse(File.read(docs_json_path))
+      document["program"]?.should_not be_nil
+      File.read(docs_json_path).should contain("Hostile")
     ensure
       ENV.delete("CANARY_CREDENTIAL")
       FileUtils.rm_rf(source) if Dir.exists?(source)

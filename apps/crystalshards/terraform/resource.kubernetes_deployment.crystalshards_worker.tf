@@ -213,6 +213,14 @@ resource "kubernetes_deployment" "crystalshards_worker" {
             value = var.docs_sandbox_scratch_prefix
           }
 
+          # Names the storage-only Secret the build Jobs mount. It lives in
+          # the sandbox namespace, not this one, because Secrets do not cross
+          # namespaces.
+          env {
+            name  = "DOCS_SANDBOX_SECRET_NAME"
+            value = var.docs_sandbox_secret_name
+          }
+
           # Resource limits for Autopilot
           resources {
             requests = {
