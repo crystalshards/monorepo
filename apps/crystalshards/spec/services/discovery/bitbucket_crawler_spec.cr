@@ -46,15 +46,32 @@ private def serve_workspaces(fake : FakeHost, pages : Hash(String, Array(FakeHos
   end
 end
 
+# A cursor is JSON carrying the host's own next URL, so specs about where a
+# sweep is compare the parsed position rather than the spelling of it.
+private def position_of(cursor : String?) : String?
+  return nil unless cursor
+
+  position = Discovery::BitbucketCrawler::Position.parse(cursor).not_nil!
+  "#{position.slug}:#{position.page}"
+end
+
+# What the cursor will make the crawler ask for next, which is the host's URL
+# once there is one to follow.
+private def follow_of(cursor : String?) : String?
+  return nil unless cursor
+
+  Discovery::BitbucketCrawler::Position.parse(cursor).not_nil!.follow
+end
+
 describe Discovery::BitbucketCrawler do
   describe "walking the registered workspaces" do
-    it "follows pagination past the first page and stops when the host stops offering one" do
+    it "follows the host's own next link past the first page and stops when it stops offering one" do
       FakeHost.run do |fake|
         serve_workspaces(fake, {
           "acme" => [
             FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories(
               [{"acme/router", "a router"}],
-              next_page: "https://api.bitbucket.org/2.0/repositories/acme?pagelen=100&page=2",
+              next_page: "#{fake.base_url}/repositories/acme?pagelen=100&page=2",
               size: 2, page: 1,
             )),
             FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories(
@@ -72,10 +89,47 @@ describe Discovery::BitbucketCrawler do
 
         report.pages.should eq(2)
         report.discovered.should eq(2)
-        # Page two was actually asked for, and asked for by page number rather
-        # than by following the absolute URL the host handed back.
+        # Page two was actually asked for, and asked for by following the link
+        # the host gave rather than by a URL rebuilt from a page counter.
         fake.requests.select(&.includes?("/repositories/acme?")).size.should eq(2)
         fake.requests.any?(&.includes?("page=2")).should be_true
+      end
+    end
+
+    # The reason the link is followed rather than reconstructed. A Bitbucket
+    # paginated body only guarantees `values` and `next`; this one is in that
+    # minimum shape, with no `page` field at all and a `next` whose query is an
+    # opaque token. Nothing here can be rebuilt from a counter, so a crawler
+    # that synthesised page+1 would ask for a page the host never offered and
+    # silently lose everything after page one.
+    it "follows an opaque next link on a body carrying no page number" do
+      FakeHost.run do |fake|
+        serve_workspaces(fake, {
+          "acme" => [
+            FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories(
+              [{"acme/router", "a router"}],
+              next_page: "#{fake.base_url}/repositories/acme?ctx=b7e1f0a9d4&pagelen=100",
+              size: 2, page: nil,
+            )),
+            FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories(
+              [{"acme/logger", "a logger"}],
+              size: 2, page: nil,
+            )),
+          ],
+        })
+        fake.on(/\/src\/master\/shard\.yml/) do |target, _|
+          name = target.includes?("router") ? "router" : "logger"
+          shard_response(name)
+        end
+
+        report = bitbucket(fake, ["acme"]).run
+
+        report.pages.should eq(2)
+        report.discovered.should eq(2)
+        # Not asserting complete? here: this host is never complete, whatever
+        # the pagination did. That guarantee has its own spec below.
+        # The opaque token was carried through verbatim.
+        fake.requests.any?(&.includes?("ctx=b7e1f0a9d4")).should be_true
       end
     end
 
@@ -101,12 +155,12 @@ describe Discovery::BitbucketCrawler do
       end
     end
 
-    it "publishes a cursor naming the workspace and the page after every page" do
+    it "publishes a cursor naming the workspace, the page, and the link to resume with" do
       FakeHost.run do |fake|
         serve_workspaces(fake, {
           "acme" => [
             FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories(
-              [{"acme/router", ""}], next_page: "https://api.bitbucket.org/2.0/repositories/acme?page=2")),
+              [{"acme/router", ""}], next_page: "#{fake.base_url}/repositories/acme?page=2")),
             FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories([{"acme/logger", ""}])),
           ],
           "beta" => [FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories([{"beta/parser", ""}]))],
@@ -120,7 +174,13 @@ describe Discovery::BitbucketCrawler do
         crawler.on_page = ->(cursor : String?) { cursors << cursor; nil }
         crawler.run
 
-        cursors.should eq(["acme:2", "beta:1", nil])
+        cursors.map { |cursor| position_of(cursor) }.should eq(["acme:2", "beta:1", nil])
+        # Mid-workspace the cursor carries the host's link, so a resumed sweep
+        # asks for the page the host named rather than one it worked out.
+        follow_of(cursors.first).should eq("#{fake.base_url}/repositories/acme?page=2")
+        # Crossing into a new workspace there is no link yet, so the first page
+        # of it is built here.
+        follow_of(cursors[1]).should be_nil
       end
     end
 
@@ -236,7 +296,7 @@ describe Discovery::BitbucketCrawler do
         report.status.should eq(CrawlState::Status::PARTIAL)
         report.stop_reason.should eq(CrawlState::StopReason::RATE_LIMITED)
         # The cursor still points at the workspace that was not read.
-        report.cursor.should eq("beta:1")
+        position_of(report.cursor).should eq("beta:1")
         report.complete?.should be_false
       end
     end
@@ -290,7 +350,7 @@ describe Discovery::BitbucketCrawler do
         report = bitbucket(fake, ["acme", "beta"], sleeper: sleeper).run
 
         report.status.should eq(CrawlState::Status::FAILED)
-        report.cursor.should eq("beta:1")
+        position_of(report.cursor).should eq("beta:1")
       end
     end
 
@@ -453,7 +513,11 @@ describe Discovery::BitbucketCrawler do
       end
     end
 
-    it "keeps the host's absolute next URL out of the cursor entirely" do
+    # Following a link out of a response body is the thing that needs guarding,
+    # so the guard is checked where it matters: before the link is written to a
+    # cursor, because a cursor is persisted and would otherwise carry a bad
+    # destination into every later run.
+    it "refuses a next link that leaves the configured origin, and never persists it" do
       FakeHost.run do |fake|
         serve_workspaces(fake, {
           "acme" => [
@@ -468,16 +532,66 @@ describe Discovery::BitbucketCrawler do
           shard_response("anything")
         end
 
+        problems = [] of {String, String}
         cursors = [] of String?
         crawler = bitbucket(fake, ["acme"])
+        crawler.on_workspace_problem = ->(slug : String, reason : String) { problems << {slug, reason}; nil }
         crawler.on_page = ->(cursor : String?) { cursors << cursor; nil }
-        crawler.run
+        report = crawler.run
 
-        # `next` was read as a yes-or-no and its value discarded, so the next
-        # page was asked for by number against the configured base.
-        cursors.should eq(["acme:2", nil])
         fake.requests.none?(&.includes?("evil.test")).should be_true
+        cursors.compact_map { |cursor| follow_of(cursor) }.should be_empty
+        # Recorded as a broken workspace rather than quietly treated as the end
+        # of the pages, which would report a truncated read as a finished one.
+        problems.map(&.[0]).should eq(["acme"])
+        problems.first[1].should contain("evil.test")
+        report.complete?.should be_false
+        # The link was unusable; the page it came on was not. Everything the
+        # host already handed over on it is kept, because refusing to walk
+        # further is not a reason to throw away what was already read.
+        report.discovered.should eq(1)
       end
+    end
+
+    # Same origin, different resource. Without this a workspace could hand the
+    # sweep off to another workspace's collection and have whatever came back
+    # counted under its own coverage.
+    it "refuses a next link that leaves this workspace's own collection" do
+      FakeHost.run do |fake|
+        serve_workspaces(fake, {
+          "acme" => [
+            FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories(
+              [{"acme/router", ""}],
+              next_page: "#{fake.base_url}/repositories/other-workspace?page=2",
+            )),
+          ],
+        })
+        fake.on(/\/src\/master\/shard\.yml/) do
+          shard_response("anything")
+        end
+
+        problems = [] of {String, String}
+        crawler = bitbucket(fake, ["acme"])
+        crawler.on_workspace_problem = ->(slug : String, reason : String) { problems << {slug, reason}; nil }
+        report = crawler.run
+
+        fake.requests.none?(&.includes?("other-workspace")).should be_true
+        problems.map(&.[0]).should eq(["acme"])
+        # And again, the page that carried the bad link is still harvested.
+        report.discovered.should eq(1)
+      end
+    end
+
+    # A cursor written by the version of this crawler that stored "<slug>:<page>"
+    # is sitting in a database mid-sweep. It still has to mean what it meant.
+    it "still understands a cursor written before links were followed" do
+      legacy = Discovery::BitbucketCrawler::Position.parse("acme:4").not_nil!
+
+      legacy.slug.should eq("acme")
+      legacy.page.should eq(4)
+      # Nothing to follow, so the page is built from the counter, which is
+      # exactly the old behaviour and is correct for one request.
+      legacy.follow.should be_nil
     end
   end
 

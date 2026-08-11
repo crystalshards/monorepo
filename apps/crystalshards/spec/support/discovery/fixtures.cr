@@ -188,8 +188,11 @@ module Discovery::Fixtures
   # `next` is an ABSOLUTE URL. Live it came back as
   # "https://api.bitbucket.org/2.0/repositories/atlassian?pagelen=2&page=2",
   # and on a workspace addressed by uuid the host substitutes the uuid form.
-  # The crawler reads whether it is present and throws the value away, so this
-  # fixture is also how the spec proves a response cannot redirect a crawl.
+  # The crawler follows it, because `values` and `next` are the only fields a
+  # paginated body guarantees: `page` is optional and `next` may carry an opaque
+  # token instead of a number, so a URL rebuilt from a page counter can name a
+  # page the host never offered. `page` is nilable here for exactly that reason,
+  # so a body can be built in the guaranteed-minimum shape.
   #
   # `language` is "" on seven of the eleven live repositories. That is the
   # measurement behind enumerating a whole workspace instead of filtering on
@@ -198,7 +201,7 @@ module Discovery::Fixtures
     repositories : Array({String, String}),
     next_page : String? = nil,
     size : Int32? = nil,
-    page : Int32 = 1,
+    page : Int32? = 1,
     main_branch : String? = "master",
     scm : String = "git",
   ) : String
@@ -241,7 +244,7 @@ module Discovery::Fixtures
     fields = [%("values": [#{entries.join(",")}])]
     fields << %("pagelen": 100)
     fields << %("size": #{size || repositories.size})
-    fields << %("page": #{page})
+    fields << %("page": #{page}) if page
     fields << %("next": #{next_page.to_json}) if next_page
 
     "{#{fields.join(",")}}"

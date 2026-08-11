@@ -379,8 +379,13 @@ describe Discovery::CrawlRunner do
           first.status.should eq(CrawlState::Status::PARTIAL)
           first.stop_reason.should eq(CrawlState::StopReason::INTERRUPTED)
           # The cursor names a workspace and a page, which is what a position in
-          # a walk over several workspaces has to carry.
-          CrawlStateQuery.new.for_host("bitbucket.org").not_nil!.cursor.should eq("beta:1")
+          # a walk over several workspaces has to carry. It is JSON because it
+          # also carries the host's own next link when there is one, so it is
+          # read back through the parser rather than compared as a string.
+          persisted = CrawlStateQuery.new.for_host("bitbucket.org").not_nil!.cursor.not_nil!
+          position = Discovery::BitbucketCrawler::Position.parse(persisted).not_nil!
+          position.slug.should eq("beta")
+          position.page.should eq(1)
 
           fake.requests.clear
           Discovery::CrawlRunner.run("bitbucket.org", base_url: fake.base_url, max_pages: 1)
