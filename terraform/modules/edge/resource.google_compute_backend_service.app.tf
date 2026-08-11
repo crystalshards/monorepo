@@ -3,7 +3,14 @@
 # No health check is attached: serverless NEG backends do not take one, because
 # Cloud Run reports its own readiness and the load balancer has nothing to probe.
 resource "google_compute_backend_service" "app" {
-  for_each = google_compute_region_network_endpoint_group.app
+  # Keyed on local.services, the same static map the NEGs iterate, NOT on the
+  # NEG resource itself. Iterating the resource looks equivalent and reads more
+  # directly, but its keys are only known after apply, so terraform refuses the
+  # whole configuration with
+  #   Invalid for_each argument ... will be known only after apply
+  # on any plan, apply or import. `terraform validate` does not evaluate
+  # for_each, so this passed every check we had and failed the first real apply.
+  for_each = local.services
 
   project = var.project_id
   name    = "${var.name_prefix}-${each.key}"
@@ -14,7 +21,7 @@ resource "google_compute_backend_service" "app" {
   protocol              = "HTTP"
 
   backend {
-    group = each.value.id
+    group = google_compute_region_network_endpoint_group.app[each.key].id
   }
 
   # These domains have been dark for years. Full sampling costs almost nothing at
