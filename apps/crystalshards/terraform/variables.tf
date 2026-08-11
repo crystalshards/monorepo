@@ -134,27 +134,11 @@ variable "docs_sandbox_max_memory" {
   default     = "8Gi"
 }
 
-# Storage credentials handed to the documentation build Jobs. These are
-# separate from the application's credentials on purpose: a build should be
-# able to read its source tarball and write its docs.json, and do nothing
-# else. Point them at a least privilege MinIO user scoped to the docs bucket
-# rather than reusing the platform root credentials.
-variable "docs_sandbox_storage_endpoint" {
-  description = "Object storage endpoint reachable from the docs-sandbox namespace"
-  type        = string
-}
-
-variable "docs_sandbox_storage_access_key" {
-  description = "Access key for the docs bucket, scoped to documentation builds"
-  type        = string
-  sensitive   = true
-}
-
-variable "docs_sandbox_storage_secret_key" {
-  description = "Secret key for the docs bucket, scoped to documentation builds"
-  type        = string
-  sensitive   = true
-}
+# The build Jobs' storage credentials are derived from the same MinIO data
+# source the application secret uses, in
+# resource.kubernetes_secret.docs_sandbox_storage.tf, rather than being
+# threaded through variables. One source of truth, and no second set of
+# credentials to keep in step.
 
 variable "docs_sandbox_secret_name" {
   description = "Name of the storage credential Secret in the docs-sandbox namespace"
