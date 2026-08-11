@@ -612,6 +612,25 @@ jobs:
             state-list-current.txt --write state-rm-addresses.txt
           echo "Addresses staged for removal: $(wc -l < state-rm-addresses.txt)"
 
+          # The VPC, subnet, router, NAT and firewall rules existed only to host
+          # the cluster, and they leave configuration with it. Terraform will try
+          # to DESTROY them on the next apply, and that destroy fails:
+          #
+          #   The network resource 'crystalshards-cluster-vpc' is already being
+          #   used by 'networkEndpointGroups/k8s2-...-prometheus-operator-grafana'
+          #
+          # GKE leaves load balancer NEGs behind when a cluster is deleted, so the
+          # network cannot be removed until someone reaps them, and until then the
+          # failed destroy blocks the entire Cloud Run apply. Dropping them from
+          # state stops terraform owning a teardown it cannot complete. The GCP
+          # resources remain and are reaped separately; a VPC with no instances
+          # costs nothing and blocks nothing once terraform stops trying.
+          if grep -q '^module\.networking\.' state-list-current.txt; then
+            grep '^module\.networking\.' state-list-current.txt >> state-rm-addresses.txt
+            echo "Networking addresses added: $(grep -c '^module\.networking\.' state-list-current.txt)"
+          fi
+          echo "Total addresses staged for removal: $(wc -l < state-rm-addresses.txt)"
+
       - name: Remove stranded addresses from state
         working-directory: ./terraform
         shell: bash
