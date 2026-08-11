@@ -886,24 +886,6 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthResponse'
 
-  /metrics:
-    get:
-      summary: Prometheus Metrics
-      description: Prometheus metrics endpoint for monitoring
-      tags:
-        - Common - Monitoring
-      responses:
-        '200':
-          description: Prometheus metrics
-          content:
-            text/plain:
-              schema:
-                type: string
-                example: |
-                  # HELP crystalshards_http_requests_total Total HTTP requests
-                  # TYPE crystalshards_http_requests_total counter
-                  crystalshards_http_requests_total{method="GET",status="200"} 1234
-
   # ===== CRYSTALBITS BLOG API =====
   /api/posts:
     get:
@@ -2017,8 +1999,6 @@ tags:
     description: Blog posts and newsletter content
   - name: Common - Health
     description: Health check endpoints
-  - name: Common - Monitoring
-    description: Prometheus metrics and monitoring
 
 externalDocs:
   description: Find more info at CrystalShards.org

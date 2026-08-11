@@ -17,7 +17,7 @@ module CrystalShards
   #                   time it finishes.
   #
   # There is no third answer and deliberately no general purpose queue. The
-  # long-running worker that used to poll Redis is gone: on Cloud Run a
+  # long-running worker that used to poll a broker is gone: on Cloud Run a
   # container gets no CPU once its response is written, so anything deferred
   # without a durable queue behind it is simply dropped. Running the cheap work
   # inline is not a compromise, it is the only arrangement where the caller

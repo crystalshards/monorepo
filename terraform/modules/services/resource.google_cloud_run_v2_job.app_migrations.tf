@@ -1,5 +1,11 @@
-# Schema migration Jobs, one per application, executing `./tasks db.migrate`
-# from that application's own image.
+# Schema migration Jobs, one per application, executing `./migrate` from that
+# application's own image.
+#
+# The binary is ./migrate, a purpose built entrypoint that requires only shards,
+# app_database, config/database and the migrations. It is not the Lucky task
+# runner: that loads src/app and therefore all of config/**, which dragged the
+# entire serving configuration surface into a migration and made every new boot
+# time variable a broken deploy. See the comment on local.migration_config.
 #
 # Migrations run here rather than from the CI runner. The runner would have to
 # reach the database over its public IP from a GitHub owned address, which means
@@ -36,8 +42,7 @@ resource "google_cloud_run_v2_job" "app_migrations" {
 
       containers {
         image   = local.app_images[each.key]
-        command = ["./tasks"]
-        args    = ["db.migrate"]
+        command = ["./migrate"]
 
         resources {
           limits = {

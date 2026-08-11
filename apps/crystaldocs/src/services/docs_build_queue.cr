@@ -108,6 +108,12 @@ module CrystalDocs
   class CloudTasksDocsBuildQueue < DocsBuildQueue
     API_HOST = "https://cloudtasks.googleapis.com"
 
+    # How long the launcher may take before Cloud Tasks gives up on one
+    # delivery. Must match the docs-launcher Cloud Run request timeout: the
+    # launcher holds this request open for the whole build, because it is the
+    # only party in the chain that can write the outcome to the database.
+    DISPATCH_DEADLINE_SECONDS = 1800
+
     # Test seam. Receives the queue path and the serialised task, and returns
     # nothing. Defaults to the real API call, so production works with nothing
     # installed; a spec swaps it out to assert on the task without a network.
@@ -120,15 +126,16 @@ module CrystalDocs
     # Separated from sending it because the shape is the contract, and a
     # contract that can only be checked by dispatching a real task is a
     # contract nobody checks.
-    #
-    # The body is base64 because Cloud Tasks carries an HTTP body as bytes.
-    # The OIDC block is not optional: docs-launcher grants run.invoker to one
-    # service account and nothing else, so a task without a token is a 403 on
-    # every dispatch.
     def self.task_json(launcher_url : String, invoker : String, task : DocsBuildTask) : String
       {
         task: {
-          httpRequest: {
+          # Per task, not a queue setting: Cloud Tasks has no queue level
+          # dispatch deadline for an HTTP target. Left unset it defaults to
+          # 600s, and the launcher holds the request open for the whole build,
+          # so a slow shard would be killed mid compile and redelivered
+          # forever. This is the launcher's Cloud Run request timeout.
+          dispatchDeadline: "#{DISPATCH_DEADLINE_SECONDS}s",
+          httpRequest:      {
             httpMethod: "POST",
             url:        "#{launcher_url.rstrip('/')}#{DocsBuildQueue::PATH}",
             headers:    {"Content-Type": "application/json"},
@@ -183,7 +190,7 @@ module CrystalDocs
     end
   end
 
-  # Development and test. No Redis, no Google, no broker of any kind.
+  # Development and test. No broker of any kind, and no Google.
   #
   # It records rather than builds, and that is the honest behaviour for this
   # app: crystaldocs has never built documentation in any environment, and a

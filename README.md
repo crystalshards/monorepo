@@ -10,17 +10,11 @@ Local development needs Crystal, Docker and docker compose. It needs no Google C
 # Start the local Postgres the apps develop against
 docker compose up -d postgres
 
-# The bundled Postgres uses the password "password". The Makefile builds its
-# psql calls and DATABASE_URLs from these two variables and its defaults do
-# not match, so set them once for the session.
-export PGPASSWORD=password DB_PASSWORD=password
-
 # Install dependencies, create the databases, migrate and load sample data
-# (this also starts the remaining supporting containers)
+# (this also starts the object storage and mail containers)
 make setup
 
-# Compile the four apps, then run them
-make build
+# Run all four apps. Any missing binary is built first.
 make dev
 ```
 
@@ -31,7 +25,7 @@ make dev
 - crystalgigs: http://localhost:3002
 - crystalbits: http://localhost:3003
 
-`make help` lists every target. See `DEVELOPMENT.md` and `CONTRIBUTING.md` for the longer version.
+`make dev` only builds what is missing, so run `make build` yourself after changing an app's source. `make help` lists every target. See `DEVELOPMENT.md` and `CONTRIBUTING.md` for the longer version.
 
 ## Philosophy
 
@@ -84,7 +78,7 @@ Project `crystalshards-org`, region `us-central1`. Deploys run in CI, never from
 - **Secrets**: Secret Manager, referenced by Cloud Run as environment variables. Missing required production config fails closed at boot and names the variable
 - **Observability**: Cloud Logging and Cloud Monitoring
 
-Locally, docker compose stands in for all of it: Postgres for the databases, MinIO for object storage, and an in-process queue instead of Cloud Tasks.
+Locally, docker compose stands in for all of it: Postgres for the databases, a local object store, and an in-process queue instead of Cloud Tasks.
 
 ## Autonomous Agent
 
@@ -96,7 +90,7 @@ The agent:
 
 1. Commits after EVERY file edit
 2. Self-regulates scope
-3. Pushes to GitHub as work lands
+3. Pushes to GitHub regularly
 4. Creates PRs when features are complete
 5. Writes a post event review after an incident
 

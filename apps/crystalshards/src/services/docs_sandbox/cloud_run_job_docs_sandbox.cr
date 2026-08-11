@@ -195,35 +195,64 @@ module CrystalShards
     # Polls the long-running operation the run request returned. The execution
     # also carries its own timeout, so a runaway build is stopped by Cloud Run
     # even if this process dies.
+    #
+    # Only two things end this loop early: the operation reporting done, and
+    # the operation reporting an error. A failed poll is neither. Collapsing
+    # "I could not read the status" into "the build failed" would mark a shard
+    # broken because of a blip on our side, and the retry floor would then
+    # refuse to reconsider it for an hour. So a bad response is logged and
+    # retried, and the deadline is what bounds the wait.
     private def wait_for(operation : String) : Bool
       deadline = Time.monotonic + DocsSandbox.timeout_seconds.seconds
+      last_poll_error : String? = nil
 
       while Time.monotonic < deadline
-        response = HTTP::Client.get("#{api_host}/v2/#{operation}", headers: auth_headers)
-        return false unless response.success?
+        begin
+          response = HTTP::Client.get("#{api_host}/v2/#{operation}", headers: auth_headers)
 
-        parsed = JSON.parse(response.body)
+          if response.success?
+            last_poll_error = nil
+            parsed = JSON.parse(response.body)
 
-        if parsed["done"]?.try(&.as_bool?)
-          if error = parsed["error"]?
-            log_error "Docs build execution failed: #{error}"
-            return false
+            if parsed["done"]?.try(&.as_bool?)
+              if error = parsed["error"]?
+                log_error "Docs build execution failed: #{error}"
+                return false
+              end
+
+              return true
+            end
+          else
+            last_poll_error = "#{response.status_code} #{response.body}"
           end
-
-          return true
+        rescue ex : IO::Error | Socket::Error | JSON::Error
+          last_poll_error = ex.message
         end
+
+        log_error "Could not read docs build status, retrying: #{last_poll_error}" if last_poll_error
 
         sleep 2.seconds
       end
 
-      log_error "Docs build execution exceeded #{DocsSandbox.timeout_seconds}s"
+      # Timing out is reported as a failed build rather than swallowed,
+      # because something did run and nobody watched it finish.
+      log_error "Docs build execution exceeded #{DocsSandbox.timeout_seconds}s#{last_poll_error ? ", last status error: #{last_poll_error}" : ""}"
       false
     end
 
+    # Best effort, and expected to fail. The launcher holds no
+    # storage.objects.delete on the docs bucket on purpose: the only
+    # predefined role carrying it is objectAdmin, which would also let this
+    # process erase published documentation. So this call normally logs a 403.
+    # That is not a missing grant, do not "fix" it by widening the role.
+    #
+    # The real mechanism is a bucket lifecycle rule expiring the
+    # build-scratch/ prefix, which is also the only thing that can collect
+    # after a crashed execution, since a crash never reaches this block.
     private def cleanup(build_id : String)
       @storage.delete_scratch_prefix("#{SCRATCH_PREFIX}/#{build_id}")
     rescue ex
-      log_error "Could not clean up sandbox build #{build_id}: #{ex.message}"
+      log_info "Left #{SCRATCH_PREFIX}/#{build_id} for the bucket lifecycle rule: #{ex.message}"
     end
 
     private def auth_headers : HTTP::Headers

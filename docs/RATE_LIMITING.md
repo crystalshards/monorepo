@@ -2,7 +2,7 @@
 
 ## Overview
 
-All CrystalShards platform APIs implement rate limiting to prevent abuse and ensure fair usage. Rate limiting is implemented using Lucky's built-in `Lucky::RateLimit` module, which uses Redis for distributed rate limit tracking.
+CrystalShards platform actions declare rate limits with Lucky's built-in `Lucky::RateLimit` module, which counts requests in the configured `LuckyCache` store.
 
 ## Rate Limits by Endpoint
 
@@ -56,7 +56,7 @@ The `Retry-After` header indicates how many seconds until the rate limit resets.
 
 ### Rate Limit Storage
 
-Rate limits are stored in Redis with keys in the format:
+Counters live in the configured `LuckyCache` store, keyed as:
 
 ```
 ratelimit:<action_class>:<identifier>
@@ -126,15 +126,7 @@ end
 
 ## Configuration
 
-Rate limiting requires Redis to be configured. Ensure your `config/lucky_cache.cr` is properly configured:
-
-```crystal
-LuckyCache.configure do |settings|
-  settings.storage = LuckyCache::RedisStore.new(
-    url: ENV["REDIS_URL"]? || "redis://localhost:6379"
-  )
-end
-```
+`Lucky::RateLimit` reads and writes `LuckyCache.settings.storage`. That setting defaults to `LuckyCache::NullStore`, which discards writes and reads back nothing, and no app in this repo overrides it. Until a store that retains values is configured, the counters never accumulate, so the limits listed above are declared but not enforced.
 
 ## Best Practices
 
@@ -153,37 +145,12 @@ end
 4. **Consider different tiers**: For public APIs, consider offering higher limits for paid plans
 5. **Use sliding windows**: Lucky's rate limiting uses sliding windows, which is more fair than fixed windows
 
-## Monitoring
-
-### Check Rate Limit Keys in Redis
-
-```bash
-# Connect to Redis
-redis-cli
-
-# List all rate limit keys
-KEYS ratelimit:*
-
-# Check a specific key
-GET ratelimit:api:shards:create:192.168.1.100
-TTL ratelimit:api:shards:create:192.168.1.100
-```
-
-### Prometheus Metrics
-
-Consider adding Prometheus metrics to track:
-
-- Number of rate limit violations per endpoint
-- Top IPs hitting rate limits
-- Average time between rate limit hits
-
 ## Troubleshooting
 
 ### Rate Limits Not Working
 
-1. **Check Redis connection**: Ensure Redis is running and accessible
-2. **Verify configuration**: Check that `LuckyCache` is configured correctly
-3. **Test locally**: Use `curl` or `httpie` to test rate limiting manually
+1. **Check the cache store**: `LuckyCache.settings.storage` must retain values. The default `NullStore` drops every counter, so nothing accumulates
+2. **Test locally**: Use `curl` or `httpie` to test rate limiting manually
 
 ### False Positives (Legitimate Users Being Limited)
 
@@ -195,9 +162,7 @@ Consider adding Prometheus metrics to track:
 
 ### Performance Issues
 
-1. **Redis latency**: Ensure Redis is on the same network as your app servers
-2. **Connection pooling**: Use Redis connection pooling for better performance
-3. **Key expiration**: Rate limit keys automatically expire after the window, but you can manually clean up old keys if needed
+1. **Key expiration**: Rate limit counters are written with the window as their expiry, so they clear themselves
 
 ## Future Enhancements
 
@@ -212,5 +177,4 @@ Potential improvements to rate limiting:
 ## Resources
 
 - [Lucky Framework Rate Limiting Docs](https://luckyframework.org/guides/http-and-routing/rate-limiting)
-- [Redis Best Practices](https://redis.io/docs/reference/optimization/)
 - [HTTP 429 Status Code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429)

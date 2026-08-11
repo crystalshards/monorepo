@@ -10,8 +10,8 @@ on:
   # Allow manual deployment
   workflow_dispatch:
 
-# One production deploy at a time. Never cancel a deploy in flight: a half applied
-# Cloud Run rollout or a half run migration is worse than a queued run.
+# One production deploy at a time, and never cancel one in flight: a half rolled
+# service or a half run migration is worse than a queued run.
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -22,14 +22,12 @@ permissions:
 env:
   GCP_REGION: us-central1
   TERRAFORM_VERSION: "1.6.0"
-  # Terraform is non-interactive here; make it say so rather than block on a prompt.
   TF_IN_AUTOMATION: "1"
   TF_INPUT: "0"
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Resolve exactly which commit is being deployed, and refuse to deploy at all
-  # unless CI succeeded on main.
+  # Refuse to deploy unless CI succeeded on main, and pin the exact commit.
   # ---------------------------------------------------------------------------
   gate:
     name: Gate on CI
@@ -62,9 +60,9 @@ jobs:
               echo "CI ran on '${RUN_HEAD_BRANCH}', not main. Refusing to deploy." >&2
               exit 1
             fi
-            # Deploy the commit CI actually validated, not whatever is at the head of
-            # the default branch when this run starts. For workflow_run those can differ,
-            # and github.sha is the latter.
+            # Deploy the commit CI actually validated. For workflow_run, github.sha is
+            # the head of the default branch when this run starts, which is not
+            # necessarily the commit that was tested.
             sha="$RUN_HEAD_SHA"
           else
             sha="$DISPATCH_SHA"
@@ -79,9 +77,9 @@ jobs:
           echo "Deploying commit ${sha}"
 
   # ---------------------------------------------------------------------------
-  # The registry has to exist before anything can be pushed to it, and the rest of
-  # the stack cannot be applied until the images it references exist. So the registry
-  # module is applied on its own first.
+  # The registry must exist before anything can be pushed, and the rest of the stack
+  # cannot apply until the images it references exist. So the registry module goes
+  # first, on its own.
   # ---------------------------------------------------------------------------
   bootstrap-registry:
     name: Bootstrap Artifact Registry
@@ -112,30 +110,34 @@ jobs:
         working-directory: ./terraform
         shell: bash
         env:
-          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
-          TF_VAR_region: ${{ env.GCP_REGION }}
-          TF_VAR_image_tag: ${{ needs.gate.outputs.sha }}
-          TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
-          TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
+          # Secrets go through TF_VAR_ rather than -var so they never reach a process
+          # listing. terraform.tfvars deliberately holds no secret values: a values
+          # file outranks TF_VAR_ and would silently override every one of these.
+          TF_VAR_crystalshards_sendgrid_key: ${{ secrets.CRYSTALSHARDS_SENDGRID_KEY }}
+          TF_VAR_crystaldocs_sendgrid_key: ${{ secrets.CRYSTALDOCS_SENDGRID_KEY }}
+          TF_VAR_crystalgigs_sendgrid_key: ${{ secrets.CRYSTALGIGS_SENDGRID_KEY }}
+          TF_VAR_crystalbits_sendgrid_key: ${{ secrets.CRYSTALBITS_SENDGRID_KEY }}
+          TF_VAR_docs_launcher_sendgrid_key: ${{ secrets.DOCS_LAUNCHER_SENDGRID_KEY }}
           TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
           TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
+          IMAGE_TAG: ${{ needs.gate.outputs.sha }}
         run: |
           set -euo pipefail
           terraform init
-          terraform apply -auto-approve -target=module.registry
+          terraform apply -auto-approve \
+            -target=module.registry \
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="image_tag=${IMAGE_TAG}"
 
       - name: Publish registry URL
         id: registry
         working-directory: ./terraform
         shell: bash
         env:
-          TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
-          TF_VAR_region: ${{ env.GCP_REGION }}
-          TF_VAR_image_tag: ${{ needs.gate.outputs.sha }}
-          TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
-          TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
-          TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
-          TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
           set -euo pipefail
           url="$(terraform output -raw artifact_registry_url)"
@@ -144,10 +146,13 @@ jobs:
             echo "Terraform output artifact_registry_url is empty." >&2
             exit 1
           fi
-          # Guard against pointing the whole pipeline at something that is not a
-          # Docker repository path, which would only surface as a confusing push error.
           if ! printf '%s' "$url" | grep -Eq '^[a-z0-9-]+-docker\.pkg\.dev/[^/]+/[^/]+$'; then
-            echo "Terraform output artifact_registry_url='${url}' is not an Artifact Registry repository path." >&2
+            echo "artifact_registry_url='${url}' is not an Artifact Registry repository path." >&2
+            exit 1
+          fi
+          # Catch a stack pointed at a different project than the one CI is deploying.
+          if [ "$(printf '%s' "$url" | cut -d/ -f2)" != "$PROJECT_ID" ]; then
+            echo "artifact_registry_url='${url}' is not in project '${PROJECT_ID}'." >&2
             exit 1
           fi
 
@@ -155,9 +160,12 @@ jobs:
           echo "Registry: ${url}"
 
   # ---------------------------------------------------------------------------
-  # One image per app, plus the documentation build image. Every image is tagged
-  # with the full commit SHA and nothing else: no `latest`, so nothing downstream
-  # can resolve to a tag this pipeline did not push.
+  # One image per app, plus the documentation build image. Tagged with the full commit
+  # SHA and nothing else: no `latest`, so nothing downstream can resolve to a tag this
+  # pipeline did not push.
+  #
+  # There is no docs-launcher image. That service runs the crystalshards image under a
+  # second name, because the trusted half of a docs build already lives in that app.
   # ---------------------------------------------------------------------------
   build:
     name: Build ${{ matrix.image }}
@@ -177,8 +185,7 @@ jobs:
           - image: crystalbits
             context: apps/crystalbits
           # Runs `crystal docs` over untrusted third party shards, so unlike the app
-          # images its runtime stage keeps the Crystal toolchain. Built here so the
-          # docs-build Job can be rolled to the same commit as everything else.
+          # images its runtime stage keeps the Crystal toolchain.
           - image: docs-build
             context: apps/docs-build
     steps:
@@ -230,8 +237,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
-          # Cloud Run runs linux/amd64. Build for it explicitly rather than inheriting
-          # whatever the runner happens to be.
+          # Cloud Run runs linux/amd64. Say so rather than inheriting the runner's arch.
           platforms: linux/amd64
           push: true
           tags: ${{ steps.image.outputs.ref }}
@@ -245,8 +251,8 @@ jobs:
           IMAGE_REF: ${{ steps.image.outputs.ref }}
         run: |
           set -euo pipefail
-          # A successful `docker push` proves the layers uploaded. This proves the tag
-          # resolves to a manifest in the repository the rest of the deploy will read.
+          # A successful push proves the layers uploaded. This proves the tag resolves
+          # to a manifest in the repository the rest of the deploy reads from.
           digest="$(gcloud artifacts docker images describe "$IMAGE_REF" --format='value(image_summary.digest)')"
           if [ -z "$digest" ]; then
             echo "Pushed ${IMAGE_REF} but the registry reports no digest for it." >&2
@@ -255,8 +261,8 @@ jobs:
           echo "${IMAGE_REF} -> ${digest}"
 
   # ---------------------------------------------------------------------------
-  # Apply the Cloud Run stack. Runs after the images exist, so terraform can create
-  # every service and job at a real SHA image instead of a placeholder.
+  # Apply the Cloud Run stack. Runs after the images exist so terraform creates every
+  # service and job at a real SHA image rather than a placeholder.
   # ---------------------------------------------------------------------------
   infra:
     name: Apply Cloud Run stack
@@ -272,14 +278,6 @@ jobs:
       load_balancer_ip: ${{ steps.outputs.outputs.load_balancer_ip }}
       managed_certificates: ${{ steps.outputs.outputs.managed_certificates }}
       public_hostnames: ${{ steps.outputs.outputs.public_hostnames }}
-    env:
-      TF_VAR_project_id: ${{ secrets.GCP_PROJECT_ID }}
-      TF_VAR_region: ${{ env.GCP_REGION }}
-      TF_VAR_image_tag: ${{ needs.gate.outputs.sha }}
-      TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
-      TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
-      TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
-      TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -300,10 +298,24 @@ jobs:
       - name: Terraform apply
         working-directory: ./terraform
         shell: bash
+        env:
+          TF_VAR_crystalshards_sendgrid_key: ${{ secrets.CRYSTALSHARDS_SENDGRID_KEY }}
+          TF_VAR_crystaldocs_sendgrid_key: ${{ secrets.CRYSTALDOCS_SENDGRID_KEY }}
+          TF_VAR_crystalgigs_sendgrid_key: ${{ secrets.CRYSTALGIGS_SENDGRID_KEY }}
+          TF_VAR_crystalbits_sendgrid_key: ${{ secrets.CRYSTALBITS_SENDGRID_KEY }}
+          TF_VAR_docs_launcher_sendgrid_key: ${{ secrets.DOCS_LAUNCHER_SENDGRID_KEY }}
+          TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
+          TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
+          IMAGE_TAG: ${{ needs.gate.outputs.sha }}
         run: |
           set -euo pipefail
           terraform init
-          terraform apply -auto-approve
+          terraform apply -auto-approve \
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="image_tag=${IMAGE_TAG}"
 
       - name: Read stack outputs
         id: outputs
@@ -348,10 +360,13 @@ jobs:
           emit_raw load_balancer_ip
 
   # ---------------------------------------------------------------------------
-  # Migrations run inside Cloud Run Jobs, on the same image and the same Cloud SQL
-  # socket as the service, never from this runner against a public database address.
-  # They run before any service is rolled, so a revision is never promoted against a
-  # schema it has not been migrated onto.
+  # Migrations run in Cloud Run Jobs, on the app's own image and over the Cloud SQL
+  # socket, never from this runner against a public database address. They run before
+  # any service is rolled, so a revision is never promoted onto a schema it has not
+  # been migrated to.
+  #
+  # The Job runs ./migrate, a dedicated entrypoint that requires only the database
+  # config, so the Job carries DATABASE_URL and no serving credentials.
   # ---------------------------------------------------------------------------
   migrate:
     name: Run database migrations
@@ -385,45 +400,55 @@ jobs:
 
             if ! job="$(jq -er --arg a "$app" '.[$a]' <<< "$MIGRATE_JOBS")"; then
               echo "No migrate job declared for '${app}' in the migrate_jobs output." >&2
-              failures=$((failures + 1))
-              echo "::endgroup::"
-              continue
+              failures=$((failures + 1)); echo "::endgroup::"; continue
             fi
 
-            # A deploy that silently skips migrations produces a service running against
-            # an unmigrated schema, which looks healthy until the first query.
-            if ! gcloud run jobs describe "$job" --region "$REGION" >/dev/null 2>&1; then
-              echo "Cloud Run Job '${job}' does not exist. Migrations for ${app} cannot run." >&2
-              failures=$((failures + 1))
-              echo "::endgroup::"
-              continue
+            # A deploy that skips migrations leaves a service running against an
+            # unmigrated schema, which looks healthy until the first query. Report the
+            # real error rather than reading every non-zero exit as "does not exist":
+            # a 403 or an API blip is not an absent job.
+            if ! describe_err="$(gcloud run jobs describe "$job" --region "$REGION" 2>&1 >/dev/null)"; then
+              echo "Cannot read Cloud Run Job '${job}'. Migrations for ${app} will not run." >&2
+              echo "${describe_err}" >&2
+              failures=$((failures + 1)); echo "::endgroup::"; continue
             fi
 
             image="${REGISTRY_URL}/${app}:${SHA}"
             if ! gcloud run jobs update "$job" --region "$REGION" --image "$image" --quiet; then
               echo "Failed to point ${job} at ${image}." >&2
-              failures=$((failures + 1))
-              echo "::endgroup::"
-              continue
+              failures=$((failures + 1)); echo "::endgroup::"; continue
             fi
+
+            # Bounds the window used to recover the execution name if execute does not
+            # print one. Backdated slightly to tolerate clock skew against the API.
+            window_start="$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%SZ)"
 
             execute_rc=0
-            gcloud run jobs execute "$job" --region "$REGION" --wait || execute_rc=$?
-
-            # Independently of the exit code, read back what the execution actually did.
-            # The two signals must agree before this app is called migrated.
-            execution="$(gcloud run jobs executions list \
-              --job "$job" --region "$REGION" --limit 1 \
-              --sort-by=~metadata.creationTimestamp \
-              --format='value(metadata.name)')"
+            execution="$(gcloud run jobs execute "$job" --region "$REGION" --wait \
+              --format='value(metadata.name)' 2>/tmp/execute.err)" || execute_rc=$?
 
             if [ -z "$execution" ]; then
-              echo "Executed ${job} but no execution is listed for it." >&2
-              failures=$((failures + 1))
-              echo "::endgroup::"
-              continue
+              # A failed execution can exit before printing its name. Recover it by
+              # creation window and refuse to guess if that window is ambiguous.
+              # Reading back "the newest execution" would happily report somebody
+              # else's run as this deploy's result.
+              matches="$(gcloud run jobs executions list \
+                --job "$job" --region "$REGION" \
+                --filter="metadata.creationTimestamp>=${window_start}" \
+                --format='value(metadata.name)')"
+              count="$(printf '%s' "$matches" | grep -c . || true)"
+
+              if [ "$count" != "1" ]; then
+                echo "Started ${job} but could not identify exactly one execution created since ${window_start}." >&2
+                echo "  matched ${count}: ${matches:-<none>}" >&2
+                cat /tmp/execute.err >&2 || true
+                failures=$((failures + 1)); echo "::endgroup::"; continue
+              fi
+              execution="$matches"
             fi
 
+            # Read back what that specific execution did. The exit code and the
+            # recorded counts must agree before this app is called migrated.
             status="$(gcloud run jobs executions describe "$execution" --region "$REGION" --format=json)"
             succeeded="$(jq -r '.status.succeededCount // 0' <<< "$status")"
             failed="$(jq -r '.status.failedCount // 0' <<< "$status")"
@@ -432,12 +457,11 @@ jobs:
               echo "Migration failed for ${app}." >&2
               echo "  job=${job} execution=${execution}" >&2
               echo "  exit=${execute_rc} succeeded=${succeeded} failed=${failed}" >&2
+              cat /tmp/execute.err >&2 || true
               gcloud logging read \
                 "resource.type=cloud_run_job AND resource.labels.job_name=${job}" \
                 --limit 50 --format='value(textPayload)' || true
-              failures=$((failures + 1))
-              echo "::endgroup::"
-              continue
+              failures=$((failures + 1)); echo "::endgroup::"; continue
             fi
 
             echo "${app}: migrated (execution ${execution}, succeeded=${succeeded})"
@@ -483,35 +507,72 @@ jobs:
 
           failures=0
 
-          # Reads back the service after the update and proves three things: the service
-          # is Ready, all traffic is on the revision that just became ready, and that
-          # revision runs the exact image built from this commit.
+          # gcloud's `run` surface has shipped two response shapes over its life, the
+          # v1 Knative representation and the v2 one, and which you get varies by
+          # resource and CLI version. Read both rather than betting on one: guessing
+          # wrong yields an empty string, and an empty string compared against an
+          # expected image fails every release with a message about the wrong thing.
+          #
+          # Tries each jq expression in turn and fails if none of them yields a value.
+          pick() {
+            local json="$1"; shift
+            local expr value
+            for expr in "$@"; do
+              value="$(jq -r "(${expr}) // empty" <<< "$json" 2>/dev/null)"
+              if [ -n "$value" ]; then
+                printf '%s' "$value"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # Proves three things after the update: the service is Ready, all traffic is
+          # on the revision that just became ready, and that revision runs the exact
+          # image built from this commit.
+          #
+          # Ready is a real health assertion here rather than a liveness guess: the
+          # services carry a startup probe on /api/health, so a revision only reaches
+          # Ready after the container booted and answered that endpoint with a 2xx.
           assert_serving() {
-            local service="$1" expected_image="$2" json ready latest traffic serving_image
+            local service="$1" expected_image="$2"
+            local json ready latest traffic_rev rev_json serving_image
 
             json="$(gcloud run services describe "$service" --region "$REGION" --format=json)" || return 1
 
-            ready="$(jq -r '.status.conditions[]? | select(.type == "Ready") | .status' <<< "$json")"
+            ready="$(pick "$json" \
+              '.status.conditions[]? | select(.type == "Ready") | .status' \
+              '.conditions[]? | select(.type == "Ready") | .status')" || ready=""
             if [ "$ready" != "True" ]; then
               echo "  ${service}: Ready=${ready:-<none>}" >&2
-              jq -r '.status.conditions[]? | "    \(.type)=\(.status) \(.reason // "") \(.message // "")"' <<< "$json" >&2
+              jq -r '(.status.conditions // .conditions // [])[] | "    \(.type)=\(.status) \(.reason // "") \(.message // "")"' <<< "$json" >&2
               return 1
             fi
 
-            latest="$(jq -r '.status.latestReadyRevisionName // empty' <<< "$json")"
-            if [ -z "$latest" ]; then
-              echo "  ${service}: no latestReadyRevisionName" >&2
+            # v2 returns a fully qualified revision path, v1 a bare name.
+            if ! latest="$(pick "$json" '.status.latestReadyRevisionName' '.latestReadyRevision')"; then
+              echo "  ${service}: no ready revision reported; top level keys: $(jq -r 'keys | join(", ")' <<< "$json")" >&2
+              return 1
+            fi
+            latest="${latest##*/}"
+
+            # Assert the revision carrying all the traffic IS the one that just became
+            # ready, rather than that some entry mentions it. A split rollout leaves no
+            # entry at 100 and fails here.
+            traffic_rev="$(jq -r '[(.status.traffic // .trafficStatuses // [])[] | select((.percent // 0) == 100)] | .[0] | ((.revisionName // .revision) // empty)' <<< "$json")"
+            traffic_rev="${traffic_rev##*/}"
+            if [ "$traffic_rev" != "$latest" ]; then
+              echo "  ${service}: 100% of traffic is on '${traffic_rev:-<none>}', expected the newly ready revision '${latest}'" >&2
+              jq -r '(.status.traffic // .trafficStatuses // [])[] | "    \((.revisionName // .revision)) \(.percent // 0)%"' <<< "$json" >&2
               return 1
             fi
 
-            traffic="$(jq -r --arg r "$latest" '[.status.traffic[]? | select(.revisionName == $r) | .percent] | add // 0' <<< "$json")"
-            if [ "$traffic" != "100" ]; then
-              echo "  ${service}: revision ${latest} is serving ${traffic}% of traffic, expected 100" >&2
+            rev_json="$(gcloud run revisions describe "$latest" --region "$REGION" --format=json)" || return 1
+            if ! serving_image="$(pick "$rev_json" '.spec.containers[0].image' '.containers[0].image')"; then
+              echo "  ${service}: could not read the image of revision ${latest}; top level keys: $(jq -r 'keys | join(", ")' <<< "$rev_json")" >&2
               return 1
             fi
 
-            serving_image="$(gcloud run revisions describe "$latest" --region "$REGION" \
-              --format='value(spec.containers[0].image)')" || return 1
             if [ "$serving_image" != "$expected_image" ]; then
               echo "  ${service}: revision ${latest} runs '${serving_image}', expected '${expected_image}'" >&2
               return 1
@@ -531,27 +592,21 @@ jobs:
             echo "::group::${service}"
             if ! gcloud run services update "$service" --region "$REGION" --image "$image" --quiet; then
               echo "  ${service}: update to ${image} failed" >&2
-              failures=$((failures + 1))
-              echo "::endgroup::"
-              return
+              failures=$((failures + 1)); echo "::endgroup::"; return
             fi
-            if ! assert_serving "$service" "$image"; then
-              failures=$((failures + 1))
-            fi
+            assert_serving "$service" "$image" || failures=$((failures + 1))
             echo "::endgroup::"
           }
 
           for app in crystalshards crystaldocs crystalgigs crystalbits; do
             if ! service="$(jq -er --arg a "$app" '.[$a]' <<< "$SERVICES")"; then
               echo "No Cloud Run service declared for '${app}' in the cloud_run_services output." >&2
-              failures=$((failures + 1))
-              continue
+              failures=$((failures + 1)); continue
             fi
             roll "$service" "${REGISTRY_URL}/${app}:${SHA}"
           done
 
-          # docs-launcher runs the crystalshards image under a second service name: the
-          # trusted half of a documentation build already lives in that app.
+          # docs-launcher runs the crystalshards image under a second service name.
           roll "$DOCS_LAUNCHER_SERVICE" "${REGISTRY_URL}/crystalshards:${SHA}"
 
           if [ "$failures" -ne 0 ]; then
@@ -575,8 +630,26 @@ jobs:
 
           # Read it back. `jobs update` reporting success is not the same as the job
           # template holding the image the next execution will actually run.
-          configured="$(gcloud run jobs describe "$DOCS_BUILD_JOB" --region "$REGION" \
-            --format='value(spec.template.spec.template.spec.containers[0].image)')"
+          #
+          # The container sits at a different depth in each shape gcloud's `run`
+          # surface returns, so try the known ones in order and then fall back to
+          # finding the containers array wherever it lives. Guessing wrong yields an
+          # empty string, and an empty string compared against an expected image fails
+          # every release with a message about the wrong thing.
+          job_json="$(gcloud run jobs describe "$DOCS_BUILD_JOB" --region "$REGION" --format=json)"
+          configured="$(jq -r '
+            (.spec.template.spec.template.spec.containers[0].image
+             // .spec.template.template.containers[0].image
+             // .template.template.containers[0].image
+             // ([.. | objects | select(has("containers")) | .containers[0].image?]
+                 | map(select(. != null)) | first)
+             // empty)' <<< "$job_json")"
+
+          if [ -z "$configured" ]; then
+            echo "Could not read the container image of Job ${DOCS_BUILD_JOB}." >&2
+            echo "Top level keys: $(jq -r 'keys | join(", ")' <<< "$job_json")" >&2
+            exit 1
+          fi
 
           if [ "$configured" != "$image" ]; then
             echo "Job ${DOCS_BUILD_JOB} is configured with '${configured}', expected '${image}'." >&2
@@ -595,18 +668,25 @@ jobs:
   # Smoke test the public hostnames.
   #
   # Google managed certificates stay PROVISIONING until DNS resolves to the load
-  # balancer, so on the very first deploy an HTTPS check cannot succeed for a reason
-  # that is not a broken deploy. Rather than weakening the check, this job reads live
-  # certificate state per host and asserts whatever is genuinely observable in that
-  # state. ACTIVE gets the full HTTPS assertion. PROVISIONING gets the two facts that
-  # must hold for the certificate to ever issue: public DNS points at the load balancer,
-  # and the load balancer answers for that host. Any other state is a failure.
+  # balancer, so on a first deploy an HTTPS check cannot succeed for a reason that is
+  # not a broken deploy. Rather than weakening the check, this reads live certificate
+  # state per host and asserts whatever is genuinely observable in that state:
   #
-  # Nothing is permanently relaxed: the branch is driven by live certificate state, so
-  # every deploy after the certificates issue gets the full check automatically. And the
-  # proof that the applications actually serve does not live here at all, it lives in the
-  # release job above, which only passes when each revision is Ready. Readiness means the
-  # Cloud Run startup probe got a 2xx from /api/health on that revision.
+  #   ACTIVE                              full HTTPS assertion, fatal on failure
+  #   PROVISIONING / PROVISIONING_FAILED  assert the conditions issuance needs: public
+  #                                       DNS resolves to the load balancer and to
+  #                                       nothing else, and the load balancer answers
+  #   anything else                       fatal
+  #
+  # PROVISIONING_FAILED is in the retryable group deliberately: Google reports it
+  # transiently on certificates that go on to issue normally. The terminal states are
+  # PROVISIONING_FAILED_PERMANENTLY and FAILED_NOT_VISIBLE.
+  #
+  # Nothing is permanently relaxed. The branch is chosen from live certificate state,
+  # so every deploy after the certificates issue gets the full check automatically.
+  # And the proof that the applications serve does not live here: it lives in the
+  # release job, which only passes when every revision is Ready, and Ready means the
+  # startup probe got a 2xx from /api/health on that revision.
   # ---------------------------------------------------------------------------
   smoke:
     name: Smoke test public hostnames
@@ -634,9 +714,9 @@ jobs:
           failures=0
           deferred=0
 
-          # Full HTTPS assertion against an apex host. --resolve pins the connection to
-          # the load balancer so this tests the deploy rather than DNS propagation to
-          # this particular runner, while still using the real hostname for SNI and Host.
+          # --resolve pins the connection to the load balancer, so this tests the
+          # deploy rather than DNS propagation to this particular runner, while still
+          # sending the real hostname for SNI and Host.
           check_apex_https() {
             local host="$1" out code body
             if ! out="$(curl --silent --show-error --max-time 20 \
@@ -667,7 +747,7 @@ jobs:
             echo "  ${host}: 200, status=ok, database=healthy"
           }
 
-          # www exists to redirect to the apex, so 200 would be the wrong answer here.
+          # www exists to redirect to the apex, so 200 would be the wrong answer.
           check_www_https() {
             local host="$1" apex="${1#www.}" out code location
             if ! out="$(curl --silent --show-error --max-time 20 \
@@ -697,22 +777,29 @@ jobs:
             echo "  ${host}: 301 -> ${location}"
           }
 
-          # Public DNS must already point at the load balancer. If it does not, the
-          # certificate can never validate, so this is a real defect rather than a wait.
+          # Managed certificate validation is DNS based. The record set must resolve to
+          # the load balancer AND to nothing else, because an extra address fails
+          # validation, so this asserts the exact set rather than mere membership.
           check_dns() {
-            local host="$1" resolved
-            resolved="$(dig +short A "$host" @8.8.8.8 | grep -E '^[0-9]+(\.[0-9]+){3}$' | tail -n1)"
-            if [ "$resolved" != "$LB_IP" ]; then
-              echo "  ${host}: resolves to '${resolved:-<nothing>}', expected ${LB_IP}" >&2
-              echo "  the managed certificate cannot validate until this record is correct" >&2
+            local host="$1" answers count
+            if ! answers="$(dig +short A "$host" @8.8.8.8 2>&1)"; then
+              echo "  ${host}: DNS lookup failed: ${answers}" >&2
+              return 1
+            fi
+            answers="$(printf '%s\n' "$answers" | grep -E '^[0-9]+(\.[0-9]+){3}$' || true)"
+            count="$(printf '%s' "$answers" | grep -c . || true)"
+
+            if [ "$count" != "1" ] || [ "$answers" != "$LB_IP" ]; then
+              echo "  ${host}: resolves to [${answers//$'\n'/, }], expected exactly ${LB_IP}" >&2
+              echo "  a managed certificate will not validate unless the name resolves to the load balancer and nothing else" >&2
               return 1
             fi
             echo "  ${host}: DNS -> ${LB_IP}"
           }
 
-          # The load balancer's port 80 frontend is a redirect-only URL map, so this
-          # proves the frontend exists and is routing this host, which is what the
-          # certificate validation itself depends on.
+          # Proves the load balancer frontend exists and routes this host. Not a
+          # certificate prerequisite: validation is DNS based and does not use port 80,
+          # so never diagnose a stuck certificate from this check.
           check_http_frontend() {
             local host="$1" out code location
             if ! out="$(curl --silent --show-error --max-time 20 \
@@ -756,17 +843,20 @@ jobs:
             # A hostname with no certificate is a routing hole, not something to skip.
             if ! cert="$(jq -er --arg h "$host" '.[$h]' <<< "$CERTS")"; then
               echo "  ${host}: no managed certificate declared for this hostname" >&2
-              failures=$((failures + 1))
-              echo "::endgroup::"
-              continue
+              failures=$((failures + 1)); echo "::endgroup::"; continue
             fi
 
+            # Read the status into a variable and require a recognised value. If a 403,
+            # an expired credential or an API blip could land us in the provisioning
+            # branch, then the weaker checks are exactly what would run on a bad day.
             if ! status="$(gcloud compute ssl-certificates describe "$cert" --global \
                              --format='value(managed.status)' 2>&1)"; then
               echo "  ${host}: could not read certificate '${cert}': ${status}" >&2
-              failures=$((failures + 1))
-              echo "::endgroup::"
-              continue
+              failures=$((failures + 1)); echo "::endgroup::"; continue
+            fi
+            if [ -z "$status" ]; then
+              echo "  ${host}: certificate '${cert}' reported an empty status" >&2
+              failures=$((failures + 1)); echo "::endgroup::"; continue
             fi
 
             case "$status" in
@@ -777,8 +867,8 @@ jobs:
                 esac
                 ;;
 
-              PROVISIONING)
-                echo "  ${host}: certificate ${cert} is PROVISIONING; HTTPS cannot succeed yet."
+              PROVISIONING|PROVISIONING_FAILED)
+                echo "  ${host}: certificate ${cert} is ${status}; HTTPS cannot succeed yet."
                 echo "  Asserting the conditions the certificate needs in order to issue."
                 host_failed=0
                 check_dns "$host" || host_failed=1
@@ -790,11 +880,16 @@ jobs:
                 fi
                 ;;
 
-              *)
-                echo "  ${host}: certificate ${cert} is in state '${status}'." >&2
-                echo "  Only ACTIVE and PROVISIONING are acceptable." >&2
+              PROVISIONING_FAILED_PERMANENTLY|FAILED_NOT_VISIBLE)
+                echo "  ${host}: certificate ${cert} is ${status}, which is terminal." >&2
+                echo "  Check that ${host} resolves to ${LB_IP} and to nothing else, and that the certificate is attached to the target HTTPS proxy." >&2
                 gcloud compute ssl-certificates describe "$cert" --global \
                   --format='yaml(name,managed)' >&2 || true
+                failures=$((failures + 1))
+                ;;
+
+              *)
+                echo "  ${host}: certificate ${cert} reported an unrecognised status '${status}'." >&2
                 failures=$((failures + 1))
                 ;;
             esac
@@ -812,15 +907,15 @@ jobs:
             {
               echo "### Smoke test"
               echo
-              echo "${deferred} of ${host_count} hostnames still have a certificate in PROVISIONING."
-              echo "For those, DNS resolves to the load balancer and the load balancer answers,"
-              echo "which are the conditions the certificate needs in order to issue."
+              echo "${deferred} of ${host_count} hostnames still have a certificate awaiting issuance."
+              echo "For those, public DNS resolves to the load balancer and to nothing else, and the"
+              echo "load balancer answers for the host, which are the conditions issuance needs."
               echo
-              echo "The applications themselves were verified in the release job: every revision"
-              echo "is Ready, which means the Cloud Run startup probe got a 2xx from /api/health."
+              echo "The applications themselves were verified in the release job: every revision is"
+              echo "Ready, which means the Cloud Run startup probe got a 2xx from /api/health."
               echo
-              echo "Re-run this workflow once the certificates report ACTIVE to get the full"
-              echo "HTTPS assertion on those hostnames."
+              echo "Re-run this workflow once the certificates report ACTIVE to get the full HTTPS"
+              echo "assertion on those hostnames."
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 

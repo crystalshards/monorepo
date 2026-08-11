@@ -151,34 +151,43 @@ locals {
     }
   }
 
-  # Schema migration Jobs, derived from the service table rather than restated,
-  # so a service that gains a boot time variable does not leave its migration
-  # Job crashing on the next deploy.
+  # Schema migration Jobs.
   #
-  # Two deliberate rewrites:
+  # Two variables. That is the whole environment, and the smallness is the point
+  # rather than an accident.
   #
-  #   PORT. Cloud Run injects PORT into services and not into Jobs, and
-  #   config/server.cr reads ENV["PORT"] unconditionally while tasks.cr loads
-  #   the whole app. Without this the migration dies on a KeyError before it
-  #   opens a connection.
+  # This deliberately does NOT derive from local.app_config. An earlier version
+  # did, because the migration ran `./lucky db.migrate`, and tasks.cr requires
+  # src/app, which requires config/**, so a migration loaded the entire serving
+  # configuration surface and inherited every one of its boot time demands. That
+  # produced a treadmill: PORT, because Cloud Run injects it into services and
+  # not into Jobs, then SECRET_KEY_BASE, then SEND_GRID_KEY, then
+  # PAYMENTS_DISABLED for config/payments.cr, then JOB_ADS_URL for
+  # config/job_ads.cr. Each was found by a Job dying rather than by anyone
+  # reading, and the supply was not running out.
   #
-  #   The paired database URL. crystalshards' config demands DOCS_DATABASE_URL
-  #   and crystaldocs' demands REGISTRY_DATABASE_URL at boot, but a migration
-  #   Job must not be able to reach another application's database. Both are
-  #   therefore pointed at the Job's OWN database. Migrations run against
-  #   AppDatabase, so nothing uses the second handle. If you ever write a
-  #   migration that targets DocsDatabase or the registry from here, it will
-  #   write into the wrong database: split it into that app's own migration
-  #   Job instead of widening this.
+  # The apps now ship a second binary, ./migrate, built from src/migrate.cr,
+  # which requires only shards, app_database, config/database and the
+  # migrations. config/server.cr, config/email.cr, config/payments.cr and
+  # config/job_ads.cr never load, so none of their variables are needed and none
+  # are set. Verified on the real image against a throwaway Postgres with
+  # `env -i` and nothing in the environment but these two.
+  #
+  # Keeping this table independent of the service table is what stops the
+  # treadmill restarting: a service that gains a boot time variable tomorrow does
+  # not silently turn into a migration that needs one.
+  #
+  # LUCKY_ENV is required because config/database.cr branches on
+  # LuckyEnv.production? to decide whether to read DATABASE_URL at all. Without
+  # it the Job assembles a localhost connection from development defaults and
+  # migrates nothing, successfully.
   migration_config = {
-    for app, cfg in local.app_config : app => {
-      env = merge(
-        { for key, value in cfg.env : key => value if !contains(local.enqueue_only_env_keys, key) },
-        { PORT = "8080" }
-      )
+    for app in local.apps : app => {
+      env = {
+        LUCKY_ENV = "production"
+      }
       secret_env = {
-        for env_name, secret_id in cfg.secret_env :
-        env_name => contains(["DOCS_DATABASE_URL", "REGISTRY_DATABASE_URL"], env_name) ? var.database_url_secret_ids[app] : secret_id
+        DATABASE_URL = var.database_url_secret_ids[app]
       }
     }
   }

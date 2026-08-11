@@ -19,10 +19,5 @@ output "dns_zones" {
 
 output "dns_name_servers" {
   description = "DNS name servers for each domain"
-  value = {
-    "crystalshards.org" = module.dns.crystalshards_org_name_servers
-    "crystaldocs.org"   = module.dns.crystaldocs_org_name_servers
-    "crystalgigs.com"   = module.dns.crystalgigs_com_name_servers
-    "crystalbits.org"   = module.dns.crystalbits_org_name_servers
-  }
+  value       = { for slug, site in local.sites : site.apex => module.dns.name_servers[slug] }
 }

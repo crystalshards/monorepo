@@ -6,37 +6,52 @@ This guide explains how to configure the required secrets and environment variab
 
 ### Google Cloud Platform Integration
 
+#### `GCP_SA_KEY`
+
+The service account JSON key CI authenticates with. `google-github-actions/auth`
+reads it as `credentials_json`, so the secret holds the contents of the key file.
+
 #### `GCP_PROJECT_ID`
-Your Google Cloud Project ID, the project the Cloud Run services are deployed into.
+
+The Google Cloud project the Cloud Run services are deployed into. CI passes it to
+Terraform as `TF_VAR_project_id`.
 
 **Example**: `crystalshards-org`
 
-#### GCP deployment credential
+#### Application secrets
 
-The deploy workflow authenticates to Google Cloud as a dedicated CI identity. The
-secret names, and whether that credential is a service account key or Workload
-Identity Federation, are defined by the deploy workflow. Configure the repository
-secrets that workflow expects.
+One SendGrid key per service, plus the CrystalGigs Stripe pair:
 
-**Roles the CI identity needs**:
-- `Artifact Registry Writer` to push container images
-- `Cloud Run Admin` to deploy services and jobs
-- `Service Account User` to act as the runtime service accounts
+- `CRYSTALSHARDS_SENDGRID_KEY`
+- `CRYSTALDOCS_SENDGRID_KEY`
+- `CRYSTALGIGS_SENDGRID_KEY`
+- `CRYSTALBITS_SENDGRID_KEY`
+- `DOCS_LAUNCHER_SENDGRID_KEY`
+- `CRYSTALGIGS_STRIPE_SECRET_KEY`
+- `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY`
 
-**Required Permissions**:
+Those nine are the complete set. The pipeline reads no other repository secret.
+
+#### Roles for the deploy service account
+
+The same identity deploys the services and runs Terraform, so it needs permission
+over everything Terraform manages, not only Cloud Run and Artifact Registry:
+
 ```json
 {
   "roles": [
-    "roles/artifactregistry.writer",
     "roles/run.admin",
-    "roles/iam.serviceAccountUser"
+    "roles/artifactregistry.writer",
+    "roles/cloudsql.client",
+    "roles/compute.loadBalancerAdmin",
+    "roles/dns.admin",
+    "roles/secretmanager.admin",
+    "roles/iam.serviceAccountUser",
+    "roles/storage.admin",
+    "roles/serviceusage.serviceUsageAdmin"
   ]
 }
 ```
-
-Terraform runs in CI under the same identity, so it additionally needs permission
-over every resource Terraform manages. Grant those roles to match what is actually
-declared under `terraform/` rather than copying a fixed list from this document.
 
 ## GitHub Environments
 
@@ -75,26 +90,43 @@ gcloud iam service-accounts create crystalshards-ci \
 PROJECT_ID="crystalshards-org"
 SA_EMAIL="crystalshards-ci@${PROJECT_ID}.iam.gserviceaccount.com"
 
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$SA_EMAIL" \
-    --role="roles/artifactregistry.writer"
+for ROLE in \
+    roles/run.admin \
+    roles/artifactregistry.writer \
+    roles/cloudsql.client \
+    roles/compute.loadBalancerAdmin \
+    roles/dns.admin \
+    roles/secretmanager.admin \
+    roles/iam.serviceAccountUser \
+    roles/storage.admin \
+    roles/serviceusage.serviceUsageAdmin; do
+  gcloud projects add-iam-policy-binding $PROJECT_ID \
+      --member="serviceAccount:$SA_EMAIL" \
+      --role="$ROLE"
+done
 
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$SA_EMAIL" \
-    --role="roles/run.admin"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$SA_EMAIL" \
-    --role="roles/iam.serviceAccountUser"
+# Create the JSON key that the GCP_SA_KEY secret holds
+gcloud iam service-accounts keys create crystalshards-ci-key.json \
+    --iam-account=$SA_EMAIL
 ```
 
-How this identity is presented to GitHub Actions depends on the authentication
-mechanism the deploy workflow uses. Configure the repository secrets it expects.
+`google-github-actions/auth` accepts the raw JSON, so base64 encoding is optional.
+Minify the key to a single line before pasting it into `GCP_SA_KEY`. GitHub masks a
+secret line by line, and an unminified key makes it sanitize ordinary braces and
+brackets in log output:
+
+```bash
+tr -d '\n' < crystalshards-ci-key.json
+```
+
+Delete the local key file once the secret is set.
 
 ### 3. Configure Artifact Registry
 
 Images live in the `docker-images` repository in `us-central1`. The full image path
-is `us-central1-docker.pkg.dev/crystalshards-org/docker-images/<app>:<sha>`.
+is `us-central1-docker.pkg.dev/<project>/docker-images/<image>:<sha>`, where the tag
+is the full 40 character commit SHA. No `latest` tag is pushed or referenced, so
+nothing can resolve to a tag the pipeline did not produce.
 
 ```bash
 # Create the repository

@@ -38,15 +38,15 @@ Your primary responsibilities:
 **📝 Post-Event Review (PER) Creation - CRITICAL FIRST STEP:**
 
 When responding to ANY production outage or incident, you MUST:
-1. **Immediately create a PER document** using template at `.claude/templates/post-event-review.md`
-2. **Save in `.agent/post-event-reviews/` directory** with format: `YYYY-MM-DD-brief-description-outage.md`
+1. **Immediately create a PER document**, following the shape of the reviews already in `.agent/post-event-reviews/`
+2. **Save it in `.agent/post-event-reviews/`** named `YYYY-MM-DD-brief-description.md`
 3. **Use PER as your investigation framework** - continuously update it throughout the incident
 4. **Document ALL findings in real-time** including:
    - Accurate timeline of events (update timestamps as you get more info)
    - Root cause analysis findings
    - User and business impact assessment
    - Technical configuration changes needed
-   - Action items with owners and due dates
+   - Action items with owners
    - Prevention measures (immediate, short-term, long-term)
 5. **Keep PER updated** as your primary working document during incident response
 
@@ -98,11 +98,12 @@ When responding to ANY production outage or incident, you MUST:
 - Use as living document throughout investigation and resolution
 - Include accurate timeline (correct duration, not estimates)
 - Document both what went well and what didn't
-- Define clear action items with owners and deadlines
+- Define clear action items with owners
 - Focus on blameless root cause analysis
 - Include technical details for future reference
 - Link to relevant commits, Cloud Logging queries, GitHub issues
 - Save in `.agent/post-event-reviews/` directory for organizational learning
+- Follow the heading structure the existing reviews share: Executive Summary, Impact, Timeline, Root Cause Analysis, What Went Well, What Didn't Go Well, Action Items, Lessons Learned
 
 **Communication Protocol:**
 

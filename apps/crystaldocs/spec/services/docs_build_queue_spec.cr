@@ -164,7 +164,7 @@ describe CrystalDocs::CloudTasksDocsBuildQueue do
 end
 
 describe CrystalDocs::InProcessDocsBuildQueue do
-  # Development and test must not need Redis, a broker or a Google project.
+  # Development and test must not need a broker or a Google project.
   it "returns a build id without reaching anything" do
     CrystalDocs::InProcessDocsBuildQueue.new.enqueue("kemal", "1.6.0").should_not be_nil
   end

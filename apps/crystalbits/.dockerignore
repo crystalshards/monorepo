@@ -7,12 +7,10 @@ node_modules/
 tmp/
 .shards/
 
-# Not needed to build the server or the task runner.
-#
-# spec/ is deliberately NOT excluded: tasks.cr requires tasks/**, and
-# tasks/db/seed/required_data.cr requires ../../../spec/support/factories/**, so the
-# Lucky task runner does not compile without the spec support tree. It stays in the
-# builder stage only and never reaches the runtime image.
+# Neither the server (src/<app>.cr) nor the migrator (src/migrate.cr) reaches these.
+spec/
+tasks.cr
+tasks/
 .git/
 .gitignore
 docker/

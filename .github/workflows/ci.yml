@@ -44,9 +44,10 @@ jobs:
 
       # CrystalDocs reads documentation from object storage, and the spec that
       # guards against ever serving shard-authored HTML again has to plant a
-      # real object to prove anything. The MINIO_* env below already pointed
-      # here; only the server was missing.
-      - name: Start MinIO
+      # real object to prove anything. This is the development backend of the
+      # apps' object store interface; the apps read backend-neutral STORAGE_*
+      # below and never name a backend themselves.
+      - name: Start object storage
         run: |
           docker run -d --name minio \
             -p 9000:9000 \
@@ -55,12 +56,12 @@ jobs:
             minio/minio:latest server /data
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
-              echo "MinIO is up"
+              echo "Object storage is up"
               exit 0
             fi
             sleep 2
           done
-          echo "MinIO did not become healthy"
+          echo "Object storage did not become healthy"
           docker logs minio || true
           exit 1
 
@@ -86,10 +87,11 @@ jobs:
         working-directory: ./apps/${{ matrix.app }}
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ matrix.app }}_test
-          MINIO_ENDPOINT: http://localhost:9000
-          MINIO_ACCESS_KEY: minioadmin
-          MINIO_SECRET_KEY: minioadmin
-          MINIO_BUCKET: test-bucket
+          STORAGE_ENDPOINT: http://localhost:9000
+          STORAGE_ACCESS_KEY: minioadmin
+          STORAGE_SECRET_KEY: minioadmin
+          DOCS_BUCKET: crystaldocs-test
+          PACKAGES_BUCKET: packages-test
         run: |
           echo "Running specs for ${{ matrix.app }}..."
           crystal spec

@@ -17,21 +17,23 @@ RUN cd lib/avram && patch -p1 < /tmp/avram-nilable-fix.patch
 # Copy source code
 COPY . .
 
-# Build the server and the Lucky task runner.
+# Build the server and the migration entrypoint.
 #
-# The task runner is a second binary and it is not optional: the crystalbits-migrate
-# Cloud Run Job executes `./lucky db.migrate`, and the runtime stage below contains no
-# Crystal toolchain and no lucky CLI. tasks.cr requires db/migrations/** at compile
-# time, so the migrations are linked into this binary rather than read from disk.
+# The migrator is a second binary and it is not optional: the crystalbits-migrate Cloud Run
+# Job runs `./migrate`, and this runtime stage carries no Crystal toolchain and no
+# lucky CLI. src/migrate.cr requires db/migrations/** at compile time, so the
+# migrations are linked into the binary rather than read from disk, and it requires
+# only the database config, so the Job needs only DATABASE_URL.
 #
-# It is named `lucky`, not `tasks`, because `-o tasks` collides with the app's own
-# tasks/ source directory: the COPY below then ships that directory in place of a
-# binary and the Job dies at exec with "is a directory".
+# Deliberately not tasks.cr: that loads the entire app, every config/ file runs at
+# load time, and each one raises without its own production variable. It also cannot
+# be named `-o tasks`, which silently collides with the app's own tasks/ directory
+# and ships a directory where a binary should be.
 #
 # Built without --release for much faster builds. Enable --release once the
 # Cloud Run cold start profile justifies the build time.
 RUN crystal build src/crystalbits.cr --no-debug -o crystalbits && \
-    crystal build tasks.cr --no-debug -o lucky
+    crystal build src/migrate.cr --no-debug -o migrate
 
 # Runtime stage
 #
@@ -63,7 +65,7 @@ RUN addgroup -g 1000 appuser && \
 
 # Copy the compiled binaries with proper ownership
 COPY --from=builder --chown=1000:1000 /app/crystalbits ./crystalbits
-COPY --from=builder --chown=1000:1000 /app/lucky ./lucky
+COPY --from=builder --chown=1000:1000 /app/migrate ./migrate
 
 # Static assets. Lucky serves these from the relative path ./public at runtime
 # (see Lucky::StaticFileHandler in src/app_server.cr), so omitting them makes every
@@ -73,9 +75,9 @@ COPY --from=builder --chown=1000:1000 /app/public ./public
 # Make both executable and prove each is a file rather than a directory. Shipping
 # tasks/ in place of the task runner was a real defect here and it stayed invisible
 # until the container tried to exec it.
-RUN chmod +x ./crystalbits ./lucky && \
+RUN chmod +x ./crystalbits ./migrate && \
     test -x ./crystalbits && test ! -d ./crystalbits && \
-    test -x ./lucky && test ! -d ./lucky
+    test -x ./migrate && test ! -d ./migrate
 
 # Switch to non-root user
 USER 1000

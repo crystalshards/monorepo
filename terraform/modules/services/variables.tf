@@ -27,9 +27,17 @@ variable "image_tag" {
 }
 
 variable "docs_launcher_image_name" {
-  description = "Image name within the repository for the docs-launcher service"
+  description = <<-DESC
+    Image name within the repository for the docs-launcher service.
+
+    It is "crystalshards", not "docs-launcher". There is no apps/docs-launcher
+    and CI builds no such image: the launcher is the registry image deployed a
+    second time under a second service name, because the trusted half of a
+    documentation build already lives in that codebase. Defaulting this to
+    "docs-launcher" would fail the first apply on an image that does not exist.
+  DESC
   type        = string
-  default     = "docs-launcher"
+  default     = "crystalshards"
 }
 
 variable "docs_build_image_name" {
@@ -60,11 +68,6 @@ variable "packages_bucket_name" {
 
 variable "docs_build_queue_name" {
   description = "Short name of the Cloud Tasks queue documentation builds are enqueued on"
-  type        = string
-}
-
-variable "docs_build_queue_id" {
-  description = "Fully qualified queue ID, for the enqueuer IAM binding"
   type        = string
 }
 
@@ -99,28 +102,39 @@ variable "docs_build_timeout_seconds" {
 variable "job_ads_url" {
   description = <<-DESC
     Where the job ad strip reads promotable jobs from. CrystalShards, CrystalDocs
-    and CrystalBits all refuse to boot in production without it, by design, so it
-    is neither optional nor defaultable inside the app.
+    and CrystalBits all refuse to boot in production without it, by design.
+
+    No default, because any default would hardcode the CrystalGigs hostname a
+    third time. The caller builds it from app_domains["crystalgigs"], so the
+    strip cannot end up pointed at a host the edge does not serve.
   DESC
   type        = string
-  default     = "https://crystalgigs.com/api/ads"
 }
 
 variable "app_domains" {
-  description = "Map of app slug to the public origin it serves on. Lucky calls ENV.fetch(\"APP_DOMAIN\") at boot in production and raises without it"
+  description = <<-DESC
+    Map of app slug to the public origin it serves on. Lucky calls
+    ENV.fetch("APP_DOMAIN") at boot in production and raises without it.
+
+    Required, with no default, on purpose. These same four hostnames drive the
+    managed certificates, the load balancer host rules and the DNS records, and
+    a default here would be a second copy of them that nothing compares against
+    the first. The failure that prevents is the quiet one: terraform validates,
+    the plan is clean, the services boot, and the only symptom is an app
+    generating absolute URLs and callbacks for a hostname the load balancer does
+    not serve. The single source is local.sites in terraform/locals.sites.tf.
+  DESC
   type        = map(string)
-  default = {
-    crystalshards = "https://crystalshards.org"
-    crystaldocs   = "https://crystaldocs.org"
-    crystalgigs   = "https://crystalgigs.com"
-    crystalbits   = "https://crystalbits.org"
-  }
 }
 
 variable "docs_launcher_app_domain" {
-  description = "APP_DOMAIN for docs-launcher. It serves no public origin of its own, and the value only feeds Lucky's route helper, so it points at the registry it belongs to"
+  description = <<-DESC
+    APP_DOMAIN for docs-launcher. It serves no public origin of its own and the
+    value only feeds Lucky's route helper, so the caller passes the registry
+    origin it belongs to. No default, for the same reason as app_domains: a
+    hostname written here is a copy nothing reconciles.
+  DESC
   type        = string
-  default     = "https://crystalshards.org"
 }
 
 variable "request_concurrency" {

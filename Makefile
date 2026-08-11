@@ -5,14 +5,23 @@
 #   crystaldocs    http://localhost:3001   documentation hosting
 #   crystalgigs    http://localhost:3002   job board
 #   crystalbits    http://localhost:3003   blog and newsletter
+#
+# Local development needs no Google Cloud credentials. Object storage is the
+# container docker compose runs; production is Google Cloud Storage, selected
+# by LUCKY_ENV=production and never reachable from here.
 
 .PHONY: help setup install-deps build start stop services migrate seed reset test lint format dev clean logs db-console docs.real
 
 APPS       := crystalshards crystaldocs crystalgigs crystalbits
 DB_USER    ?= postgres
-DB_PASSWORD ?= postgres
+DB_PASSWORD ?= password
 DB_HOST    ?= localhost
 DB_PORT    ?= 5432
+
+# psql reads PGPASSWORD, not DB_PASSWORD, and the raw psql calls in
+# `services` pass no password at all, so a clean shell fails with
+# "no password supplied".
+export PGPASSWORD ?= $(DB_PASSWORD)
 
 # Crystal's stdlib links against OpenSSL 3. A machine whose global
 # PKG_CONFIG_PATH points at openssl@1.1 fails to link with missing EVP_*
@@ -35,22 +44,28 @@ define app_test_db_url
 postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(1)_test
 endef
 
-# Object storage. DOCS_BUCKET is shared: CrystalShards builds documentation
-# into it and CrystalDocs serves it back out, so both apps must agree.
-MINIO_ENDPOINT   ?= http://localhost:9000
-MINIO_ACCESS_KEY ?= minioadmin
-MINIO_SECRET_KEY ?= minioadmin
-DOCS_BUCKET      ?= crystal-docs
-PACKAGES_BUCKET  ?= packages
+# Object storage. The variable names are backend-neutral on purpose: the apps
+# talk to one object store interface, backed by Google Cloud Storage in
+# production and by the local container here. Nothing an app reads names a
+# backend, so a developer never needs cloud credentials.
+#
+# DOCS_BUCKET is shared: CrystalShards builds documentation into it and
+# CrystalDocs serves it back out, so both apps must agree. In production these
+# have no defaults and a missing one stops the service at boot.
+STORAGE_ENDPOINT   ?= http://localhost:9000
+STORAGE_ACCESS_KEY ?= minioadmin
+STORAGE_SECRET_KEY ?= minioadmin
+DOCS_BUCKET        ?= crystal-docs
+PACKAGES_BUCKET    ?= packages
 
-MINIO_ENV = MINIO_ENDPOINT=$(MINIO_ENDPOINT) MINIO_ACCESS_KEY=$(MINIO_ACCESS_KEY) \
-            MINIO_SECRET_KEY=$(MINIO_SECRET_KEY) MINIO_DOCS_BUCKET=$(DOCS_BUCKET) \
-            MINIO_PACKAGES_BUCKET=$(PACKAGES_BUCKET)
+STORAGE_ENV = STORAGE_ENDPOINT=$(STORAGE_ENDPOINT) STORAGE_ACCESS_KEY=$(STORAGE_ACCESS_KEY) \
+              STORAGE_SECRET_KEY=$(STORAGE_SECRET_KEY) DOCS_BUCKET=$(DOCS_BUCKET) \
+              PACKAGES_BUCKET=$(PACKAGES_BUCKET)
 
 # Documentation builds compile third-party shard code, and Crystal runs macros
 # while compiling, so `crystal docs` on a published shard executes that
-# author's commands. The worker refuses to build without a sandbox; locally
-# that sandbox is Docker, which gives the compile no network and none of this
+# author's commands. A build refuses to run without a sandbox; locally that
+# sandbox is Docker, which gives the compile no network and none of this
 # machine's environment.
 DOCS_SANDBOX       ?= docker
 DOCS_SANDBOX_IMAGE ?= crystallang/crystal:1.21.0-alpine
@@ -74,9 +89,9 @@ setup: services install-deps migrate seed ## Full local setup: services, deps, m
 	@echo ""
 	@echo "Setup complete. Run 'make dev' to start all four apps."
 
-services: ## Start Redis and MinIO in Docker, and verify Postgres is reachable
+services: ## Start object storage and mail capture in Docker, and verify Postgres is reachable
 	@echo "Starting supporting services..."
-	docker compose up -d redis minio mailhog
+	docker compose up -d minio mailhog
 	@echo "Checking Postgres at $(DB_HOST):$(DB_PORT)..."
 	@pg_isready -h $(DB_HOST) -p $(DB_PORT) >/dev/null 2>&1 || \
 		(echo "Postgres is not reachable at $(DB_HOST):$(DB_PORT). Start it, then re-run." && exit 1)
@@ -91,12 +106,12 @@ services: ## Start Redis and MinIO in Docker, and verify Postgres is reachable
 			"CREATE DATABASE $${app}_test OWNER $(DB_USER)"; \
 	done
 	@echo "Databases ready."
-	@echo "Ensuring MinIO buckets ($(DOCS_BUCKET), $(PACKAGES_BUCKET))..."
+	@echo "Ensuring buckets ($(DOCS_BUCKET), $(PACKAGES_BUCKET))..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		curl -sf $(MINIO_ENDPOINT)/minio/health/live >/dev/null 2>&1 && break || sleep 2; \
+		curl -sf $(STORAGE_ENDPOINT)/minio/health/live >/dev/null 2>&1 && break || sleep 2; \
 	done
 	@docker run --rm --network host --entrypoint sh minio/mc:latest -c \
-		"mc alias set local $(MINIO_ENDPOINT) $(MINIO_ACCESS_KEY) $(MINIO_SECRET_KEY) >/dev/null && \
+		"mc alias set local $(STORAGE_ENDPOINT) $(STORAGE_ACCESS_KEY) $(STORAGE_SECRET_KEY) >/dev/null && \
 		 mc mb --ignore-existing local/$(DOCS_BUCKET) local/$(PACKAGES_BUCKET) >/dev/null" \
 		|| echo "  WARNING: could not create buckets; documentation pages will report storage unavailable."
 	@echo "Buckets ready."
@@ -107,13 +122,11 @@ install-deps: ## Install Crystal dependencies for all apps
 		(cd apps/$$app && shards install) || exit 1; \
 	done
 
-build: ## Build all applications and the background worker
+build: ## Build all four applications
 	@for app in $(APPS); do \
 		echo "Building $$app..."; \
 		(cd apps/$$app && crystal build src/$$app.cr -o bin/$$app) || exit 1; \
 	done
-	@echo "Building crystalshards worker..."
-	@cd apps/crystalshards && crystal build src/worker.cr -o bin/worker
 
 migrate: ## Run database migrations for all apps
 	@for app in $(APPS); do \
@@ -126,12 +139,12 @@ seed: ## Load sample development data for all apps
 	@for app in $(APPS); do \
 		echo "Seeding $$app..."; \
 		(cd apps/$$app && DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_development" \
-			$(MINIO_ENV) \
+			$(STORAGE_ENV) \
 			crystal run tasks.cr -- db.seed.sample_data) || exit 1; \
 	done
 
-docs.real: ## Generate real shard docs in the sandbox and upload to MinIO (scripts/build_real_docs.sh)
-	@$(MINIO_ENV) ./scripts/build_real_docs.sh
+docs.real: ## Generate real shard docs in the sandbox and upload to object storage (scripts/build_real_docs.sh)
+	@$(STORAGE_ENV) ./scripts/build_real_docs.sh
 	@echo ""
 	@echo "Re-run 'make seed' to sync crystaldocs rows with what is now in storage."
 
@@ -146,8 +159,7 @@ test: ## Run the spec suite for all apps
 	@for app in $(APPS); do \
 		echo "Running specs for $$app..."; \
 		(cd apps/$$app && DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_test" \
-			MINIO_ENDPOINT=http://localhost:9000 MINIO_ACCESS_KEY=minioadmin \
-			MINIO_SECRET_KEY=minioadmin MINIO_BUCKET=test-bucket \
+			$(STORAGE_ENV) \
 			crystal spec) || exit 1; \
 	done
 
@@ -162,30 +174,26 @@ format: ## Format all Crystal source
 		crystal tool format apps/$$app/src apps/$$app/spec; \
 	done
 
-dev: ## Run all four apps and the background worker (Ctrl-C stops everything)
+dev: ## Run all four apps (Ctrl-C stops everything)
+	@for app in $(APPS); do \
+		[ -x apps/$$app/bin/$$app ] || { $(MAKE) build; break; }; \
+	done
 	@echo "crystalshards  http://localhost:3000"
 	@echo "crystaldocs    http://localhost:3001"
 	@echo "crystalgigs    http://localhost:3002"
 	@echo "crystalbits    http://localhost:3003"
-	@echo "worker         JoobQ queues: index, docs, deps"
 	@echo ""
 	@trap 'kill 0' EXIT INT TERM; \
 	port=3000; \
 	for app in $(APPS); do \
 		(cd apps/$$app && DEV_PORT=$$port \
 			DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_development" \
-			REDIS_URL=redis://localhost:6379/0 \
-			$(MINIO_ENV) \
+			$(STORAGE_ENV) \
+			$(SANDBOX_ENV) \
 			$(JOB_ADS_ENV) \
 			./bin/$$app 2>&1 | sed "s/^/[$$app] /") & \
 		port=$$((port + 1)); \
 	done; \
-	(cd apps/crystalshards && \
-		DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/crystalshards_development" \
-		REDIS_URL=redis://localhost:6379/0 \
-		$(MINIO_ENV) \
-		$(SANDBOX_ENV) \
-		./bin/worker 2>&1 | sed "s/^/[worker] /") & \
 	wait
 
 stop: ## Stop supporting Docker services

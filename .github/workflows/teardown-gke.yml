@@ -16,6 +16,13 @@ name: Teardown GKE
 # prints a plan, and asserts on the plan's destroy set. It does not apply the
 # plan. The remaining GCP-level teardown goes through review with the printed
 # plan in hand.
+#
+# DELETE THIS FILE once the teardown has run and the GKE estate is gone. It is
+# scaffolding for a migration, not a standing capability, and it is the last
+# thing in the repo that names kubernetes_, helm_ or kubectl_ resource types.
+# It names them because a destroy-set assertion you cannot read is not an
+# assertion, so the types stay spelled out here and the repo-wide criterion is
+# satisfied by deleting the file rather than by obscuring the guard.
 
 on:
   workflow_dispatch:
@@ -144,6 +151,7 @@ jobs:
             classify_addresses.py <state-list> --write <out>   enumerate + write
             classify_addresses.py <state-list> --expect-empty  fail if any match
           """
+          import os
           import sys
 
           IN_CLUSTER_PREFIXES = ("kubernetes_", "helm_", "kubectl_")
@@ -184,6 +192,18 @@ jobs:
 
 
           def classify(path):
+              """The cluster is matched by EXACT verified address, not by type.
+              Type-matching would also sweep a `data.google_container_cluster`
+              or a second cluster address, and the contract is this one cluster
+              plus the resources that lived inside it. The kubernetes_/helm_/
+              kubectl_ prefixes DO match data addresses on purpose: those data
+              sources are equally unreachable once the cluster is gone."""
+              cluster_address = os.environ.get("CLUSTER_STATE_ADDRESS", "").strip()
+              if not cluster_address:
+                  raise SystemExit(
+                      "FAILED: CLUSTER_STATE_ADDRESS is not set. The verified cluster "
+                      "address must be carried in from the state identity check; "
+                      "refusing to fall back to matching on type.")
               with open(path) as fh:
                   addresses = [line.strip() for line in fh if line.strip()]
               remove, keep = [], []
@@ -191,8 +211,8 @@ jobs:
                   rtype = resource_type(addr)
                   if rtype.startswith(IN_CLUSTER_PREFIXES):
                       remove.append((addr, rtype, "lived inside the deleted cluster"))
-                  elif rtype == "google_container_cluster":
-                      remove.append((addr, rtype, "the deleted cluster itself"))
+                  elif addr == cluster_address:
+                      remove.append((addr, rtype, "the verified deleted cluster itself"))
                   else:
                       keep.append((addr, rtype))
               return addresses, remove, keep
@@ -321,12 +341,31 @@ jobs:
           vals = c.get("values") or {}
           name = vals.get("name")
           loc = vals.get("location")
-          print(f"state address: {c.get('address')}")
+          address = (c.get("address") or "").strip()
+          print(f"state address: {address}")
           print(f"state name={name} location={loc}")
 
           if name != expected_name or loc != expected_loc:
               print(f"REFUSED: state cluster is {name}/{loc}, expected {expected_name}/{expected_loc}.")
               sys.exit(1)
+
+          if not address:
+              print("REFUSED: the verified cluster has no state address. Refusing to "
+                    "continue, because the classifier would have nothing exact to match.")
+              sys.exit(1)
+
+          # Carry the verified address forward. Every later step matches THIS
+          # address exactly rather than matching on resource type, so a
+          # data.google_container_cluster or any second cluster address is kept.
+          github_env = os.environ.get("GITHUB_ENV")
+          if not github_env:
+              print("REFUSED: GITHUB_ENV is unavailable, so the verified cluster address "
+                    "cannot be carried to the classifier.")
+              sys.exit(1)
+          with open(github_env, "a") as fh:
+              fh.write(f"CLUSTER_STATE_ADDRESS={address}\n")
+          with open("cluster-address.txt", "w") as fh:
+              fh.write(address + "\n")
 
           print("State and GCP agree on the cluster identity.")
           PY
@@ -626,13 +665,20 @@ jobs:
           }
 
           # Whole modules that are off limits regardless of resource type.
+          # This is every module the Cloud Run stack owns, verified three ways
+          # against the tree (git ls-files, worktree listing, and the root
+          # module blocks) because a single listing is not evidence in a repo
+          # this many agents are writing to at once.
           PROTECTED_MODULE_PREFIXES = {
-              "module.project_services":
-                  "declares run, sqladmin, cloudtasks, secretmanager, artifactregistry, "
-                  "compute, certificatemanager, dns, iamcredentials and storage for the "
-                  "Cloud Run stack",
-              "module.dns":
-                  "the four registrar-delegated managed zones",
+              "module.database": "Cloud SQL instance, databases and connection-string secrets",
+              "module.dns": "the four registrar-delegated managed zones and the "
+                            "apex A records now imported alongside them",
+              "module.edge": "load balancer and managed certificates",
+              "module.project_services": "the ten APIs the Cloud Run stack declares",
+              "module.queue": "the Cloud Tasks queue carrying doc build requests",
+              "module.registry": "the new regional docker-images repository",
+              "module.services": "every Cloud Run service, Job, service account and IAM binding",
+              "module.storage": "the documentation and package buckets",
           }
 
           # APIs the Cloud Run stack cannot lose. Disabling artifactregistry is
@@ -659,7 +705,26 @@ jobs:
           # unix socket. No Serverless VPC Access connector, no Direct VPC
           # egress, no private services access range. So the VPC, subnet,
           # router, NAT and firewall rules are GKE-only and go.
+          #
+          # Permission is scoped to the OWNING MODULE, not to the type alone.
+          # The migration deliberately recreates the same kinds of resources on
+          # the Cloud Run side: module.services declares google_service_account
+          # and google_project_iam_member, module.storage declares
+          # google_storage_bucket, module.registry declares
+          # google_artifact_registry_repository. A type-only allow-list would
+          # read "destroy module.storage.google_storage_bucket.packages" as one
+          # of the three GKE backup buckets and wave it through, and that
+          # bucket holds content its own definition says cannot be rebuilt.
           # ------------------------------------------------------------------
+          GKE_OWNED_MODULES = (
+              "module.cluster",
+              "module.networking",
+              "module.operators",
+              "module.ingress",
+              "module.applications",
+              "module.agent",
+          )
+
           PERMITTED_DESTROY_TYPES = {
               "google_container_cluster": "the cluster this job just deleted",
               "google_compute_network": "GKE-only VPC; Cloud Run does not use it",
@@ -667,15 +732,24 @@ jobs:
               "google_compute_router": "existed for the GKE NAT",
               "google_compute_router_nat": "egress for GKE nodes",
               "google_compute_firewall": "GKE node and webhook rules",
-              "google_storage_bucket": "the three GKE backup buckets",
+              "google_storage_bucket": "one of the three GKE backup buckets",
               "google_storage_bucket_iam_member": "writer bindings on those buckets",
-              "google_service_account": "GKE backup service accounts",
-              "google_service_account_iam_member": "workload identity bindings for those SAs",
-              "google_project_iam_member": "project-scope grants to GKE-only identities",
+              "google_service_account": "GKE backup service account",
+              "google_service_account_iam_member": "workload identity binding for a GKE SA",
+              "google_project_iam_member": "project-scope grant to a GKE-only identity",
               "google_bigquery_dataset": "GKE usage dataset",
               "google_artifact_registry_repository": "the old multi-region crystalshards repo",
               "random_password": "generated for in-cluster secrets",
               "null_resource": "in-cluster provisioner shims",
+          }
+
+          # Root-level GKE leftovers, permitted by EXACT address only. Root has
+          # no module to key on, so blanket-permitting it would reopen the hole
+          # that scoping to modules just closed.
+          PERMITTED_ROOT_ADDRESSES = {
+              "google_project_iam_member.external_dns_dns_admin":
+                  "live project-scope roles/dns.admin grant to an identity that "
+                  "will never be used again once external-dns is gone",
           }
 
           # Should not appear at all: state removal already took these out.
@@ -778,11 +852,32 @@ jobs:
                   stranded.append((addr, rtype))
                   continue
 
-              if rtype in PERMITTED_DESTROY_TYPES:
-                  permitted.append((addr, rtype, PERMITTED_DESTROY_TYPES[rtype]))
+              # Permission requires BOTH a GKE-owned module and a permitted
+              # type. A permitted type sitting in an unrecognised module falls
+              # through to unclassified and refuses, which is the correct
+              # answer for a module nobody has classified yet.
+              in_gke_module = any(module == m or module.startswith(m + ".")
+                                  for m in GKE_OWNED_MODULES)
+
+              if in_gke_module and rtype in PERMITTED_DESTROY_TYPES:
+                  permitted.append((addr, rtype,
+                      f"{PERMITTED_DESTROY_TYPES[rtype]} (in {module})"))
                   continue
 
-              unclassified.append((addr, rtype))
+              if not module and addr in PERMITTED_ROOT_ADDRESSES:
+                  permitted.append((addr, rtype, PERMITTED_ROOT_ADDRESSES[addr]))
+                  continue
+
+              if rtype in PERMITTED_DESTROY_TYPES:
+                  unclassified.append((addr, rtype,
+                      f"type is GKE-permitted but its owner "
+                      f"{('module ' + module) if module else 'root module'} is not a "
+                      f"GKE module; the Cloud Run stack declares this same type"))
+                  continue
+
+              unclassified.append((addr, rtype,
+                  "not on the protected list and not on the permitted list; "
+                  "classify it before this teardown proceeds"))
 
           # ----------------------------- report -----------------------------
           summary = []
@@ -840,18 +935,17 @@ jobs:
           if unclassified:
               failed = True
               print("=== REFUSED: unclassified resources in the destroy set ===")
-              print("Not on the protected list and not on the permitted list. A teardown")
-              print("whose job is proving what it destroys does not get to shrug at these.")
-              print("If a destroy below is correct, add its type to PERMITTED_DESTROY_TYPES")
-              print("with the reason it served only GKE.")
+              print("A teardown whose job is proving what it destroys does not get to")
+              print("shrug at these. Each one is either a resource nobody has classified,")
+              print("or a permitted type owned by a module that is not GKE's to delete.")
               summary.append("### REFUSED: unclassified resources in the destroy set")
               summary.append("")
-              summary.append("Neither protected nor explicitly permitted. Add the type to "
-                             "`PERMITTED_DESTROY_TYPES` with a reason, or protect it.")
-              summary.append("")
-              for addr, rtype in sorted(unclassified):
+              summary.append("| Address | Type | Why it was not permitted |")
+              summary.append("| --- | --- | --- |")
+              for addr, rtype, why in sorted(unclassified):
                   print(f"  [{rtype}] {addr}")
-                  summary.append(f"- `{addr}` (`{rtype}`)")
+                  print(f"      {why}")
+                  summary.append(f"| `{addr}` | `{rtype}` | {why} |")
               summary.append("")
               print()
 
@@ -893,6 +987,7 @@ jobs:
             terraform/state-list-current.txt
             terraform/state-list-after.txt
             terraform/state-rm-addresses.txt
+            terraform/cluster-address.txt
             terraform/tfplan.txt
             terraform/tfplan.json
             cluster.json

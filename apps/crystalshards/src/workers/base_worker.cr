@@ -2,7 +2,7 @@ require "../jobs/job_queue"
 
 # A unit of background work.
 #
-# These used to be JoobQ jobs polled off a Redis list by a long-running worker
+# These used to be queued onto a broker and polled by a long-running worker
 # process. There is no such process any more and no broker behind it: on Cloud
 # Run a container gets no CPU once its response is written and scales to zero,
 # so a poller either costs money doing nothing or is not running when work

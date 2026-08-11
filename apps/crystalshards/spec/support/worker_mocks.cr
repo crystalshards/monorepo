@@ -1,6 +1,6 @@
 # Fakes for worker specs. Each one plugs into a `class_property` seam on the
 # collaborator it stands in for, so workers can be exercised with no network,
-# no git and no Redis.
+# no git and no broker.
 
 # Stands in for a real repository provider behind `ProviderFactory.builder`.
 class MockProvider < BaseProvider

@@ -86,6 +86,11 @@ module CrystalShards
   class CloudTasksDocsBuildQueue < DocsBuildQueue
     API_HOST = "https://cloudtasks.googleapis.com"
 
+    # Must match the docs-launcher Cloud Run request timeout. Cloud Tasks has
+    # no queue level dispatch deadline for an HTTP target, so leaving it unset
+    # defaults to 600s and kills long builds mid compile, forever.
+    DISPATCH_DEADLINE_SECONDS = 1800
+
     # Test seam: queue path and serialised task in, nothing out.
     class_property transport : Proc(String, String, Nil) = ->(queue_path : String, task_json : String) {
       CloudTasksDocsBuildQueue.submit(queue_path, task_json)
@@ -97,7 +102,8 @@ module CrystalShards
     def self.task_json(launcher_url : String, invoker : String, task : DocsBuildTask) : String
       {
         task: {
-          httpRequest: {
+          dispatchDeadline: "#{DISPATCH_DEADLINE_SECONDS}s",
+          httpRequest:      {
             httpMethod: "POST",
             url:        "#{launcher_url.rstrip('/')}#{DocsBuildQueue::PATH}",
             headers:    {"Content-Type": "application/json"},
@@ -148,7 +154,7 @@ module CrystalShards
     end
   end
 
-  # Development and test. No Redis, no broker, no Google project.
+  # Development and test. No broker, no Google project.
   #
   # It records rather than builds. Building locally needs a sandbox, and
   # DocsSandbox already refuses to run one unconfined unless a developer asks

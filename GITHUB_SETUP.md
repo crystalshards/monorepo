@@ -8,20 +8,34 @@ Go to Settings → Secrets and variables → Actions and add:
 
 ### Required Secrets
 
-- `STRIPE_SECRET_KEY` - Stripe secret key for CrystalGigs
-- The GCP deployment credential the deploy workflow expects, which authenticates
-  CI to Google Cloud
+- `GCP_SA_KEY` - Service account JSON key CI authenticates with
+- `GCP_PROJECT_ID` - Target project, passed to Terraform as `TF_VAR_project_id`
+- `CRYSTALSHARDS_SENDGRID_KEY`
+- `CRYSTALDOCS_SENDGRID_KEY`
+- `CRYSTALGIGS_SENDGRID_KEY`
+- `CRYSTALBITS_SENDGRID_KEY`
+- `DOCS_LAUNCHER_SENDGRID_KEY`
+- `CRYSTALGIGS_STRIPE_SECRET_KEY`
+- `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY`
+
+Those nine are the complete set. The pipeline reads no other repository secret.
+[`.github/SETUP.md`](.github/SETUP.md) explains what each one is for and how to mint
+the Google Cloud key.
 
 ## 2. Service Account Permissions
 
-The CI identity needs these roles:
+The CI identity deploys the services and runs Terraform, so it needs permission over
+everything Terraform manages, not only Cloud Run and Artifact Registry:
 
-- `roles/artifactregistry.writer` - Push container images to Artifact Registry
-- `roles/run.admin` - Deploy Cloud Run services and jobs
-- `roles/iam.serviceAccountUser` - Act as the runtime service accounts
-
-Terraform runs in CI under the same identity, so it also needs permission over
-every resource declared under `terraform/`.
+- `roles/run.admin`
+- `roles/artifactregistry.writer`
+- `roles/cloudsql.client`
+- `roles/compute.loadBalancerAdmin`
+- `roles/dns.admin`
+- `roles/secretmanager.admin`
+- `roles/iam.serviceAccountUser`
+- `roles/storage.admin`
+- `roles/serviceusage.serviceUsageAdmin`
 
 [`.github/SETUP.md`](.github/SETUP.md) holds the commands that create this
 identity, bind the roles, and configure Artifact Registry. Follow it there rather
@@ -80,7 +94,12 @@ Settings → Actions → General:
 CI pushes to Artifact Registry:
 
 - Repository `docker-images` in `us-central1`
-- Image path: `us-central1-docker.pkg.dev/crystalshards-org/docker-images/<app>:<sha>`
+- Image path: `us-central1-docker.pkg.dev/<project>/docker-images/<image>:<sha>`
+- Tag: the full 40 character commit SHA
+- Five images: `crystalshards`, `crystaldocs`, `crystalgigs`, `crystalbits`, `docs-build`
+
+No `latest` tag is pushed or referenced. That is deliberate rather than an omission:
+it means nothing can resolve to a tag the pipeline did not produce.
 
 ## 8. Deployment Triggers
 

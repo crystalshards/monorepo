@@ -57,56 +57,53 @@ git remote add upstream https://github.com/crystalshards/monorepo.git
 
 #### 2. Install Dependencies
 
+Run these from the repository root. Each step uses a subshell so your shell stays at the root for the next one.
+
 ```bash
-# Install Crystal dependencies for all applications
-cd apps/crystalshards
-shards install
-
-cd ../crystaldocs
-shards install
-
-cd ../crystalgigs
-shards install
-
-cd ../crystalbits
-shards install
+for app in crystalshards crystaldocs crystalgigs crystalbits; do
+  (cd apps/$app && shards install)
+done
 ```
 
-#### 3. Set Up Databases
+#### 3. Start Local Services and Set Up Databases
 
-Each application has its own PostgreSQL database:
+Bring up the local dependencies, then create each application's database. The Compose Postgres uses user `postgres` with password `password`, and the credentials an app falls back to when `DATABASE_URL` is unset do not match it, so set `DATABASE_URL` for the app you are working in:
 
 ```bash
-# CrystalShards
-cd apps/crystalshards
-lucky db.create
-lucky db.migrate
-lucky db.seed
+# Start Postgres and object storage, waiting until both report healthy
+docker compose up -d --wait postgres minio
 
-# CrystalDocs
-cd ../crystaldocs
-lucky db.create
-lucky db.migrate
+# Create and migrate the development and test database of every application
+for app in crystalshards crystaldocs crystalgigs crystalbits; do
+  for env in development test; do
+    (
+      cd apps/$app
+      export DATABASE_URL="postgresql://postgres:password@localhost:5432/${app}_${env}"
+      lucky db.create
+      lucky db.migrate
+    )
+  done
+done
 
-# CrystalGigs
-cd ../crystalgigs
-lucky db.create
-lucky db.migrate
-
-# CrystalBits
-cd ../crystalbits
-lucky db.create
-lucky db.migrate
+# Sample data for the registry
+(
+  cd apps/crystalshards
+  export DATABASE_URL="postgresql://postgres:password@localhost:5432/crystalshards_development"
+  lucky db.seed
+)
 ```
 
 #### 4. Configure Environment Variables
 
-Copy the example environment file and configure your local settings:
+Each application loads `.env` from its own directory when you run it from there, so give every app its own copy. From the repository root:
 
 ```bash
-cp .env.example .env
-# Edit .env with your local database URLs and secrets
+for app in crystalshards crystaldocs crystalgigs crystalbits; do
+  cp .env.example apps/$app/.env
+done
 ```
+
+Then edit each `apps/<app>/.env`, pointing `DATABASE_URL` at that application's own database and filling in the local secrets.
 
 Required environment variables per application:
 
@@ -115,16 +112,21 @@ Required environment variables per application:
 LUCKY_ENV=development
 PORT=3000  # or 3001, 3002, 3003 for other apps
 SECRET_KEY_BASE=generate_with_lucky_gen.secret_key
-DATABASE_URL=postgresql://postgres@localhost/app_development
+DATABASE_URL=postgresql://postgres:password@localhost:5432/<app>_development
 
-# CrystalShards only (local Redis service from docker-compose)
-REDIS_URL=redis://localhost:6379
+# Object storage. Locally these point at the object store container docker
+# compose runs. No Google Cloud credentials are needed to develop or to run
+# the specs; production uses Google Cloud Storage with the service's own
+# identity and ignores STORAGE_* entirely.
+STORAGE_ENDPOINT=http://localhost:9000
+STORAGE_ACCESS_KEY=minioadmin
+STORAGE_SECRET_KEY=minioadmin
 
-# MinIO (for package/documentation storage)
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_USE_SSL=false
+# Bucket names. CrystalShards writes documentation into DOCS_BUCKET and
+# CrystalDocs reads it back, so both apps must agree. In production neither
+# has a default and a missing one stops the service at boot.
+DOCS_BUCKET=crystal-docs
+PACKAGES_BUCKET=packages
 
 # CrystalGigs only (for Stripe payments)
 STRIPE_PUBLISHABLE_KEY=pk_test_...
@@ -133,26 +135,26 @@ STRIPE_SECRET_KEY=sk_test_...
 
 #### 5. Run Tests
 
-Verify your setup is correct by running the test suite:
+Verify your setup is correct by running the test suite. Point `DATABASE_URL` at the `_test` database of the application you are testing:
 
 ```bash
-# Run all tests for a specific application
-cd apps/crystalshards
-crystal spec
+export DATABASE_URL="postgresql://postgres:password@localhost:5432/crystalshards_test"
 
-# Run specific test file
-crystal spec spec/models/shard_spec.cr
+# Every spec for one application
+(cd apps/crystalshards && crystal spec)
 
-# Run all tests with coverage
-crystal spec --coverage
+# A single spec file
+(cd apps/crystalshards && crystal spec spec/models/crawl_state_spec.cr)
+
+# With coverage
+(cd apps/crystalshards && crystal spec --coverage)
 ```
 
 #### 6. Start Development Server
 
 ```bash
-# CrystalShards (main registry)
-cd apps/crystalshards
-lucky watch  # Starts server at http://localhost:3000
+# CrystalShards (main registry), served at http://localhost:3000
+(cd apps/crystalshards && lucky watch)
 ```
 
 For other applications, use the same `lucky watch` command from their respective directories.
@@ -532,10 +534,10 @@ end
 crystal spec
 
 # Run specific test file
-crystal spec spec/models/shard_spec.cr
+crystal spec spec/models/crawl_state_spec.cr
 
 # Run specific test by line number
-crystal spec spec/models/shard_spec.cr:42
+crystal spec spec/models/crawl_state_spec.cr:7
 
 # Run with coverage report
 crystal spec --coverage
@@ -1040,7 +1042,7 @@ crystal spec --color
 crystal spec --order random
 
 # Run specific describe block
-crystal spec spec/models/shard_spec.cr -e "Shard#published?"
+crystal spec spec/models/crawl_state_spec.cr -e "only calls a sweep trustworthy"
 ```
 
 **Cloud Run** (for infrastructure work, requires access to the GCP project):

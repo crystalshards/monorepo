@@ -21,48 +21,16 @@ Whether you're a library author, job seeker, employer, or Crystal developer, the
 ## Table of Contents
 
 - [User Guides](#user-guides)
-- [Operational Documentation](#operational-documentation)
 - [Technical Guides](#technical-guides)
 - [API Documentation](#api-documentation)
 - [Infrastructure](#infrastructure)
 
-## Operational Documentation
-
-### Runbooks
-
-**[Operational Runbooks](runbooks/)** - Step-by-step incident response procedures
-
-Essential runbooks for on-call engineers:
-- [Runbook Index](runbooks/README.md) - Complete list of all runbooks
-- [Quick Reference Guide](runbooks/QUICK_REFERENCE.md) - Common commands and patterns
-- [On-Call Guide](runbooks/ON_CALL_GUIDE.md) - On-call responsibilities and procedures
-
-Key incident runbooks:
-- Application Issues: [High Error Rate](runbooks/app-high-error-rate.md), [High Latency](runbooks/app-high-latency.md), [Unavailable](runbooks/app-unavailable.md)
-- Database Issues: [High Connections](runbooks/postgres-high-connections.md), [Replication Lag](runbooks/postgres-replication-lag.md), [Unavailable](runbooks/postgres-unavailable.md)
-- Infrastructure: [Pod Crash Loop](runbooks/pod-crash-loop.md), [Ingress Issues](runbooks/ingress-issues.md), [Certificate Expiry](runbooks/certificate-expiry.md)
-
 ## Technical Guides
-
-### Observability
-
-**[Logging Guide](LOGGING.md)** - Centralized logging with Loki and Promtail
-- Architecture overview
-- Log query examples
-- Troubleshooting procedures
-- Performance optimization
-
-**[Log Query Examples](../terraform/modules/operators/LOG_QUERIES.md)** - 50+ LogQL query patterns
-- Application logs
-- Error tracking
-- Performance monitoring
-- Security queries
 
 ### Security
 
 **[Rate Limiting Guide](RATE_LIMITING.md)** - API rate limiting implementation
 - Configuration
-- Redis backend
 - Custom rate limits
 - Troubleshooting
 
@@ -83,19 +51,12 @@ Each API directory contains:
 
 ## Infrastructure
 
-**[Deployment Runbook](../terraform/DEPLOYMENT_RUNBOOK.md)** - Complete deployment procedures
-- Prerequisites
-- Terraform workflow
-- Deployment steps
-- Verification
-- Troubleshooting
-- Rollback procedures
+**[Terraform Configuration](../terraform/)** - Infrastructure as Code for the Cloud Run deployment
+- Cloud Run services and the documentation build job
+- Cloud SQL, Cloud Storage, Cloud Tasks and Secret Manager resources
+- The global external Application Load Balancer and the Cloud DNS zones
 
-**[Terraform Documentation](../terraform/)** - Infrastructure as Code
-- Module structure
-- GKE cluster configuration
-- Operator deployments
-- Application resources
+Applies run in CI. Locally, limit yourself to `terraform fmt`, `terraform init -backend=false`, `terraform validate` and `terraform plan`.
 
 ## Architecture
 
@@ -111,23 +72,13 @@ The CrystalShards platform consists of four applications:
 ### Technology Stack
 
 - **Framework**: Lucky (Crystal web framework)
-- **Database**: CloudNativePG (PostgreSQL operator)
-- **Cache/Queue**: Redis operator
-- **Storage**: MinIO operator
-- **Ingress**: Envoy Gateway (Kubernetes Gateway API)
-- **Monitoring**: Prometheus + Grafana
-- **Logging**: Loki + Promtail
-- **Platform**: GKE Autopilot
-
-### Namespaces
-
-- `crystalshards` - Main package registry
-- `crystaldocs` - Documentation hosting
-- `crystalgigs` - Job board
-- `crystalbits` - Blog platform
-- `infrastructure` - Shared services (Redis, MinIO, PostgreSQL operators)
-- `monitoring` - Prometheus, Grafana, Loki
-- `envoy-gateway-system` - Ingress gateway
+- **Compute**: Cloud Run services with scale to zero, plus one Cloud Run Job for documentation builds
+- **Database**: Cloud SQL for PostgreSQL, one instance holding a database per application
+- **Object storage**: Cloud Storage
+- **Queue**: Cloud Tasks
+- **Secrets**: Secret Manager
+- **Edge**: one global external Application Load Balancer with serverless NEGs and Google-managed certificates, with Cloud DNS holding the four zones
+- **Observability**: Cloud Logging and Cloud Monitoring
 
 ## Contributing
 
@@ -135,10 +86,8 @@ See [CLAUDE.md](../CLAUDE.md) for development guidelines and [PROMPT.md](../PROM
 
 ## Getting Help
 
-- **On-Call**: Follow [On-Call Guide](runbooks/ON_CALL_GUIDE.md)
-- **Incidents**: Check [Runbook Index](runbooks/README.md)
-- **Quick Commands**: See [Quick Reference](runbooks/QUICK_REFERENCE.md)
-- **Logs**: Review [Logging Guide](LOGGING.md)
+- **Development setup**: See [DEVELOPMENT.md](../DEVELOPMENT.md)
+- **Logs and metrics**: Cloud Logging and Cloud Monitoring in the `crystalshards-org` project
 
 ---
 

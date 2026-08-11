@@ -98,11 +98,19 @@ module CrystalStorage
       resolve(PACKAGES_ENV, DEV_PACKAGES, "published package tarballs")
     end
 
-    # Called at boot in production so a missing bucket is a startup failure
-    # naming the variable, not a runtime surprise on the first upload.
-    def self.validate! : Nil
-      docs
-      packages
+    # Force resolution of the buckets an app actually uses, so a missing name
+    # is a startup failure naming the variable rather than a runtime surprise
+    # on the first upload. Which buckets those are is per-app policy and lives
+    # in each app's own config, because a service with no role on a bucket is
+    # never told that bucket's name and must not demand it.
+    def self.require!(*names : Symbol) : Nil
+      names.each do |name|
+        case name
+        when :docs     then docs
+        when :packages then packages
+        else                raise ArgumentError.new("unknown bucket #{name}")
+        end
+      end
     end
 
     private def self.resolve(variable : String, development_default : String, holds : String) : String
@@ -539,7 +547,3 @@ module CrystalStorage
   end
 end
 
-# Fail closed at boot, in production only. A missing bucket name stops the
-# service here, where the message can name the variable, instead of at the
-# first upload where it looks like an empty package.
-CrystalStorage::Buckets.validate! if LuckyEnv.production?

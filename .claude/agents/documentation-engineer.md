@@ -277,11 +277,14 @@ Documentation builds are timing out during Crystal doc generation for large shar
    Cloud Run job resource and the execution name, to see where `crystal docs`
    stopped.
 
-4. **Check the queue backlog**
+4. **Confirm the queue is running and read its limits**
    \`\`\`bash
    gcloud tasks queues describe docs-builds --location us-central1
    \`\`\`
-   Compare the queue's rate limits against how fast executions are completing.
+   This reports the queue's state and rate limits, not its depth. A paused or
+   disabled queue stops builds entirely, and a low concurrency limit explains a
+   slow drain. For how many tasks are actually waiting, inspect the queue in
+   Cloud Tasks rather than reading it out of this output.
 
 ## Resolution Steps
 
@@ -308,7 +311,7 @@ Documentation builds are timing out during Crystal doc generation for large shar
 
 ## Prevention
 
-1. Keep the job's execution timeout aligned with real build durations
+1. Keep the job's execution timeout aligned with what real builds actually need
 2. Alert in Cloud Monitoring on repeated failed executions
 3. Optimize doc generation for large shards
 4. Keep queue concurrency low enough that one bad shard cannot starve the rest
