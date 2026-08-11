@@ -27,6 +27,17 @@ env:
   TERRAFORM_VERSION: "1.15.8"
   TF_IN_AUTOMATION: "1"
   TF_INPUT: "0"
+  # The Artifact Registry repository name. Every job composes the registry URL
+  # itself from GCP_REGION, this, and the GCP_PROJECT_ID secret, rather than
+  # receiving it as a job output.
+  #
+  # It cannot be a job output. The URL embeds the project id, GCP_PROJECT_ID is a
+  # repository secret, and GitHub redacts secrets from job outputs, so the value
+  # arrives empty in the consuming job. That failed silently on the first real
+  # deploy: the bootstrap job's own guards saw the true string locally and passed,
+  # then every image build died on `invalid tag "/crystalshards:<sha>"` with the
+  # whole prefix missing. A green producer and an empty consumer.
+  ARTIFACT_REPO: docker-images
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -90,8 +101,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
-    outputs:
-      registry_url: ${{ steps.registry.outputs.url }}
+    # Deliberately publishes NO registry_url output. The URL embeds the project
+    # id, which is a repository secret, and GitHub redacts secrets from job
+    # outputs, so every consumer received an empty string while this job stayed
+    # green. Consumers compose the URL themselves; see ARTIFACT_REPO at the top.
+    # The validation below still runs, because proving the repository exists and
+    # sits in the expected project is worth doing once before any image is built.
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -215,13 +230,26 @@ jobs:
         id: image
         shell: bash
         env:
-          REGISTRY_URL: ${{ needs.bootstrap-registry.outputs.registry_url }}
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
+          ARTIFACT_REPO: ${{ env.ARTIFACT_REPO }}
           IMAGE: ${{ matrix.image }}
           SHA: ${{ needs.gate.outputs.sha }}
         run: |
           set -euo pipefail
-          echo "ref=${REGISTRY_URL}/${IMAGE}:${SHA}" >> "$GITHUB_OUTPUT"
-          echo "host=${REGISTRY_URL%%/*}" >> "$GITHUB_OUTPUT"
+          if [ -z "${PROJECT_ID}" ]; then
+            echo "GCP_PROJECT_ID is empty. Set it as a repository secret." >&2
+            exit 1
+          fi
+          registry_url="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPO}"
+          # Refuse a malformed reference here rather than letting buildx report it
+          # as `invalid tag`, which names the symptom and not the missing value.
+          if ! printf '%s' "$registry_url" | grep -Eq '^[a-z0-9-]+-docker\.pkg\.dev/[^/]+/[^/]+$'; then
+            echo "Composed registry URL '${registry_url}' is not an Artifact Registry path." >&2
+            exit 1
+          fi
+          echo "ref=${registry_url}/${IMAGE}:${SHA}" >> "$GITHUB_OUTPUT"
+          echo "host=${registry_url%%/*}" >> "$GITHUB_OUTPUT"
 
       - name: Configure Docker for Artifact Registry
         shell: bash
@@ -702,7 +730,8 @@ jobs:
         shell: bash
         env:
           REGION: ${{ env.GCP_REGION }}
-          REGISTRY_URL: ${{ needs.bootstrap-registry.outputs.registry_url }}
+          # Composed here, not received as a job output: see ARTIFACT_REPO at the top.
+          REGISTRY_URL: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}
           SHA: ${{ needs.gate.outputs.sha }}
           MIGRATE_JOBS: ${{ steps.bootstrap.outputs.migrate_jobs }}
         run: |
@@ -813,7 +842,8 @@ jobs:
         shell: bash
         env:
           REGION: ${{ env.GCP_REGION }}
-          REGISTRY_URL: ${{ needs.bootstrap-registry.outputs.registry_url }}
+          # Composed here, not received as a job output: see ARTIFACT_REPO at the top.
+          REGISTRY_URL: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}
           SHA: ${{ needs.gate.outputs.sha }}
           SERVICES: ${{ needs.infra.outputs.services }}
           DOCS_LAUNCHER_SERVICE: ${{ needs.infra.outputs.docs_launcher_service }}
@@ -960,7 +990,8 @@ jobs:
         shell: bash
         env:
           REGION: ${{ env.GCP_REGION }}
-          REGISTRY_URL: ${{ needs.bootstrap-registry.outputs.registry_url }}
+          # Composed here, not received as a job output: see ARTIFACT_REPO at the top.
+          REGISTRY_URL: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}
           SHA: ${{ needs.gate.outputs.sha }}
           DOCS_BUILD_JOB: ${{ needs.infra.outputs.docs_build_job }}
         run: |
