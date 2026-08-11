@@ -107,11 +107,11 @@ I created the GitHub issue successfully.
 ```
 ▶ Tool: Bash
 
-  Command: kubectl get pods -n nonexistent
-  Purpose: Check pods in namespace
+  Command: crystal build --no-codegen src/nonexistent.cr
+  Purpose: Type check an entry point
 
   ✗ Error
-    Error from server (NotFound): namespaces "nonexistent" not found
+    Error: file 'src/nonexistent.cr' does not exist
 ```
 
 ### Long Output Truncation

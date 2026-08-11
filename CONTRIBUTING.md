@@ -31,11 +31,8 @@ Before you begin, ensure you have the following installed:
 
 - **Crystal Language**: >= 1.17.1 ([installation guide](https://crystal-lang.org/install/))
 - **Lucky CLI**: Latest version ([installation guide](https://luckyframework.org/guides/getting-started/installing))
-- **PostgreSQL**: 14+ ([installation guide](https://www.postgresql.org/download/))
-- **Redis**: 6+ ([installation guide](https://redis.io/download))
-- **Docker**: For containerized development ([installation guide](https://docs.docker.com/get-docker/))
-- **kubectl**: For Kubernetes interaction ([installation guide](https://kubernetes.io/docs/tasks/tools/))
-- **Terraform**: >= 1.5.0 ([installation guide](https://developer.hashicorp.com/terraform/downloads))
+- **Docker** and **Docker Compose**: For the local service dependencies defined in `docker-compose.yml` ([installation guide](https://docs.docker.com/get-docker/))
+- **Terraform**: >= 1.5.0, only if you are changing infrastructure ([installation guide](https://developer.hashicorp.com/terraform/downloads))
 - **Git**: Version control ([installation guide](https://git-scm.com/downloads))
 - **GitHub Account**: For pull requests and issue tracking
 
@@ -43,6 +40,7 @@ Optional but recommended:
 
 - **mise**: Tool version manager (see `.mise.toml`)
 - **gh**: GitHub CLI for easier issue/PR management
+- **psql**: PostgreSQL client, for the database console commands in this guide
 
 ### Setting Up Development Environment
 
@@ -119,7 +117,7 @@ PORT=3000  # or 3001, 3002, 3003 for other apps
 SECRET_KEY_BASE=generate_with_lucky_gen.secret_key
 DATABASE_URL=postgresql://postgres@localhost/app_development
 
-# CrystalShards only (for background workers)
+# CrystalShards only (local Redis service from docker-compose)
 REDIS_URL=redis://localhost:6379
 
 # MinIO (for package/documentation storage)
@@ -155,9 +153,6 @@ crystal spec --coverage
 # CrystalShards (main registry)
 cd apps/crystalshards
 lucky watch  # Starts server at http://localhost:3000
-
-# Start background workers (separate terminal)
-crystal src/worker.cr
 ```
 
 For other applications, use the same `lucky watch` command from their respective directories.
@@ -175,28 +170,21 @@ monorepo/
 │   │   │   ├── models/           # Database models (Avram)
 │   │   │   ├── operations/       # Business logic (Avram operations)
 │   │   │   ├── queries/          # Database queries (Avram queries)
-│   │   │   ├── workers/          # Background jobs (JoobQ)
+│   │   │   ├── workers/          # Background jobs
 │   │   │   ├── pages/            # HTML pages (Lucky HTML)
 │   │   │   └── components/       # Reusable UI components
 │   │   ├── spec/                 # Tests
 │   │   ├── db/migrations/        # Database migrations
-│   │   ├── terraform/            # App-specific K8s resources
 │   │   └── shard.yml             # Crystal dependencies
 │   ├── crystaldocs/              # Documentation hosting
 │   ├── crystalgigs/              # Job board
 │   └── crystalbits/              # Blog platform
 ├── terraform/                    # Infrastructure as Code
-│   └── modules/                  # Terraform modules
-│       ├── networking/           # VPC, subnets, NAT
-│       ├── cluster/              # GKE Autopilot cluster
-│       ├── operators/            # Infrastructure operators
-│       ├── ingress/              # Gateway API + external-dns
-│       └── applications/         # Orchestrates app deployments
 ├── .github/                      # GitHub configuration
 │   └── workflows/                # CI/CD pipelines
 ├── docs/                         # Documentation
-│   ├── runbooks/                 # Operational runbooks
-│   ├── LOGGING.md                # Log aggregation guide
+│   ├── user-guides/              # End user guides
+│   ├── api/                      # OpenAPI specification
 │   └── README.md                 # Documentation index
 ├── PROMPT.md                     # Project overview
 ├── CLAUDE.md                     # Agent development guidelines
@@ -206,14 +194,14 @@ monorepo/
 ### Technology Stack
 
 - **Framework**: [Lucky](https://luckyframework.org/) - Type-safe, fast Crystal web framework
-- **Database**: [PostgreSQL](https://www.postgresql.org/) via [CloudNativePG](https://cloudnative-pg.io/) operator
-- **Cache/Queue**: [Redis](https://redis.io/) with [JoobQ](https://github.com/azutoolkit/joobq) for background jobs
-- **Storage**: [MinIO](https://min.io/) for packages and documentation (S3-compatible)
-- **Ingress**: [Envoy Gateway](https://gateway.envoyproxy.io/) with [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/)
-- **Platform**: [GKE Autopilot](https://cloud.google.com/kubernetes-engine/docs/concepts/autopilot-overview)
+- **Compute**: [Cloud Run](https://cloud.google.com/run/docs) - one service per application, scaling to zero
+- **Database**: [Cloud SQL for PostgreSQL](https://cloud.google.com/sql/docs/postgres) - a single instance with one database per application
+- **Storage**: [Cloud Storage](https://cloud.google.com/storage/docs) for packages and built documentation
+- **Queue**: [Cloud Tasks](https://cloud.google.com/tasks/docs) for documentation build requests
+- **Edge**: one global external [Application Load Balancer](https://cloud.google.com/load-balancing/docs/https) with Google-managed certificates
+- **Secrets**: [Secret Manager](https://cloud.google.com/secret-manager/docs), referenced by Cloud Run as environment variables
 - **IaC**: [Terraform](https://www.terraform.io/) (one resource per file convention)
-- **Monitoring**: [Prometheus](https://prometheus.io/) + [Grafana](https://grafana.com/)
-- **Logging**: [Loki](https://grafana.com/oss/loki/) + [Promtail](https://grafana.com/docs/loki/latest/send-data/promtail/)
+- **Observability**: [Cloud Logging](https://cloud.google.com/logging/docs) and [Cloud Monitoring](https://cloud.google.com/monitoring/docs)
 
 ## Development Workflow
 
@@ -268,7 +256,7 @@ feat(crystalshards): add search autocomplete functionality
 
 fix(api): handle null values in shard metadata response
 
-docs(runbooks): add PostgreSQL recovery procedures
+docs(crystalshards): document the shard indexing flow
 
 test(workers): add specs for BuildDocsWorker error handling
 
@@ -452,17 +440,12 @@ Follow Terraform best practices:
 **One resource per file**:
 
 ```hcl
-# resource.kubernetes_deployment.crystalshards.tf
-resource "kubernetes_deployment" "crystalshards" {
-  metadata {
-    name      = "crystalshards"
-    namespace = kubernetes_namespace.crystalshards.metadata[0].name
-  }
+# resource.google_storage_bucket.docs.tf
+resource "google_storage_bucket" "docs" {
+  name     = "crystalshards-docs"
+  location = var.region
 
-  spec {
-    replicas = 3
-    # ...
-  }
+  uniform_bucket_level_access = true
 }
 ```
 
@@ -470,8 +453,8 @@ resource "kubernetes_deployment" "crystalshards" {
 
 ```hcl
 # variables.tf
-variable "cluster_region" {
-  description = "GCP region for GKE cluster"
+variable "region" {
+  description = "GCP region for all regional resources"
   type        = string
   default     = "us-central1"
 }
@@ -657,7 +640,7 @@ We welcome contributions in many areas:
 - Background worker workflows
 - Deployment procedures
 
-**Runbooks**:
+**Operations**:
 
 - Incident response procedures
 - Monitoring and alerting guides
@@ -685,9 +668,9 @@ We welcome contributions in many areas:
 
 **Monitoring & Observability**:
 
-- New Grafana dashboards
-- Alert rule improvements
-- Log aggregation enhancements
+- Cloud Monitoring alert policies
+- Structured logging improvements
+- Log-based metrics
 - Distributed tracing
 - Performance profiling
 
@@ -888,8 +871,8 @@ Use draft PRs for:
 
 ### What to Expect
 
-- **Initial response**: Within 48 hours
-- **Full review**: Within 1 week
+- **Initial response**: A maintainer acknowledges the PR and flags anything blocking
+- **Full review**: A maintainer reviews once CI is green
 - **Feedback**: Constructive, specific, actionable
 - **Approval**: When all feedback addressed and CI passes
 - **Merge**: By maintainers after approval
@@ -960,16 +943,6 @@ lucky db.rollback
 
 # Create new migration
 lucky gen.migration AddPublishedAtToShards
-```
-
-**Background Workers**:
-
-```bash
-# Run workers in development
-crystal src/worker.cr
-
-# Watch worker logs
-tail -f logs/worker.log
 ```
 
 ### Common Issues
@@ -1070,21 +1043,20 @@ crystal spec --order random
 crystal spec spec/models/shard_spec.cr -e "Shard#published?"
 ```
 
-**Kubernetes** (for infrastructure work):
+**Cloud Run** (for infrastructure work, requires access to the GCP project):
 
 ```bash
-# Get pod status
-kubectl get pods -n crystalshards
+# Inspect a deployed service
+gcloud run services describe crystalshards --region us-central1
 
-# View logs
-kubectl logs -f deployment/crystalshards-api -n crystalshards
+# Read recent logs for a service
+gcloud run services logs read crystalshards --region us-central1
 
-# Execute command in pod
-kubectl exec -it deployment/crystalshards-api -n crystalshards -- sh
-
-# Port forward for local testing
-kubectl port-forward svc/crystalshards 3000:80 -n crystalshards
+# List executions of the documentation build job
+gcloud run jobs executions list --job docs-build --region us-central1
 ```
+
+Ad-hoc log queries and metrics live in Cloud Logging and Cloud Monitoring in the `crystalshards-org` project.
 
 ## Getting Help
 

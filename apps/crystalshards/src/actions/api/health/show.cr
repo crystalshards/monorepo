@@ -1,15 +1,18 @@
-require "redis"
-
 class Api::Health::Show < ApiAction
   include Api::Auth::SkipRequireAuthToken
 
   get "/api/health" do
     db_status = check_database
-    redis_status = check_redis
 
-    # Return 503 Service Unavailable if any critical service is unhealthy
-    # This ensures Kubernetes health checks properly fail
-    all_healthy = !db_status.starts_with?("unhealthy") && !redis_status.starts_with?("unhealthy")
+    # 503 when a service this app genuinely cannot serve without is down.
+    #
+    # That list is exactly one entry long, and keeping it that short is the
+    # point. This endpoint is the Cloud Run startup probe, so anything named
+    # here can refuse to promote a revision. Object storage and the build queue
+    # are deliberately absent: a docs build that cannot be commissioned is a
+    # degraded feature on one page, and rolling back a good deploy over it
+    # would take the whole site down to protect a background job.
+    all_healthy = !db_status.starts_with?("unhealthy")
 
     context.response.status_code = all_healthy ? 200 : 503
 
@@ -19,7 +22,6 @@ class Api::Health::Show < ApiAction
       timestamp: Time.utc.to_rfc3339,
       services:  {
         database: db_status,
-        redis:    redis_status,
       },
     })
   end
@@ -31,16 +33,5 @@ class Api::Health::Show < ApiAction
     "healthy"
   rescue ex
     "unhealthy: #{ex.message}"
-  end
-
-  private def check_redis : String
-    redis = Redis.new(url: ENV["REDIS_URL"]? || "redis://localhost:6379")
-    # Try a simple operation to check connection
-    redis.ping
-    "healthy"
-  rescue ex
-    "unhealthy: #{ex.message}"
-  ensure
-    redis.try(&.close)
   end
 end

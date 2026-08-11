@@ -56,7 +56,7 @@ You are a Senior Documentation Engineer specializing in technical writing for th
 3. **Operational Documentation**
    - Runbooks for production incidents
    - Monitoring and alerting guides
-   - Performance tuning docs for PostgreSQL/Redis
+   - Performance tuning docs for PostgreSQL
    - Backup and recovery procedures
    - Disaster recovery plans
    - Security procedures
@@ -248,64 +248,70 @@ Documentation builds are timing out during Crystal doc generation for large shar
 ## Impact
 - New shard versions don't get documentation published
 - Users cannot view latest docs
-- Doc build queue may back up
+- The `docs-builds` Cloud Tasks queue may back up
 
 ## Detection
-- Alert triggered when doc build exceeds 10 minutes
-- Monitored via Prometheus metric: `doc_build_duration_seconds`
+- A `docs-build` job execution ends in a failed state after reaching the job timeout
+- `docs-launcher` records the failed outcome against the version and logs it, so
+  the failure is visible in Cloud Logging
 
 ## Diagnosis Steps
 
-1. **Check current build queue**
+1. **List recent documentation build executions**
    \`\`\`bash
-   kubectl logs -n crystaldocs -l app=doc-builder --tail=100
+   gcloud run jobs executions list --job docs-build --region us-central1
    \`\`\`
 
-2. **Identify stuck builds**
+2. **Read the launcher's account of the build**
    \`\`\`bash
-   # Check Redis queue
-   redis-cli -h redis.crystaldocs.svc.cluster.local LLEN doc_build_queue
+   gcloud run services logs read docs-launcher --region us-central1
    \`\`\`
+   `docs-launcher` mints the signed URLs, starts the execution and records the
+   outcome, so its logs name the shard and version behind a failing execution.
 
-3. **Review resource usage**
+3. **Inspect the failing execution**
    \`\`\`bash
-   kubectl top pods -n crystaldocs -l app=doc-builder
+   gcloud run jobs executions describe EXECUTION_NAME --region us-central1
    \`\`\`
+   Then read that execution's container logs in Cloud Logging, scoped to the
+   Cloud Run job resource and the execution name, to see where `crystal docs`
+   stopped.
+
+4. **Check the queue backlog**
+   \`\`\`bash
+   gcloud tasks queues describe docs-builds --location us-central1
+   \`\`\`
+   Compare the queue's rate limits against how fast executions are completing.
 
 ## Resolution Steps
 
 ### Immediate Mitigation
 
-1. **Cancel stuck build**
-   \`\`\`bash
-   # Restart doc builder pod
-   kubectl delete pod -n crystaldocs -l app=doc-builder
-   \`\`\`
+1. **Establish whether anything is still retrying**
+   A shard that fails to build is a finished build, not a failed delivery:
+   `docs-launcher` records the outcome and acknowledges the task, so the queue
+   does not re-dispatch it. Repeated executions for the same shard therefore
+   point at the launcher or the infrastructure around it, not at the compile.
 
-2. **Clear build queue if needed**
-   \`\`\`bash
-   redis-cli -h redis.crystaldocs.svc.cluster.local DEL doc_build_queue
-   \`\`\`
-
-3. **Increase resource limits temporarily**
-   \`\`\`bash
-   # Edit deployment to increase memory/CPU
-   kubectl edit deployment doc-builder -n crystaldocs
-   \`\`\`
+2. **Raise the build ceiling if the shard is legitimately large**
+   The execution timeout, CPU and memory come from the `docs-build` job
+   definition under `terraform/`. Change them there and let CI apply the
+   change: applies never run from a workstation.
 
 ### Root Cause Analysis
 
 1. Check for large shards causing timeout
-2. Review memory usage during build
-3. Check for infinite loops in doc generation
-4. Verify sandbox timeout settings
+2. Review the execution's memory and CPU use against the job's limits
+3. Check for infinite loops in doc generation, including macro expansion, which
+   Crystal runs at compile time
+4. Verify the job's execution timeout is sane for the size of shard involved
 
 ## Prevention
 
-1. Implement build timeout limits
-2. Add resource monitoring
+1. Keep the job's execution timeout aligned with real build durations
+2. Alert in Cloud Monitoring on repeated failed executions
 3. Optimize doc generation for large shards
-4. Regular queue cleanup job
+4. Keep queue concurrency low enough that one bad shard cannot starve the rest
 
 ## Escalation
 

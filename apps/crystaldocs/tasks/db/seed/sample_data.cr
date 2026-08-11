@@ -74,7 +74,7 @@ class Db::Seed::SampleData < LuckyTask::Task
       puts ""
       puts "WARNING: object storage was unreachable for #{@storage_warnings} version listing(s);"
       puts "         those versions are seeded as pending with zero counts."
-      puts "         Start MinIO (make services) and re-run to reflect reality."
+      puts "         Start local services (make services) and re-run to reflect reality."
     end
 
     unless @found_docs
@@ -156,27 +156,18 @@ class Db::Seed::SampleData < LuckyTask::Task
     success
   end
 
-  # Lists <package>/<version>/ in the docs bucket: whether the store answered,
-  # whether docs.json is among the objects, and its real byte size.
-  # `available: false` means MinIO could not be reached, which says
+  # Reads <package>/<version>/docs.json from the docs bucket: whether the
+  # store answered, whether the artifact is there, and its real byte size.
+  # `available: false` means the store could not be reached, which says
   # nothing about whether the documentation exists.
   private def storage_listing(package_name : String, version : String) : NamedTuple(available: Bool, json_exists: Bool, bytes: Int64)
-    prefix = "#{package_name}/#{version}/"
-    bytes = 0_i64
-    json_exists = false
+    key = "#{package_name}/#{version}/docs.json"
 
-    client = CrystalDocs::MinIOConfig.client
-    client.list_objects(CrystalDocs::MinIOConfig.settings.docs_bucket, prefix: prefix).each do |page|
-      page.contents.each do |object|
-        if object.key == "#{prefix}docs.json"
-          json_exists = true
-          bytes = object.size
-        end
-      end
+    begin
+      content = CrystalStorage.docs.get(key)
+      {available: true, json_exists: !content.nil?, bytes: content ? content.size.to_i64 : 0_i64}
+    rescue CrystalStorage::Unavailable
+      {available: false, json_exists: false, bytes: 0_i64}
     end
-
-    {available: true, json_exists: json_exists, bytes: bytes}
-  rescue Awscr::S3::Exception | IO::Error
-    {available: false, json_exists: false, bytes: 0_i64}
   end
 end

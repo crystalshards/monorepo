@@ -155,10 +155,10 @@ module CrystalDocs
     end
 
     # The row is already pending at this point, so a queue that cannot be
-    # reached leaves a pending request with no job id rather than a lie. The
+    # reached leaves a pending request with no build id rather than a lie. The
     # next reader after the retry floor is not affected, because the floor
-    # only governs failed rows; a request stuck pending because Redis was down
-    # is visible in the data and is not silently retried here.
+    # only governs failed rows; a request stuck pending because Cloud Tasks
+    # was unreachable is visible in the data and is not silently retried here.
     private def enqueue(id : Int64, package_name : String, version : String, now : Time) : Nil
       job_id = @queue.enqueue(package_name, version)
       return if job_id.nil?

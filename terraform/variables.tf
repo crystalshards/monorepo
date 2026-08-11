@@ -9,32 +9,56 @@ variable "region" {
   default     = "us-central1"
 }
 
-variable "cluster_name" {
-  description = "The name of the GKE cluster"
-  type        = string
-  default     = "crystalshards-cluster"
-}
-
 variable "image_tag" {
-  description = "Docker image tag to deploy (git commit SHA, e.g., 'sha-abc123')"
+  description = <<-DESC
+    Container image tag to create Cloud Run services and Jobs at. Always a git
+    commit SHA.
+
+    No default, on purpose. It used to default to "latest", and CI does not push
+    a "latest" tag, so a plan run without this variable would resolve every
+    image to a tag that does not exist and fail at create time with something
+    that looks like a registry problem. Required means the plan fails on the
+    missing variable instead, naming it.
+  DESC
   type        = string
-  default     = "latest" # Use 'latest' tag which is pushed by CI/CD pipeline
 }
 
-# CrystalBits secrets
-variable "crystalbits_resend_key" {
-  description = "Resend API key for CrystalBits email functionality"
+# Outbound email. Every app calls exit(1) at boot in production without its key,
+# so these are start up dependencies rather than optional integrations. One key
+# per service so revoking a compromised key takes one site down, not all of
+# them. The literal string "unused" is the app's own documented value for
+# running with outbound email switched off.
+variable "crystalshards_sendgrid_key" {
+  description = "SendGrid API key for CrystalShards"
   type        = string
   sensitive   = true
 }
 
-# CrystalGigs secrets
-variable "crystalgigs_resend_key" {
-  description = "Resend API key for CrystalGigs email functionality"
+variable "crystaldocs_sendgrid_key" {
+  description = "SendGrid API key for CrystalDocs"
   type        = string
   sensitive   = true
 }
 
+variable "crystalgigs_sendgrid_key" {
+  description = "SendGrid API key for CrystalGigs"
+  type        = string
+  sensitive   = true
+}
+
+variable "crystalbits_sendgrid_key" {
+  description = "SendGrid API key for CrystalBits"
+  type        = string
+  sensitive   = true
+}
+
+variable "docs_launcher_sendgrid_key" {
+  description = "SendGrid API key for docs-launcher. It sends no mail, but it is built from the registry codebase and inherits that boot time requirement"
+  type        = string
+  sensitive   = true
+}
+
+# CrystalGigs payments
 variable "crystalgigs_stripe_secret_key" {
   description = "Stripe secret key for CrystalGigs payment processing"
   type        = string

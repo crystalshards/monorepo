@@ -20,12 +20,13 @@ class CreateDocBuildRequests::V00000000000004 < Avram::Migrator::Migration::V1
       add failed_at : Time?
       add last_error : String?
 
-      # Enqueue count, not JoobQ's internal retry count. Incremented only when
-      # the retry floor lets a failed build back onto the queue.
+      # Enqueue count, not the queue's own delivery attempts. Incremented only
+      # when the retry floor lets a failed build back onto the queue.
       add attempts : Int32, default: 0
 
-      # The JoobQ job id of the most recent enqueue, so a stuck build can be
-      # traced from a docs page to the queue without guessing.
+      # The build id of the most recent enqueue, carried in the task the
+      # launcher receives, so a stuck build can be traced from a docs page to
+      # an execution without guessing.
       add job_id : String?
     end
 

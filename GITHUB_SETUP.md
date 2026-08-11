@@ -8,38 +8,24 @@ Go to Settings → Secrets and variables → Actions and add:
 
 ### Required Secrets
 
-- `GKE_PROJECT` - Your Google Cloud Project ID
-- `GKE_CLUSTER_NAME` - Name of your GKE cluster (e.g., `crystalshards-cluster`)
-- `GKE_ZONE` - GKE cluster zone (e.g., `us-central1-a`)
-- `GKE_SA_KEY` - Service account JSON key with GKE deployment permissions
 - `STRIPE_SECRET_KEY` - Stripe secret key for CrystalGigs
-- `DOCKERHUB_USERNAME` - Docker Hub username (for pushing images)
-- `DOCKERHUB_TOKEN` - Docker Hub access token
+- The GCP deployment credential the deploy workflow expects, which authenticates
+  CI to Google Cloud
 
 ## 2. Service Account Permissions
 
-The GKE service account needs these roles:
+The CI identity needs these roles:
 
-- `roles/container.developer` - Deploy to GKE
+- `roles/artifactregistry.writer` - Push container images to Artifact Registry
+- `roles/run.admin` - Deploy Cloud Run services and jobs
+- `roles/iam.serviceAccountUser` - Act as the runtime service accounts
 
-Create with:
+Terraform runs in CI under the same identity, so it also needs permission over
+every resource declared under `terraform/`.
 
-```bash
-gcloud iam service-accounts create github-actions \
-    --description="GitHub Actions CI/CD" \
-    --display-name="GitHub Actions"
-
-gcloud projects add-iam-policy-binding PROJECT_ID \
-    --member="serviceAccount:github-actions@PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/container.developer"
-
-gcloud projects add-iam-policy-binding PROJECT_ID \
-    --member="serviceAccount:github-actions@PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/storage.admin"
-
-gcloud iam service-accounts keys create key.json \
-    --iam-account=github-actions@PROJECT_ID.iam.gserviceaccount.com
-```
+[`.github/SETUP.md`](.github/SETUP.md) holds the commands that create this
+identity, bind the roles, and configure Artifact Registry. Follow it there rather
+than duplicating the setup here.
 
 ## 3. Branch Protection Rules
 
@@ -89,12 +75,12 @@ Settings → Actions → General:
 - Workflow permissions: Read and write permissions
 - ✅ Allow GitHub Actions to create and approve pull requests
 
-## 7. Container Registry
+## 7. Container Images
 
-The CI/CD will push to:
+CI pushes to Artifact Registry:
 
-- GitHub Container Registry: `ghcr.io/crystalshards/*`
-- Ensure packages are set to public or configure pull secrets
+- Repository `docker-images` in `us-central1`
+- Image path: `us-central1-docker.pkg.dev/crystalshards-org/docker-images/<app>:<sha>`
 
 ## 8. Deployment Triggers
 
@@ -118,4 +104,4 @@ GitHub Actions will send metrics to:
 
 - Deployment success/failure → Slack
 - Application errors → Sentry
-- Performance metrics → Prometheus (in-cluster)
+- Performance metrics → Cloud Monitoring, published by Cloud Run

@@ -115,27 +115,26 @@ rm -rf /tmp/* && docker system prune -f
 
 ### 8. Performance & Cost Optimization
 
-- Implement aggressive caching with Redis
-- Use database connection pooling
+- Use database connection pooling with `max_pool_size` 5 per service. The shared Cloud SQL instance is small and four autoscaling services would otherwise exhaust its connection limit
 - Optimize queries with EXPLAIN ANALYZE
 - Implement pagination for list endpoints
 - Use background jobs for heavy operations
-- Set resource limits on all pods
-- Use spot instances for workers
-- Configure GKE Autopilot autoscaling policies
+- Let Cloud Run scale to zero so idle services cost nothing
 
-### 9. Infrastructure (All In-Cluster)
+### 9. Infrastructure (Cloud Run on GCP)
 
-- Use Terraform for GKE cluster + operators only
-- NO external cloud services (Cloud SQL, Memorystore, etc)
-- Use operators for all stateful services:
-  - CloudNativePG for PostgreSQL
-  - Redis Operator for Redis
-  - MinIO for object storage
-- Separate namespaces for each app
-- Agent runs in `claude` namespace
-- Implement proper resource limits
-- Set up monitoring with Prometheus/Grafana
+Project `crystalshards-org`, region `us-central1`.
+
+- **Compute**: Cloud Run services `crystalshards`, `crystaldocs`, `crystalgigs`, `crystalbits` and `docs-launcher`, all scaling to zero, plus one Cloud Run Job named `docs-build`
+- **Database**: one Cloud SQL PostgreSQL instance `crystal-postgres` holding four databases (`crystalshards`, `crystaldocs`, `crystalgigs`, `crystalbits`), reached over the Cloud SQL unix socket at `/cloudsql/<connection_name>`
+- **Object storage**: Cloud Storage buckets `crystalshards-docs` for built documentation and `crystalshards-packages`
+- **Queue**: Cloud Tasks queue `docs-builds`. A task targets `POST /internal/docs/build` on `docs-launcher`, which creates a `docs-build` Job execution
+- **Doc build isolation**: the `docs-build` job runs untrusted third-party shard code during `crystal docs`, so its service account holds zero IAM bindings. It takes input by signed GET URL and writes output by signed PUT URL, both minted by `docs-launcher`. This isolation is why the platform runs on Cloud Run
+- **Edge**: one global external Application Load Balancer with serverless NEGs and Google-managed certificates, serving all eight hostnames (apex and www for crystalshards.org, crystaldocs.org, crystalgigs.com, crystalbits.org). Cloud DNS holds the four managed zones
+- **Secrets**: Secret Manager, referenced by Cloud Run as environment variables. Never default a credential in code. Missing required production config fails closed at boot with a message naming the variable
+- **Images**: Artifact Registry repository `docker-images`, image path `us-central1-docker.pkg.dev/crystalshards-org/docker-images/<app>:<sha>`
+- **Observability**: Cloud Logging and Cloud Monitoring, which Cloud Run provides by default
+- **Terraform** lives in `terraform/` and applies run in CI only. Locally, limit yourself to `terraform fmt`, `terraform init -backend=false`, `terraform validate` and `terraform plan`
 
 ### 10. Progress Tracking
 
@@ -206,8 +205,8 @@ Agent 3 working on infrastructure (simultaneously):
 ```bash
 # Work on cross-cutting concern
 gh issue edit 22 --add-assignee @me
-gh issue comment 22 --body "Starting: Add Prometheus alerting rules"
-# Work on terraform/modules/operators/ (different area)
+gh issue comment 22 --body "Starting: Tune Cloud Run request timeouts"
+# Work on terraform/ (different area)
 ```
 
 #### Coordination Through GitHub
@@ -735,7 +734,7 @@ lucky db.migrate
 - Include request IDs
 - Log at appropriate levels
 - Avoid logging sensitive data
-- Set up log aggregation
+- Write to stdout and stderr. Cloud Run ships that to Cloud Logging with no extra setup
 
 ## Git Workflow - Commit Early and Often
 

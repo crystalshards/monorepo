@@ -16,7 +16,6 @@
         "crystal-lang-tools.crystal-lang",
         "redhat.vscode-yaml",
         "hashicorp.terraform",
-        "ms-kubernetes-tools.vscode-kubernetes-tools",
         "davidanson.vscode-markdownlint"
       ]
     }

@@ -1,0 +1,898 @@
+name: Teardown GKE
+
+# One-off, auditable teardown of the GKE estate for the Cloud Run migration.
+#
+# This job is NEVER automatic. There is no push trigger, no workflow_run trigger
+# and no schedule, deliberately. The deploy workflow this migration deletes fired
+# on workflow_run, so every merge re-applied a rejected architecture, over and
+# over, until someone noticed. A teardown that can fire the same way is the same
+# class of bug with a worse blast radius.
+#
+# What this job actually destroys:
+#   1. the single named GKE cluster crystalshards-cluster
+#   2. terraform state entries for resources that lived inside that cluster
+#
+# Everything past that point is proof, not destruction: it refreshes state,
+# prints a plan, and asserts on the plan's destroy set. It does not apply the
+# plan. The remaining GCP-level teardown goes through review with the printed
+# plan in hand.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type exactly: destroy crystalshards-cluster'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# A teardown must never interleave with another teardown against the same
+# remote state. The GCS backend lock would catch it, but failing on the lock
+# mid-run is a worse operator experience than queueing.
+concurrency:
+  group: gke-teardown-crystalshards-org
+  cancel-in-progress: false
+
+env:
+  # Identity of the one cluster this job is allowed to delete. These are
+  # constants on purpose. No input feeds them, so no input can redirect the
+  # deletion at a different cluster.
+  EXPECTED_CLUSTER_NAME: crystalshards-cluster
+  EXPECTED_CLUSTER_LOCATION: us-central1
+  EXPECTED_PROJECT_ID: crystalshards-org
+  CONFIRM_PHRASE: destroy crystalshards-cluster
+
+jobs:
+  # Gate 1: the typed confirmation. A separate job that the teardown job
+  # depends on, so the guard is structural rather than a convention about step
+  # ordering. This job holds no credentials, checks out nothing and touches no
+  # cloud API. It compares a string.
+  confirm:
+    name: Confirm teardown
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require exact typed confirmation
+        env:
+          # Never interpolate an input directly into a shell script. It arrives
+          # through the environment and is compared as data.
+          CONFIRM_INPUT: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM_INPUT" != "$CONFIRM_PHRASE" ]; then
+            echo "REFUSED: confirmation phrase did not match."
+            echo "Expected exactly: $CONFIRM_PHRASE"
+            echo "Received:         ${CONFIRM_INPUT:-<empty>}"
+            {
+              echo "## Teardown refused"
+              echo
+              echo "The confirmation phrase did not match. Nothing was inspected and nothing was destroyed."
+              echo
+              echo "Expected exactly: \`$CONFIRM_PHRASE\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Confirmation phrase matched. Teardown may proceed."
+
+  teardown:
+    name: Teardown GKE estate
+    # Two independent gates, deliberately.
+    #
+    # `needs: confirm` means the guard job must pass. The `if` below means
+    # GitHub's own scheduler refuses to start this job on a wrong phrase, before
+    # a runner exists, before a credential is read. Neither gate relies on the
+    # other. The literal is repeated here rather than referenced from `env`
+    # because the env context is not available to a job-level `if`, and a guard
+    # you cannot read at the top of the job it guards is not much of a guard.
+    #
+    # The guard is not on the `confirm` job itself on purpose: when every job in
+    # a run is skipped, the run reports green. A teardown that answers a
+    # fat-fingered phrase with a green checkmark and no explanation is a worse
+    # refusal than a red one.
+    if: ${{ inputs.confirm == 'destroy crystalshards-cluster' }}
+    needs: confirm
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # Matches the deploy workflow. Any required reviewers configured on the
+    # production environment apply here too, which is a second human gate.
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Auth mechanism matched from .github/workflows/deploy.yml: a service
+      # account key JSON in the GCP_SA_KEY secret, fed to
+      # google-github-actions/auth@v2 as credentials_json. Not OIDC / workload
+      # identity federation. This job does not invent a new credential path.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.0
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_wrapper: false
+
+      # ---------------------------------------------------------------------
+      # Shared address classifier.
+      #
+      # Written once and used by both the enumerate step and the post-removal
+      # verify step, so the two can never disagree about what counts as a
+      # cluster-scoped address. A regex over raw address text cannot do this
+      # job: `google_service_account.kubernetes_backup` contains
+      # ".kubernetes_" and is not a Kubernetes resource. The type has to be
+      # parsed out of the address, not matched inside it.
+      # ---------------------------------------------------------------------
+      - name: Write address classifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/bin"
+          cat > "${RUNNER_TEMP}/bin/classify_addresses.py" <<'PYFILE'
+          """Classify terraform state addresses as cluster-scoped or not.
+
+          Usage:
+            classify_addresses.py <state-list> --write <out>   enumerate + write
+            classify_addresses.py <state-list> --expect-empty  fail if any match
+          """
+          import sys
+
+          IN_CLUSTER_PREFIXES = ("kubernetes_", "helm_", "kubectl_")
+
+
+          def tokenize(address):
+              """Split a terraform address on '.' at bracket depth zero, so an
+              index key containing a dot cannot fool the parser."""
+              toks, buf, depth = [], [], 0
+              for ch in address:
+                  if ch == "[":
+                      depth += 1
+                  elif ch == "]":
+                      depth -= 1
+                  if ch == "." and depth == 0:
+                      toks.append("".join(buf))
+                      buf = []
+                  else:
+                      buf.append(ch)
+              toks.append("".join(buf))
+              return toks
+
+
+          def strip_index(tok):
+              return tok.split("[", 1)[0]
+
+
+          def resource_type(address):
+              """The type segment: skip any module.<name> chain, then an
+              optional 'data' marker, and take what follows."""
+              toks = tokenize(address)
+              i = 0
+              while i + 1 < len(toks) and strip_index(toks[i]) == "module":
+                  i += 2
+              if i < len(toks) and strip_index(toks[i]) == "data":
+                  i += 1
+              return strip_index(toks[i]) if i < len(toks) else ""
+
+
+          def classify(path):
+              with open(path) as fh:
+                  addresses = [line.strip() for line in fh if line.strip()]
+              remove, keep = [], []
+              for addr in addresses:
+                  rtype = resource_type(addr)
+                  if rtype.startswith(IN_CLUSTER_PREFIXES):
+                      remove.append((addr, rtype, "lived inside the deleted cluster"))
+                  elif rtype == "google_container_cluster":
+                      remove.append((addr, rtype, "the deleted cluster itself"))
+                  else:
+                      keep.append((addr, rtype))
+              return addresses, remove, keep
+
+
+          def main(argv):
+              if len(argv) < 3:
+                  print(__doc__)
+                  return 2
+              path, mode = argv[1], argv[2]
+              addresses, remove, keep = classify(path)
+
+              if mode == "--expect-empty":
+                  if remove:
+                      print("FAILED: cluster-scoped addresses survived removal:")
+                      for addr, rtype, _ in remove:
+                          print(f"  [{rtype}] {addr}")
+                      return 1
+                  print(f"No cluster-scoped addresses remain. {len(keep)} addresses in state.")
+                  return 0
+
+              if mode != "--write" or len(argv) < 4:
+                  print(__doc__)
+                  return 2
+
+              print(f"Total addresses in state: {len(addresses)}")
+              print(f"To remove: {len(remove)}")
+              print(f"To keep:   {len(keep)}")
+              print()
+              print("=== REMOVING (every address printed before it is touched) ===")
+              for addr, rtype, why in remove:
+                  print(f"  [{rtype}] {addr}  <- {why}")
+              print()
+              print("=== KEEPING ===")
+              for addr, rtype in keep:
+                  print(f"  [{rtype}] {addr}")
+              if not remove:
+                  print()
+                  print("Nothing matched. Either this already ran, or the type filter is wrong.")
+
+              with open(argv[3], "w") as fh:
+                  for addr, _, _ in remove:
+                      fh.write(addr + "\n")
+              return 0
+
+
+          if __name__ == "__main__":
+              sys.exit(main(sys.argv))
+          PYFILE
+          python3 -c "import py_compile,sys; py_compile.compile(sys.argv[1], doraise=True)" \
+            "${RUNNER_TEMP}/bin/classify_addresses.py"
+          echo "Classifier written and compiles."
+
+      # ---------------------------------------------------------------------
+      # Step 2: prove the cluster is the one expected, against reality and
+      # against state. Both have to agree before anything is deleted.
+      # ---------------------------------------------------------------------
+      - name: Verify cluster identity in GCP
+        run: |
+          set -euo pipefail
+          echo "Describing $EXPECTED_CLUSTER_NAME in $EXPECTED_CLUSTER_LOCATION ($EXPECTED_PROJECT_ID)..."
+
+          gcloud container clusters describe "$EXPECTED_CLUSTER_NAME" \
+            --region "$EXPECTED_CLUSTER_LOCATION" \
+            --project "$EXPECTED_PROJECT_ID" \
+            --format=json > cluster.json
+
+          ACTUAL_NAME=$(jq -r '.name' cluster.json)
+          ACTUAL_LOCATION=$(jq -r '.location' cluster.json)
+          # selfLink is .../projects/<project>/locations/<loc>/clusters/<name>
+          ACTUAL_PROJECT=$(jq -r '.selfLink' cluster.json | sed -n 's#.*/projects/\([^/]*\)/.*#\1#p')
+          ACTUAL_STATUS=$(jq -r '.status' cluster.json)
+          ACTUAL_NODES=$(jq -r '.currentNodeCount // 0' cluster.json)
+
+          echo "name=$ACTUAL_NAME location=$ACTUAL_LOCATION project=$ACTUAL_PROJECT status=$ACTUAL_STATUS nodes=$ACTUAL_NODES"
+
+          FAILED=0
+          [ "$ACTUAL_NAME" = "$EXPECTED_CLUSTER_NAME" ] || { echo "MISMATCH: name is '$ACTUAL_NAME', expected '$EXPECTED_CLUSTER_NAME'"; FAILED=1; }
+          [ "$ACTUAL_LOCATION" = "$EXPECTED_CLUSTER_LOCATION" ] || { echo "MISMATCH: location is '$ACTUAL_LOCATION', expected '$EXPECTED_CLUSTER_LOCATION'"; FAILED=1; }
+          [ "$ACTUAL_PROJECT" = "$EXPECTED_PROJECT_ID" ] || { echo "MISMATCH: project is '$ACTUAL_PROJECT', expected '$EXPECTED_PROJECT_ID'"; FAILED=1; }
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "REFUSED: the cluster at the expected coordinates is not the expected cluster. Nothing deleted."
+            exit 1
+          fi
+          echo "Cluster identity confirmed."
+
+      - name: Terraform init
+        working-directory: ./terraform
+        run: |
+          set -euo pipefail
+          terraform init -input=false -no-color -lock-timeout=5m
+
+      - name: Verify cluster identity in Terraform state
+        working-directory: ./terraform
+        run: |
+          set -euo pipefail
+          terraform show -json -no-color > state.json
+
+          python3 - <<'PY'
+          import json, os, sys
+
+          expected_name = os.environ["EXPECTED_CLUSTER_NAME"]
+          expected_loc = os.environ["EXPECTED_CLUSTER_LOCATION"]
+
+          with open("state.json") as fh:
+              state = json.load(fh)
+
+          def walk(module):
+              for res in module.get("resources", []):
+                  yield res
+              for child in module.get("child_modules", []):
+                  yield from walk(child)
+
+          root = state.get("values", {}).get("root_module", {})
+          clusters = [r for r in walk(root) if r.get("type") == "google_container_cluster"
+                      and r.get("mode") == "managed"]
+
+          if len(clusters) != 1:
+              print(f"REFUSED: expected exactly 1 google_container_cluster in state, found {len(clusters)}.")
+              for c in clusters:
+                  print(f"  {c.get('address')}")
+              sys.exit(1)
+
+          c = clusters[0]
+          vals = c.get("values") or {}
+          name = vals.get("name")
+          loc = vals.get("location")
+          print(f"state address: {c.get('address')}")
+          print(f"state name={name} location={loc}")
+
+          if name != expected_name or loc != expected_loc:
+              print(f"REFUSED: state cluster is {name}/{loc}, expected {expected_name}/{expected_loc}.")
+              sys.exit(1)
+
+          print("State and GCP agree on the cluster identity.")
+          PY
+
+      - name: Snapshot state before teardown
+        working-directory: ./terraform
+        run: |
+          set -euo pipefail
+          terraform state list > state-list-before.txt
+          echo "Resources in state before teardown: $(wc -l < state-list-before.txt)"
+          cat state-list-before.txt
+
+      # ---------------------------------------------------------------------
+      # Backup buckets: force_destroy = false with versioning enabled, so a
+      # later destroy of these buckets FAILS on any object, including
+      # noncurrent versions. This job does not purge them and does not destroy
+      # them. It reports them here, before the only destructive action in the
+      # run, so the decision lands in front of an operator rather than halfway
+      # through someone's destroy.
+      #
+      # A listing that errors is NOT reported as empty. "Zero objects" and
+      # "could not find out" are different answers, and conflating them is how
+      # a non-empty bucket gets waved through as safe to destroy.
+      # ---------------------------------------------------------------------
+      - name: Report backup bucket contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          NEEDS_DECISION=0
+          {
+            echo "## Backup buckets: decision required before any destroy"
+            echo
+            echo "These three buckets have \`force_destroy = false\` and versioning enabled."
+            echo "A destroy of a non-empty one fails. This job neither purges nor destroys them."
+            echo
+            echo "| Bucket | State | Objects (incl. noncurrent) | Size |"
+            echo "| --- | --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for SUFFIX in postgres-backups minio-backups redis-backups; do
+            BUCKET="${EXPECTED_PROJECT_ID}-${SUFFIX}"
+
+            # Absence must be a confirmed 404, never an unclassified nonzero
+            # exit. A 403 or a transient API error reported as "absent" is the
+            # same false-empty bug as a masked listing, and it lands on the
+            # bucket whose whole risk is being non-empty.
+            set +e
+            DESC_ERR=$(gcloud storage buckets describe "gs://${BUCKET}" \
+                         --project "$EXPECTED_PROJECT_ID" --format=none 2>&1 >/dev/null)
+            DESC_RC=$?
+            set -e
+
+            if [ "$DESC_RC" -ne 0 ]; then
+              if printf '%s\n' "$DESC_ERR" | grep -qiE 'not found|404'; then
+                echo "gs://${BUCKET}: does not exist (confirmed 404)"
+                echo "| \`${BUCKET}\` | absent (404) | 0 | 0 |" >> "$GITHUB_STEP_SUMMARY"
+                continue
+              fi
+              echo "FAILED: could not describe gs://${BUCKET}, and the error is not a 404."
+              echo "Refusing to infer that the bucket is absent or empty."
+              printf '%s\n' "$DESC_ERR"
+              exit 1
+            fi
+
+            # Distinguish "matched no objects" from a real listing failure.
+            set +e
+            LIST_OUT=$(gcloud storage ls --recursive --all-versions "gs://${BUCKET}/**" 2>"list-err-${SUFFIX}.txt")
+            LIST_RC=$?
+            set -e
+
+            if [ "$LIST_RC" -ne 0 ]; then
+              if grep -qiE 'matched no objects|One or more URLs matched no objects' "list-err-${SUFFIX}.txt"; then
+                COUNT=0
+              else
+                echo "FAILED: could not list gs://${BUCKET}. Refusing to report an unknown bucket as empty."
+                cat "list-err-${SUFFIX}.txt"
+                exit 1
+              fi
+            else
+              # grep -c exits 1 on zero matches; that is a count, not an error.
+              COUNT=$(printf '%s\n' "$LIST_OUT" | grep -c '^gs://' || true)
+              COUNT=${COUNT:-0}
+            fi
+
+            set +e
+            DU_OUT=$(gcloud storage du --summarize --readable-sizes --all-versions "gs://${BUCKET}" 2>/dev/null)
+            DU_RC=$?
+            set -e
+            if [ "$DU_RC" -eq 0 ] && [ -n "$DU_OUT" ]; then
+              SIZE=$(printf '%s\n' "$DU_OUT" | awk 'NR==1 {print $1 " " $2}')
+            else
+              # Size is cosmetic; the object count is the load-bearing number.
+              SIZE="unavailable"
+            fi
+
+            echo "gs://${BUCKET}: ${COUNT} objects, ${SIZE}"
+
+            if [ "${COUNT}" -gt 0 ]; then
+              NEEDS_DECISION=1
+              echo "| \`${BUCKET}\` | NON-EMPTY, blocks destroy | ${COUNT} | ${SIZE} |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| \`${BUCKET}\` | empty, destroys cleanly | 0 | ${SIZE} |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+          {
+            echo
+            if [ "$NEEDS_DECISION" -eq 1 ]; then
+              echo "**A bucket above is non-empty.** Destroying it needs an explicit decision first:"
+              echo "keep the backups and remove the bucket from the destroy set, or purge every object"
+              echo "and every noncurrent version, or flip \`force_destroy\` to \`true\` and accept the loss."
+              echo "Whichever it is, it is a separate authorized action. This job will not make it."
+            else
+              echo "All backup buckets are empty. They destroy cleanly."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------------
+      # Step 3: delete exactly one named cluster. No wildcard, no list, no
+      # iteration. The name comes from the constant above, never from an input.
+      # ---------------------------------------------------------------------
+      - name: Delete the GKE cluster
+        run: |
+          set -euo pipefail
+          echo "Deleting cluster $EXPECTED_CLUSTER_NAME in $EXPECTED_CLUSTER_LOCATION ($EXPECTED_PROJECT_ID)."
+          gcloud container clusters delete "$EXPECTED_CLUSTER_NAME" \
+            --region "$EXPECTED_CLUSTER_LOCATION" \
+            --project "$EXPECTED_PROJECT_ID" \
+            --quiet
+
+      - name: Verify the cluster is actually gone
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The VPC, subnet, router and NAT cannot be destroyed while the
+          # cluster exists, and the firewall rules cannot be destroyed while
+          # the VPC exists. Deletion completing for real is a precondition for
+          # the plan below meaning anything, so it is checked, not assumed.
+          #
+          # "Gone" must be a confirmed not-found. Treating any nonzero exit as
+          # gone would let a 403 or a transient API error authorize state
+          # removal against a cluster that is still running, which is the one
+          # thing this step exists to rule out.
+          for ATTEMPT in $(seq 1 60); do
+            set +e
+            DESC_ERR=$(gcloud container clusters describe "$EXPECTED_CLUSTER_NAME" \
+                         --region "$EXPECTED_CLUSTER_LOCATION" \
+                         --project "$EXPECTED_PROJECT_ID" --format=none 2>&1 >/dev/null)
+            DESC_RC=$?
+            set -e
+
+            if [ "$DESC_RC" -eq 0 ]; then
+              echo "Attempt ${ATTEMPT}: cluster still present, waiting..."
+              sleep 30
+              continue
+            fi
+
+            if printf '%s\n' "$DESC_ERR" | grep -qiE 'not found|404'; then
+              echo "Cluster $EXPECTED_CLUSTER_NAME is gone (confirmed not-found)."
+              exit 0
+            fi
+
+            echo "FAILED: describing $EXPECTED_CLUSTER_NAME failed, and the error is not a 404."
+            echo "Refusing to infer the cluster is gone. State is untouched."
+            printf '%s\n' "$DESC_ERR"
+            exit 1
+          done
+          echo "FAILED: cluster still present after waiting. Not touching state."
+          exit 1
+
+      # ---------------------------------------------------------------------
+      # Step 4: remove from state exactly the addresses whose resource type
+      # begins kubernetes_, helm_ or kubectl_, plus the cluster address.
+      #
+      # Enumerated from `terraform state list` at run time. A hardcoded list of
+      # 28 under-removes the moment state drifts, and every address it misses
+      # is a resource terraform can no longer reach, because its provider is
+      # configured against a cluster endpoint that no longer exists. That
+      # stranding surfaces as "provider configuration not present" on the next
+      # plan, which is the failure this whole ordering exists to avoid.
+      # ---------------------------------------------------------------------
+      - name: Enumerate state addresses to remove
+        working-directory: ./terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform state list > state-list-current.txt
+          python3 "${RUNNER_TEMP}/bin/classify_addresses.py" \
+            state-list-current.txt --write state-rm-addresses.txt
+          echo "Addresses staged for removal: $(wc -l < state-rm-addresses.txt)"
+
+      - name: Remove stranded addresses from state
+        working-directory: ./terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s state-rm-addresses.txt ]; then
+            echo "No addresses to remove. Skipping."
+            exit 0
+          fi
+
+          # Read into an array and pass quoted. Terraform addresses contain
+          # brackets and quotes, e.g. kubectl_manifest.shared_redis["0"].
+          # Unquoted word splitting would hand those to pathname expansion and
+          # mangle them into addresses terraform never had.
+          mapfile -t ADDRS < state-rm-addresses.txt
+          if [ "${#ADDRS[@]}" -eq 0 ]; then
+            echo "No addresses to remove. Skipping."
+            exit 0
+          fi
+
+          echo "Removing ${#ADDRS[@]} addresses in a single state write:"
+          printf '  %s\n' "${ADDRS[@]}"
+
+          # One batched call rather than a loop: a single remote state write,
+          # so there is no half-removed state to recover from if one address
+          # is rejected.
+          terraform state rm -lock-timeout=5m "${ADDRS[@]}"
+
+      - name: Verify nothing stranded remains
+        working-directory: ./terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform state list > state-list-after.txt
+          echo "Resources in state after removal: $(wc -l < state-list-after.txt)"
+          cat state-list-after.txt
+          echo
+
+          # Post-condition, using the same classifier that produced the removal
+          # set. If the enumeration under-removed, it is caught here rather
+          # than in a plan that dies on a provider it can no longer configure.
+          python3 "${RUNNER_TEMP}/bin/classify_addresses.py" \
+            state-list-after.txt --expect-empty
+
+      # ---------------------------------------------------------------------
+      # Step 5: refresh state, then plan and print it.
+      # ---------------------------------------------------------------------
+      - name: Refresh state
+        working-directory: ./terraform
+        env:
+          TF_VAR_project_id: crystalshards-org
+          TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
+          TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
+          TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
+          TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          # -refresh-only reconciles state with the API. It reads infrastructure
+          # and writes state. It does not create, change or destroy anything.
+          terraform apply -refresh-only -auto-approve -input=false -no-color -lock-timeout=5m
+
+      - name: Plan and print it
+        working-directory: ./terraform
+        env:
+          TF_VAR_project_id: crystalshards-org
+          TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
+          TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
+          TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
+          TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          terraform plan -input=false -no-color -lock-timeout=5m -out=tfplan.binary
+
+          echo "=================== TERRAFORM PLAN ==================="
+          terraform show -no-color tfplan.binary | tee tfplan.txt
+          echo "======================================================"
+
+          # The assertion reads this, not the text above. Grep on plan text is
+          # how a guard passes while the thing it guards against happens.
+          terraform show -json -no-color tfplan.binary > tfplan.json
+
+          if [ ! -s tfplan.json ]; then
+            echo "FAILED: tfplan.json is empty. Refusing to proceed without a parseable plan."
+            exit 1
+          fi
+
+      # ---------------------------------------------------------------------
+      # Step 6: assert on the destroy set. This is the point of the job.
+      # ---------------------------------------------------------------------
+      - name: Assert on the destroy set
+        working-directory: ./terraform
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, sys
+
+          # ------------------------------------------------------------------
+          # Never destroy. These are the ones that cost a human a bad afternoon.
+          # ------------------------------------------------------------------
+          PROTECTED_TYPES = {
+              "google_dns_managed_zone":
+                  "nameservers are delegated at the registrar; destroying a zone means "
+                  "re-delegating a domain by hand to fix a problem we created",
+              "google_dns_record_set":
+                  "the four live apex A records; a sibling is importing them into state",
+          }
+
+          # Whole modules that are off limits regardless of resource type.
+          PROTECTED_MODULE_PREFIXES = {
+              "module.project_services":
+                  "declares run, sqladmin, cloudtasks, secretmanager, artifactregistry, "
+                  "compute, certificatemanager, dns, iamcredentials and storage for the "
+                  "Cloud Run stack",
+              "module.dns":
+                  "the four registrar-delegated managed zones",
+          }
+
+          # APIs the Cloud Run stack cannot lose. Disabling artifactregistry is
+          # the sharpest: it surfaces as a permissions or not-found error on
+          # image push rather than as anything resembling its cause.
+          CLOUD_RUN_REQUIRED_APIS = {
+              "run.googleapis.com",
+              "sqladmin.googleapis.com",
+              "cloudtasks.googleapis.com",
+              "secretmanager.googleapis.com",
+              "artifactregistry.googleapis.com",
+              "compute.googleapis.com",
+              "certificatemanager.googleapis.com",
+              "dns.googleapis.com",
+              "iamcredentials.googleapis.com",
+              "storage.googleapis.com",
+          }
+
+          # ------------------------------------------------------------------
+          # Legitimate destroys. These served only GKE. Confirmed with
+          # CloudRunInfra: the Cloud Run stack needs no VPC. Cloud SQL keeps a
+          # public IP with zero authorized networks and require_ssl, and every
+          # service reaches it through the built-in Cloud SQL connector over a
+          # unix socket. No Serverless VPC Access connector, no Direct VPC
+          # egress, no private services access range. So the VPC, subnet,
+          # router, NAT and firewall rules are GKE-only and go.
+          # ------------------------------------------------------------------
+          PERMITTED_DESTROY_TYPES = {
+              "google_container_cluster": "the cluster this job just deleted",
+              "google_compute_network": "GKE-only VPC; Cloud Run does not use it",
+              "google_compute_subnetwork": "GKE-only subnet; Cloud Run does not use it",
+              "google_compute_router": "existed for the GKE NAT",
+              "google_compute_router_nat": "egress for GKE nodes",
+              "google_compute_firewall": "GKE node and webhook rules",
+              "google_storage_bucket": "the three GKE backup buckets",
+              "google_storage_bucket_iam_member": "writer bindings on those buckets",
+              "google_service_account": "GKE backup service accounts",
+              "google_service_account_iam_member": "workload identity bindings for those SAs",
+              "google_project_iam_member": "project-scope grants to GKE-only identities",
+              "google_bigquery_dataset": "GKE usage dataset",
+              "google_artifact_registry_repository": "the old multi-region crystalshards repo",
+              "random_password": "generated for in-cluster secrets",
+              "null_resource": "in-cluster provisioner shims",
+          }
+
+          # Should not appear at all: state removal already took these out.
+          STRANDED_PREFIXES = ("kubernetes_", "helm_", "kubectl_")
+
+          # ---------------- fail closed on anything unparseable -------------
+          path = "tfplan.json"
+          try:
+              with open(path) as fh:
+                  plan = json.load(fh)
+          except FileNotFoundError:
+              print(f"FAILED: {path} does not exist. Refusing to proceed.")
+              sys.exit(1)
+          except json.JSONDecodeError as exc:
+              print(f"FAILED: {path} is not valid JSON ({exc}). Refusing to proceed.")
+              sys.exit(1)
+
+          if not isinstance(plan, dict):
+              print(f"FAILED: {path} is not a JSON object. Refusing to proceed.")
+              sys.exit(1)
+          if not isinstance(plan.get("format_version"), str) or not plan["format_version"]:
+              print(f"FAILED: {path} has no format_version. This is not a terraform plan. Refusing.")
+              sys.exit(1)
+
+          if "resource_changes" in plan:
+              changes = plan["resource_changes"]
+              if not isinstance(changes, list):
+                  print(f"FAILED: resource_changes is {type(changes).__name__}, not a list. Refusing.")
+                  sys.exit(1)
+          else:
+              # Terraform omits the key for a no-change plan. Legitimate, loud.
+              print("NOTICE: plan contains no resource_changes at all. Destroy set is empty.")
+              changes = []
+
+          # ---------------------------- classify ----------------------------
+          destroys = []
+          for change in changes:
+              if not isinstance(change, dict):
+                  print(f"FAILED: malformed resource_changes entry: {change!r}. Refusing.")
+                  sys.exit(1)
+              actions = (change.get("change") or {}).get("actions") or []
+              # "delete" covers a straight destroy and both halves of a
+              # replace, which for a DNS zone is still a destroyed DNS zone.
+              if "delete" in actions:
+                  destroys.append(change)
+
+          violations, stranded, permitted, unclassified = [], [], [], []
+
+          def classify_project_service(change, addr):
+              """A google_project_service destroy is only dangerous if it
+              actually disables the API. Reading disable_on_destroy off the
+              structured `before` distinguishes a real outage from a clean
+              move of the same API between modules, which this migration does
+              on purpose for artifactregistry."""
+              before = (change.get("change") or {}).get("before") or {}
+              api = before.get("service") or "<unknown service>"
+              # The provider defaults disable_on_destroy to true, so absent
+              # means it disables.
+              disables = before.get("disable_on_destroy", True) is not False
+              cascades = before.get("disable_dependent_services") is True
+
+              if not disables:
+                  permitted.append((addr, "google_project_service",
+                      f"{api}: disable_on_destroy = false, so this removes the resource "
+                      f"from terraform without disabling the API"))
+                  return
+
+              detail = f"would DISABLE {api}"
+              if cascades:
+                  detail += " and cascade to dependent services (disable_dependent_services = true)"
+              if api in CLOUD_RUN_REQUIRED_APIS:
+                  detail += f"; the Cloud Run stack requires {api}"
+              violations.append((addr, "google_project_service", detail))
+
+          for change in destroys:
+              addr = change.get("address", "<no address>")
+              rtype = change.get("type", "")
+              module = change.get("module_address", "") or ""
+
+              protected_module = next(
+                  (m for m in PROTECTED_MODULE_PREFIXES
+                   if module == m or module.startswith(m + ".")),
+                  None,
+              )
+              if protected_module:
+                  violations.append((addr, rtype,
+                      f"in protected module {protected_module}: "
+                      f"{PROTECTED_MODULE_PREFIXES[protected_module]}"))
+                  continue
+
+              if rtype in PROTECTED_TYPES:
+                  violations.append((addr, rtype, PROTECTED_TYPES[rtype]))
+                  continue
+
+              if rtype == "google_project_service":
+                  classify_project_service(change, addr)
+                  continue
+
+              if rtype.startswith(STRANDED_PREFIXES):
+                  stranded.append((addr, rtype))
+                  continue
+
+              if rtype in PERMITTED_DESTROY_TYPES:
+                  permitted.append((addr, rtype, PERMITTED_DESTROY_TYPES[rtype]))
+                  continue
+
+              unclassified.append((addr, rtype))
+
+          # ----------------------------- report -----------------------------
+          summary = []
+          summary.append("## Destroy-set assertion")
+          summary.append("")
+          summary.append(f"Plan proposes destroying **{len(destroys)}** resources.")
+          summary.append("")
+
+          print(f"Destroy set: {len(destroys)} resources")
+          print()
+
+          if permitted:
+              print("=== PERMITTED (GKE-only, expected to go) ===")
+              summary.append("### Permitted, GKE-only")
+              summary.append("")
+              summary.append("| Address | Type | Why it is allowed |")
+              summary.append("| --- | --- | --- |")
+              for addr, rtype, why in sorted(permitted):
+                  print(f"  [{rtype}] {addr}  <- {why}")
+                  summary.append(f"| `{addr}` | `{rtype}` | {why} |")
+              summary.append("")
+              print()
+
+          failed = False
+
+          if violations:
+              failed = True
+              print("=== REFUSED: protected resources in the destroy set ===")
+              summary.append("### REFUSED: protected resources in the destroy set")
+              summary.append("")
+              summary.append("| Address | Type | Why it is protected |")
+              summary.append("| --- | --- | --- |")
+              for addr, rtype, why in sorted(violations):
+                  print(f"  [{rtype}] {addr}")
+                  print(f"      {why}")
+                  summary.append(f"| `{addr}` | `{rtype}` | {why} |")
+              summary.append("")
+              print()
+
+          if stranded:
+              failed = True
+              print("=== REFUSED: cluster-scoped resources still in the plan ===")
+              print("State removal under-removed. Their providers point at a cluster that")
+              print("no longer exists, so applying this plan cannot succeed.")
+              summary.append("### REFUSED: cluster-scoped resources still in the plan")
+              summary.append("")
+              summary.append("State removal under-removed. These providers point at a deleted cluster.")
+              summary.append("")
+              for addr, rtype in sorted(stranded):
+                  print(f"  [{rtype}] {addr}")
+                  summary.append(f"- `{addr}` (`{rtype}`)")
+              summary.append("")
+              print()
+
+          if unclassified:
+              failed = True
+              print("=== REFUSED: unclassified resources in the destroy set ===")
+              print("Not on the protected list and not on the permitted list. A teardown")
+              print("whose job is proving what it destroys does not get to shrug at these.")
+              print("If a destroy below is correct, add its type to PERMITTED_DESTROY_TYPES")
+              print("with the reason it served only GKE.")
+              summary.append("### REFUSED: unclassified resources in the destroy set")
+              summary.append("")
+              summary.append("Neither protected nor explicitly permitted. Add the type to "
+                             "`PERMITTED_DESTROY_TYPES` with a reason, or protect it.")
+              summary.append("")
+              for addr, rtype in sorted(unclassified):
+                  print(f"  [{rtype}] {addr}")
+                  summary.append(f"- `{addr}` (`{rtype}`)")
+              summary.append("")
+              print()
+
+          if failed:
+              summary.append("**Nothing further was applied.** The cluster is deleted and its state "
+                             "entries are removed. The remaining destroy set is refused pending review.")
+          else:
+              print("PASSED: no DNS zone, no DNS record set, no API disable and no")
+              print("protected module resource is in the destroy set.")
+              summary.append("### Passed")
+              summary.append("")
+              summary.append("No `google_dns_managed_zone`, no `google_dns_record_set`, no "
+                             "`google_project_service` destroy that would disable an API, and "
+                             "nothing under `module.project_services` or `module.dns` is in the "
+                             "destroy set. No cluster-scoped resource is stranded.")
+              summary.append("")
+              summary.append("This job does not apply the plan. Review the printed plan and the "
+                             "backup bucket decision above before any destroy.")
+
+          step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if step_summary:
+              with open(step_summary, "a") as fh:
+                  fh.write("\n".join(summary) + "\n")
+
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: Upload teardown evidence
+        # Evidence must survive a refusal. This uploads artifacts without
+        # changing the job's outcome.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gke-teardown-evidence
+          if-no-files-found: warn
+          retention-days: 90
+          path: |
+            terraform/state-list-before.txt
+            terraform/state-list-current.txt
+            terraform/state-list-after.txt
+            terraform/state-rm-addresses.txt
+            terraform/tfplan.txt
+            terraform/tfplan.json
+            cluster.json

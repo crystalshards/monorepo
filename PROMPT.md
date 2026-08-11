@@ -17,7 +17,7 @@ The Four Applications:
 1. CrystalDocs.org (Documentation Host)
   - Hosts auto-generated documentation for all published shards
   - Supports multiple versions per package
-  - Integrates with MinIO for static file storage
+  - Stores rendered documentation in Google Cloud Storage
   - Provides version-switching for docs
   - Makes Crystal library documentation searchable and accessible
 
@@ -37,7 +37,7 @@ The Four Applications:
 
 ## Current State
 
-**TL;DR**: All 6 phases complete (Infrastructure, CrystalShards, CrystalDocs, CrystalGigs, CrystalBits, Production Hardening). All CI passing. Ready for Terraform apply and deployment.
+**TL;DR**: All four applications are implemented. The platform is migrating to Cloud Run in Google Cloud project `crystalshards-org`, region `us-central1`. Terraform applies run in CI only, never from a workstation.
 
 See GitHub Projects for detailed task tracking:
 - CrystalShards.org → Project #1
@@ -52,65 +52,35 @@ See GitHub Projects for detailed task tracking:
 
 ```
 apps/
-  crystalshards/      # Package registry (Lucky app + JoobQ workers)
+  crystalshards/      # Package registry (Lucky app)
   crystaldocs/        # Documentation hosting (Lucky app)
   crystalgigs/        # Job board (Lucky app)
   crystalbits/        # Newsletter/blog (Lucky app)
-  */terraform/        # App-specific K8s resources (namespace, ingress, deployment, etc)
-terraform/
-  modules/
-    networking/       # VPC, subnets, NAT
-    cluster/          # GKE Autopilot
-    operators/        # cert-manager, CNPG, Redis, MinIO, Prometheus
-    ingress/          # Traefik + external-dns
-    applications/     # Orchestrates apps/*/terraform modules
+terraform/            # All infrastructure as code, one resource per file
 .github/workflows/    # CI/CD
 ```
 
 ### Technology Stack
 
 - **Framework**: Lucky (Crystal web framework)
-- **Database**: CloudNativePG (in-cluster PostgreSQL operator)
-- **Cache/Queue**: Redis operator (in-cluster)
-- **Storage**: MinIO operator (for packages & docs)
-- **Jobs**: JoobQ (Redis-backed background workers in crystalshards)
-- **Ingress**: Traefik
-- **Platform**: GKE Autopilot
+- **Platform**: Google Cloud project `crystalshards-org`, region `us-central1`
+- **Compute**: Cloud Run services with scale to zero (`crystalshards`, `crystaldocs`, `crystalgigs`, `crystalbits`, `docs-launcher`) plus one Cloud Run Job (`docs-build`)
+- **Database**: One Cloud SQL PostgreSQL instance `crystal-postgres` holding four databases, one per app, reached over the Cloud SQL unix socket at `/cloudsql/<connection_name>`. Each service sets `max_pool_size` 5, because the instance is small and four autoscaling services would otherwise exhaust its connection limit
+- **Storage**: Google Cloud Storage, bucket `crystalshards-docs` for built documentation and `crystalshards-packages` for packages
+- **Queue**: Cloud Tasks, queue `docs-builds`
+- **Edge**: One global external Application Load Balancer with serverless NEGs and Google-managed certificates, serving all eight hostnames (apex and www for crystalshards.org, crystaldocs.org, crystalgigs.com, crystalbits.org). Cloud DNS holds the four managed zones
+- **Images**: Artifact Registry repository `docker-images` in `us-central1`, image path `us-central1-docker.pkg.dev/crystalshards-org/docker-images/<app>:<sha>`
+- **Secrets**: Secret Manager, referenced by Cloud Run as environment variables
+- **Observability**: Cloud Logging and Cloud Monitoring
 - **IaC**: Terraform (one resource per file)
 
-### Kubernetes Namespaces
+## Background Work
 
-- `crystalshards` - Package registry app
-- `crystaldocs` - Documentation app
-- `crystalgigs` - Job board app
-- `crystalbits` - Newsletter app
-- `infrastructure` - Shared operators (cert-manager, CNPG, Redis, MinIO, Prometheus)
+Documentation builds run through Cloud Tasks. An enqueue puts a task on the `docs-builds` queue, the task calls `POST /internal/docs/build` on the `docs-launcher` service, and `docs-launcher` creates an execution of the `docs-build` Cloud Run Job.
 
-## Infrastructure Status
+The `docs-build` job runs `crystal docs` over untrusted third-party shard code, so it is deliberately powerless: its service account holds zero IAM bindings. It receives its input through a signed GET URL and writes its output through a signed PUT URL, both minted by `docs-launcher`. That isolation is the reason the platform runs on Cloud Run.
 
-✅ **All deployment resources created:**
-
-Each app has:
-
-- ✅ `resource.kubernetes_deployment.<app>_api.tf` - API server pods
-- ✅ `resource.kubernetes_service.<app>.tf` - Service to expose pods
-- ✅ `resource.kubectl_manifest.<app>_postgres.tf` - PostgreSQL cluster (CNPG)
-- ✅ `resource.kubernetes_secret.<app>_secrets.tf` - DATABASE_URL, REDIS_URL, SECRET_KEY_BASE
-
-Shared:
-
-- ✅ Redis cluster in infrastructure namespace
-- ✅ MinIO tenant for package/doc storage
-
-## Background Workers (crystalshards only)
-
-JoobQ workers in `apps/crystalshards/src/workers/` (Redis-backed job queue):
-
-- **IndexShardWorker** - Parse shard.yml, extract metadata, update search index
-- **BuildDocsWorker** - Run `crystal docs` in sandbox, upload to MinIO
-- **UpdateDependenciesWorker** - Update dependency graph
-
-Worker deployment separate from API deployment (scales independently).
+Shard indexing and dependency graph work lives in `apps/crystalshards/src/workers/`. Locally the queue is in-process.
 
 ### Multi-Provider Support
 
@@ -128,17 +98,17 @@ Each provider has independent worker implementations to handle provider-specific
 
 ## Current Focus: Continuous Production Readiness
 
-**All initial phases complete!** ✅ Infrastructure deployed, all apps live with HTTPS.
+**Platform migration in progress**: the four applications are moving to Cloud Run.
 
 **Agent Directive**: Continue iterating toward full production readiness. See "Autonomous Iteration Workflow" section below for work discovery process.
 
 **Current Priorities** (work on these in order):
 1. **CrystalShards.org User Interface & Workers (TOP PRIORITY)** - Build the main package registry web interface and ensure background workers are functioning:
-   - **Workers (CRITICAL)**: Ensure all JoobQ workers are operational for the UI to be useful:
-     * IndexShardWorker - Parse shard.yml, extract metadata, update search index
-     * BuildDocsWorker - Run `crystal docs` in sandbox, upload to MinIO
-     * UpdateDependenciesWorker - Update dependency graph
-     * Workers must actually process jobs from Redis queue
+   - **Docs pipeline (CRITICAL)**: Documentation must actually build for the UI to be useful:
+     * An enqueue puts a task on the `docs-builds` Cloud Tasks queue
+     * The task calls `POST /internal/docs/build` on `docs-launcher`
+     * `docs-launcher` creates a `docs-build` Cloud Run Job execution
+     * Built output lands in the `crystalshards-docs` bucket
      * Test with real shard indexing workflow
    - **Homepage**: Hero section, search bar, featured/popular shards, recent updates
    - **Browse/Search Page**: Paginated list of all shards with search and filter capabilities
@@ -159,19 +129,18 @@ Each provider has independent worker implementations to handle provider-specific
    - CrystalGigs.org: Job listing page, job detail, job posting form (with Stripe integration)
    - CrystalBits.org: Blog homepage, post listing, individual post pages, newsletter signup
    - **Verify each UI with Playwright after implementation**
-3. **Migrate from Mosquito to JoobQ** - Replace background job system with JoobQ (https://github.com/azutoolkit/joobq)
-4. **Implement Multi-Provider Support** - Add support for GitHub, GitLab, Bitbucket, Codeberg, generic Git, Mercurial, and Fossil
-5. Monitor CI/CD - fix any failures immediately
-6. Address open GitHub issues
-7. Complete Production Readiness Checklist items (see workflow section)
-8. Improve monitoring and observability
-9. Seed production data
-10. Enhance documentation
-11. Performance optimization
-12. Security improvements
+3. **Implement Multi-Provider Support** - Add support for GitHub, GitLab, Bitbucket, Codeberg, generic Git, Mercurial, and Fossil
+4. Monitor CI/CD - fix any failures immediately
+5. Address open GitHub issues
+6. Complete Production Readiness Checklist items (see workflow section)
+7. Improve monitoring and observability
+8. Seed production data
+9. Enhance documentation
+10. Performance optimization
+11. Security improvements
 
-**Completed Phases** (for reference):
-- ✅ Phase 1: Infrastructure deployment (GKE, operators, networking)
+**Completed Phases** (pre-migration history, recorded before the move to Cloud Run):
+- ✅ Phase 1: Infrastructure deployment
 - ✅ Phase 2: CrystalShards implementation (models, API, workers)
 - ✅ Phase 3: Production deployment (all 4 apps live)
 - ✅ Phase 4: CrystalDocs implementation
@@ -184,24 +153,6 @@ Each provider has independent worker implementations to handle provider-specific
 
 - One resource per file: `resource.<type>.<name>.tf`
 - Module files: `module.<name>.tf`
-- All apps reference their namespace: `kubernetes_namespace.<app>.metadata[0].name`
-
-### GKE Autopilot Requirements
-
-All pods MUST have resource requests/limits:
-
-```hcl
-resources {
-  requests = {
-    cpu    = "250m"
-    memory = "512Mi"
-  }
-  limits = {
-    cpu    = "1000m"
-    memory = "2Gi"
-  }
-}
-```
 
 ### Environment Variables (Lucky apps)
 
@@ -212,9 +163,18 @@ Required:
 - `DATABASE_URL=postgresql://...`
 - `SECRET_KEY_BASE=...`
 
-crystalshards also needs:
+Production also sets:
 
-- `REDIS_URL=redis://...` (for JoobQ workers)
+- `CLOUD_SQL_CONNECTION_NAME` - Cloud SQL instance connection name, socket path `/cloudsql/<connection_name>`
+- `DOCS_BUCKET` - bucket for built documentation
+- `PACKAGES_BUCKET` - bucket for packages
+- `DOCS_BUILD_QUEUE` - Cloud Tasks queue for documentation builds
+- `DOCS_LAUNCHER_URL` - URL of the `docs-launcher` service
+- `DOCS_BUILD_JOB` - name of the `docs-build` Cloud Run Job
+
+Secrets come from Secret Manager and are referenced by Cloud Run as environment variables. Credentials are never defaulted in code: a missing required production variable fails closed at boot with a message naming the variable.
+
+Local development needs none of this. `make dev` runs the four apps on ports 3000 to 3003 against docker-compose Postgres, a local object store and an in-process queue, with no Google Cloud credentials.
 
 ## Autonomous Iteration Workflow
 
@@ -235,9 +195,6 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
 4. **GitHub Issues** → Check for open issues (`gh issue list`)
 5. **Codebase TODOs** → Search for `TODO`, `FIXME`, `XXX` comments
 6. **Production Readiness Improvements**:
-   - Add monitoring dashboards (Grafana)
-   - Set up alerting rules (Prometheus)
-   - Implement log aggregation
    - Seed production data
    - Performance testing and optimization
    - Security hardening improvements
@@ -272,8 +229,8 @@ The agent should ALWAYS have work to do. Follow this priority order to find task
      * Document ANY issues found as GitHub issues immediately
      * **UI verification is NOT optional - it's part of "done"**
    - **Commit frequently** with issue reference (`refs #123` in commit body)
-   - **Push regularly** (at least every 30 minutes of work)
-   - **Progress comments** every few hours: `gh issue comment <number> --body "Progress: [completed items]"`
+   - **Push regularly** so work is never stranded locally
+   - **Post progress comments** as milestones land: `gh issue comment <number> --body "Progress: [completed items]"`
    - Watch CI: Monitor for failures and fix immediately
 
 4. **When Complete**:
@@ -316,14 +273,8 @@ See CLAUDE.md section "11. Parallel Agent Execution" for detailed examples and g
 Continue iterating until ALL of these are complete:
 
 **Infrastructure & Deployment:**
-- [x] GKE cluster deployed
-- [x] All operators configured (cert-manager, CNPG, Redis, MinIO, Prometheus)
-- [x] All 4 applications deployed with HTTPS
-- [x] DNS configured and working
-- [x] Grafana dashboards configured
-- [x] Prometheus alerting rules set up
-- [x] Log aggregation configured
-- [x] Backup schedules configured
+- [ ] All 4 applications deployed on Cloud Run with HTTPS
+- [ ] DNS configured and working
 - [ ] Disaster recovery tested
 
 **Application Features:**
@@ -343,17 +294,10 @@ Continue iterating until ALL of these are complete:
 
 **Monitoring & Observability:**
 - [x] Health endpoints working
-- [x] ServiceMonitors configured
 - [ ] Application metrics exposed
-- [x] Custom dashboards created
-- [x] Alert rules defined
-- [x] On-call runbooks written
-- [x] Log queries documented
 
 **Documentation:**
 - [x] API documentation complete
-- [x] Deployment runbook written
-- [x] Operational runbooks for common incidents
 - [ ] User guides for each application
 - [ ] Contributing guide
 - [ ] Architecture decision records
@@ -385,12 +329,6 @@ gh issue list --label "good-first-issue"
 # Search for TODOs
 grep -r "TODO" apps/
 grep -r "FIXME" apps/
-
-# Check deployment status
-kubectl get pods --all-namespaces
-
-# Review monitoring gaps
-kubectl get servicemonitors --all-namespaces
 ```
 
 ## Error Handling
@@ -440,4 +378,4 @@ View any board: `gh project view <1-5> --owner crystalshards --web`
 View all boards: `for i in {1..5}; do gh project view $i --owner crystalshards; done`
 
 ---
-**Current Status**: All apps deployed and live. Continue iterating on monitoring, observability, data seeding, and production polish.
+**Current Status**: Migrating the four applications to Cloud Run. Continue iterating on the applications, observability, data seeding, and production polish.

@@ -25,19 +25,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis Cache & Queue
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # MinIO Object Storage
   minio:
     image: minio/minio:latest
@@ -73,7 +60,6 @@ services:
     environment:
       LUCKY_ENV: development
       DATABASE_URL: postgres://postgres:password@postgres/crystalshards_development
-      REDIS_URL: redis://redis:6379
       SECRET_KEY_BASE: development_secret_key_base_change_in_production
       # The ad strip reads promotable jobs from CrystalGigs. Unset would turn
       # the strip off rather than break the app, so it is wired here to keep
@@ -82,8 +68,6 @@ services:
       PORT: 3000
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     volumes:
       - ./apps/crystalshards:/app
@@ -155,5 +139,4 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   minio_data:

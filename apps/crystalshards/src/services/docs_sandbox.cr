@@ -75,14 +75,14 @@ module CrystalShards
       case ENV.fetch("DOCS_SANDBOX", "").downcase
       when "docker"
         DockerDocsSandbox.new
-      when "kubernetes", "k8s"
-        KubernetesDocsSandbox.new
+      when "cloudrun"
+        CloudRunJobDocsSandbox.new
       when "none", ""
         unsandboxed
       else
         raise Unavailable.new(
           "Unknown DOCS_SANDBOX #{ENV["DOCS_SANDBOX"]?.inspect}. " \
-          "Expected docker, kubernetes or none."
+          "Expected docker, cloudrun or none."
         )
       end
     end
@@ -96,7 +96,7 @@ module CrystalShards
         raise Unavailable.new(
           "Refusing to build documentation without a sandbox. Building runs " \
           "untrusted shard code with compile-time command execution. Set " \
-          "DOCS_SANDBOX=docker (or kubernetes), or set " \
+          "DOCS_SANDBOX=docker (or cloudrun), or set " \
           "DOCS_SANDBOX_ALLOW_UNSAFE=true for local development only."
         )
       end

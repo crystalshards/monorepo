@@ -7,67 +7,60 @@ This guide explains how to configure the required secrets and environment variab
 ### Google Cloud Platform Integration
 
 #### `GCP_PROJECT_ID`
-Your Google Cloud Project ID where the GKE cluster will be deployed.
+Your Google Cloud Project ID, the project the Cloud Run services are deployed into.
 
-**Example**: `crystalshards-prod-12345`
+**Example**: `crystalshards-org`
 
-#### `GCP_SA_KEY`
-Service Account key (JSON format) for deployment automation.
+#### GCP deployment credential
 
-**Setup Steps**:
-1. Create a service account in GCP Console
-2. Grant the following roles:
-   - `Kubernetes Engine Admin`
-   - `Storage Admin` (for container registry)
-   - `Compute Admin` (for GKE management)
-   - `Service Account User`
-3. Create and download a JSON key
-4. Base64 encode the JSON: `cat key.json | base64 -w 0`
-5. Add the base64 string as the secret value
+The deploy workflow authenticates to Google Cloud as a dedicated CI identity. The
+secret names, and whether that credential is a service account key or Workload
+Identity Federation, are defined by the deploy workflow. Configure the repository
+secrets that workflow expects.
+
+**Roles the CI identity needs**:
+- `Artifact Registry Writer` to push container images
+- `Cloud Run Admin` to deploy services and jobs
+- `Service Account User` to act as the runtime service accounts
 
 **Required Permissions**:
 ```json
 {
   "roles": [
-    "roles/container.admin",
-    "roles/storage.admin", 
-    "roles/compute.admin",
+    "roles/artifactregistry.writer",
+    "roles/run.admin",
     "roles/iam.serviceAccountUser"
   ]
 }
 ```
 
+Terraform runs in CI under the same identity, so it additionally needs permission
+over every resource Terraform manages. Grant those roles to match what is actually
+declared under `terraform/` rather than copying a fixed list from this document.
+
 ## GitHub Environments
 
-The pipeline uses GitHub Environments for deployment protection and secrets management.
-
-### Create Environments
-
-1. Go to repository Settings → Environments
-2. Create two environments:
-   - `staging`
-   - `production`
-
-### Environment Protection Rules
-
-#### Staging Environment
-- **Required reviewers**: None (auto-deploy)
-- **Deployment branches**: Any branch
-
-#### Production Environment  
-- **Required reviewers**: Repository admins
-- **Deployment branches**: `main` only
-- **Wait timer**: 5 minutes
+The pipeline uses GitHub Environments for deployment protection and secrets
+management. [`GITHUB_SETUP.md`](../GITHUB_SETUP.md) defines the environments and
+their protection rules. Configure them there so the two documents cannot drift
+apart.
 
 ## Google Cloud Project Setup
 
 ### 1. Enable Required APIs
 
 ```bash
-gcloud services enable container.googleapis.com
-gcloud services enable compute.googleapis.com
+gcloud services enable run.googleapis.com
+gcloud services enable artifactregistry.googleapis.com
+gcloud services enable sqladmin.googleapis.com
+gcloud services enable cloudtasks.googleapis.com
+gcloud services enable secretmanager.googleapis.com
 gcloud services enable storage.googleapis.com
+gcloud services enable dns.googleapis.com
 gcloud services enable monitoring.googleapis.com
+
+# Required by the global external Application Load Balancer and its serverless NEGs
+gcloud services enable compute.googleapis.com
 ```
 
 ### 2. Create Service Account
@@ -79,83 +72,70 @@ gcloud iam service-accounts create crystalshards-ci \
     --description="Service account for GitHub Actions CI/CD"
 
 # Grant required roles
-PROJECT_ID="your-project-id"
+PROJECT_ID="crystalshards-org"
 SA_EMAIL="crystalshards-ci@${PROJECT_ID}.iam.gserviceaccount.com"
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:$SA_EMAIL" \
-    --role="roles/container.admin"
+    --role="roles/artifactregistry.writer"
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:$SA_EMAIL" \
-    --role="roles/storage.admin"
-
-gcloud projects add-iam-policy-binding $PROJECT_ID \
-    --member="serviceAccount:$SA_EMAIL" \
-    --role="roles/compute.admin"
+    --role="roles/run.admin"
 
 gcloud projects add-iam-policy-binding $PROJECT_ID \
     --member="serviceAccount:$SA_EMAIL" \
     --role="roles/iam.serviceAccountUser"
-
-# Create and download key
-gcloud iam service-accounts keys create crystalshards-ci-key.json \
-    --iam-account=$SA_EMAIL
-
-# Base64 encode for GitHub secret
-cat crystalshards-ci-key.json | base64 -w 0 > crystalshards-ci-key.b64
 ```
 
-### 3. Configure Container Registry
+How this identity is presented to GitHub Actions depends on the authentication
+mechanism the deploy workflow uses. Configure the repository secrets it expects.
+
+### 3. Configure Artifact Registry
+
+Images live in the `docker-images` repository in `us-central1`. The full image path
+is `us-central1-docker.pkg.dev/crystalshards-org/docker-images/<app>:<sha>`.
 
 ```bash
-# Enable Container Registry
-gcloud services enable containerregistry.googleapis.com
+# Create the repository
+gcloud artifacts repositories create docker-images \
+    --repository-format=docker \
+    --location=us-central1 \
+    --description="Container images for the CrystalShards services"
 
-# Ensure the service account can push to registry
-gsutil iam ch serviceAccount:$SA_EMAIL:objectAdmin gs://artifacts.$PROJECT_ID.appspot.com
+# Authenticate Docker against the registry host
+gcloud auth configure-docker us-central1-docker.pkg.dev
 ```
+
+The `roles/artifactregistry.writer` binding above already covers pushes, so the CI
+identity needs no further grant on the repository.
 
 ## Terraform Variables Setup
 
 Create `terraform.tfvars` in the terraform directory:
 
 ```hcl
-project_id = "your-gcp-project-id"
+project_id = "crystalshards-org"
 region     = "us-central1"
-
-# Cluster configuration
-cluster_name     = "crystalshards-cluster"
-node_count       = 1
-machine_type     = "e2-standard-4" 
-disk_size_gb     = 50
-
-# Cost optimization
-enable_autopilot = true
-preemptible      = true
 ```
 
 ## Initial Infrastructure Deployment
 
-Before the CI/CD pipeline can deploy applications, you need to set up the infrastructure:
+Infrastructure is applied by CI, never from a workstation. Review a change with a
+plan locally, then let the pipeline apply it once the change merges.
 
 ```bash
-# 1. Deploy Terraform infrastructure
+# Review a proposed change
 cd terraform
 terraform init
 terraform plan
-terraform apply
+```
 
-# 2. Get cluster credentials
-gcloud container clusters get-credentials crystalshards-cluster \
-    --region us-central1 --project your-project-id
+After CI applies the change, verify what is running:
 
-# 3. Deploy infrastructure components  
-cd ../
-./scripts/deploy-infrastructure.sh
-
-# 4. Verify deployment
-kubectl get all -A
+```bash
+gcloud run services list --region us-central1
+gcloud run jobs list --region us-central1
 ```
 
 ## Security Considerations
@@ -163,7 +143,7 @@ kubectl get all -A
 ### Secrets Management
 - Never commit secrets to the repository
 - Use GitHub's encrypted secrets for sensitive data
-- Rotate service account keys regularly (every 90 days)
+- Rotate the deploy credential on a regular schedule
 - Use least-privilege access for service accounts
 
 ### Access Control
@@ -186,10 +166,9 @@ kubectl get all -A
 - Set up alerts for failed deployments or security vulnerabilities
 
 ### Application Monitoring
-- Prometheus metrics collection enabled
-- Grafana dashboards for application performance
-- KEDA scaling metrics and events
-- Database performance monitoring
+- Request logs and container logs in Cloud Logging
+- Request count, latency and instance count in Cloud Monitoring, published by Cloud Run
+- Cloud SQL instance metrics in Cloud Monitoring
 
 ## Troubleshooting
 
@@ -197,27 +176,28 @@ kubectl get all -A
 
 #### Authentication Errors
 ```bash
-# Verify service account has correct permissions
-gcloud iam service-accounts get-iam-policy $SA_EMAIL
+# Verify the CI identity holds the expected roles
+gcloud projects get-iam-policy $PROJECT_ID \
+    --flatten="bindings[].members" \
+    --filter="bindings.members:$SA_EMAIL" \
+    --format="table(bindings.role)"
 
-# Test authentication
-gcloud auth activate-service-account --key-file=crystalshards-ci-key.json
+# Confirm which identity the current session is using
 gcloud auth list
 ```
 
-#### Container Registry Access
+#### Artifact Registry Access
 ```bash
 # Test registry access
-docker pull gcr.io/$PROJECT_ID/test
-gcloud auth configure-docker
+gcloud auth configure-docker us-central1-docker.pkg.dev
+gcloud artifacts docker images list \
+    us-central1-docker.pkg.dev/$PROJECT_ID/docker-images
 ```
 
-#### Kubernetes Access
+#### Cloud Run Access
 ```bash
-# Verify cluster access
-gcloud container clusters get-credentials crystalshards-cluster \
-    --region us-central1 --project $PROJECT_ID
-kubectl cluster-info
+# Confirm the deploy identity can see the services
+gcloud run services list --region us-central1 --project $PROJECT_ID
 ```
 
 ### Debugging Workflows
@@ -226,19 +206,19 @@ kubectl cluster-info
 2. Verify secret values are set correctly  
 3. Ensure service account has required permissions
 4. Test Terraform configuration locally
-5. Verify Kubernetes cluster is accessible
+5. Verify the services are listed by `gcloud run services list --region us-central1`
 
 ## Cost Optimization
 
 ### Monitoring Costs
 - Set up billing alerts for unexpected charges
 - Monitor resource usage with Cloud Monitoring
-- Use preemptible nodes to reduce compute costs
-- Enable cluster autoscaling to optimize node usage
+- Review Cloud Run request count and instance time in the billing breakdown
+- Watch Cloud SQL and Cloud Storage, the standing costs while Cloud Run idles at zero
 
 ### Resource Optimization
 - Set appropriate resource limits on containers
-- Use KEDA scale-to-zero during idle periods
+- Cloud Run scales to zero when idle, with no extra component to install
 - Schedule regular cleanup of old container images
 - Monitor storage usage and implement lifecycle policies
 
@@ -248,7 +228,7 @@ After completing the setup:
 
 1. Test the CI pipeline with a sample commit
 2. Verify applications deploy successfully
-3. Set up monitoring dashboards
+3. Confirm logs and metrics are arriving in Cloud Logging and Cloud Monitoring
 4. Configure alerting rules
 5. Document operational procedures
 

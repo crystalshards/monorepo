@@ -13,18 +13,6 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 4.84"
     }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.23"
-    }
-    kubectl = {
-      source  = "gavinbunney/kubectl"
-      version = "~> 1.14"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.11"
-    }
     null = {
       source  = "hashicorp/null"
       version = "~> 3.2"

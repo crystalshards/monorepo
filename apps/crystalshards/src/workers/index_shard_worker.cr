@@ -9,9 +9,9 @@ struct IndexShardWorker < BaseJob
   end
 
   # Test seam. Every follow-up job is scheduled through this proc, which
-  # defaults to the real JoobQ enqueue so production keeps working unchanged
-  # when nothing installs a fake. Specs swap it out to observe chaining
-  # without a Redis connection, and must restore it in an `ensure`.
+  # defaults to the real dispatch so production keeps working unchanged when
+  # nothing installs a fake. Specs swap it out to observe chaining without
+  # running the follow-ups, and must restore it in an `ensure`.
   class_property dispatcher : Proc(Followup, String, String, Nil) = ->(followup : Followup, shard_name : String, version : String) {
     case followup
     in Followup::UpdateDependencies
@@ -21,6 +21,13 @@ struct IndexShardWorker < BaseJob
     end
     nil
   }
+
+  # Indexing reads the shard's host and writes the registry. It executes no
+  # code from the shard, so it runs wherever it was asked for rather than
+  # being handed to a queue.
+  def self.enqueue(shard_name : String, version : String) : Nil
+    CrystalShards::JobQueue.current.index_shard(shard_name, version)
+  end
 
   # @shard_name is the wire field name the queue already carries, so it stays.
   # Its VALUE is the canonical slug ("github.com/kemalcr/kemal") for everything

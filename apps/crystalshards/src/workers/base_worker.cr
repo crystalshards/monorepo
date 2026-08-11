@@ -1,7 +1,19 @@
-require "joobq"
+require "../jobs/job_queue"
 
+# A unit of background work.
+#
+# These used to be JoobQ jobs polled off a Redis list by a long-running worker
+# process. There is no such process any more and no broker behind it: on Cloud
+# Run a container gets no CPU once its response is written and scales to zero,
+# so a poller either costs money doing nothing or is not running when work
+# arrives. Each job now says how it is dispatched, through `JobQueue`, and
+# there are only two answers: run it now, or hand it to Cloud Tasks.
+#
+# What is left here is the shape every job shares. `@queue` survives as a
+# label because it is what the logs are grouped by, not because anything polls
+# a list with that name.
 abstract struct BaseJob
-  include JoobQ::Job
+  getter queue : String = "default"
 
   protected def log_info(message : String)
     Log.info { "#{self.class.name}: #{message}" }

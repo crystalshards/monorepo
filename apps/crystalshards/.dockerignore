@@ -1,0 +1,20 @@
+# Build artifacts. lib/ is produced inside the image by `shards install --production`;
+# letting a host-built lib/ in through `COPY . .` would overwrite it with artifacts
+# compiled for the developer's platform.
+lib/
+bin/
+node_modules/
+tmp/
+.shards/
+
+# Not needed to build the server or the task runner.
+#
+# spec/ is deliberately NOT excluded: tasks.cr requires tasks/**, and
+# tasks/db/seed/required_data.cr requires ../../../spec/support/factories/**, so the
+# Lucky task runner does not compile without the spec support tree. It stays in the
+# builder stage only and never reaches the runtime image.
+.git/
+.gitignore
+docker/
+Dockerfile
+.dockerignore

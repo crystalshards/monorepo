@@ -3,10 +3,6 @@
 # Look at config/route_helper.cr if you want to change the domain used when
 # generating links with `Action.url`.
 
-# Add custom settings
-class Lucky::Server::Settings
-  property redis_url : String = ENV.fetch("REDIS_URL", "redis://localhost:6379/0")
-end
 
 Lucky::Server.configure do |settings|
   if LuckyEnv.production?
