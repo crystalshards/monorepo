@@ -30,6 +30,16 @@ class CrawlState < BaseModel
     # Finished everything it could ask for, which is less than the whole host:
     # this host is enumerated by topic, so untagged repositories are invisible.
     COMPLETED_TOPIC_SCOPED = "completed_topic_scoped"
+    # Finished every workspace the registry has been told about, which is less
+    # than the whole host and cannot be made more: this host has no global
+    # enumeration at all, so a workspace nobody registered is not merely
+    # unsearched, it is unreachable by any query. Coverage is defined by the
+    # registration list rather than by the host.
+    COMPLETED_WORKSPACE_SCOPED = "completed_workspace_scoped"
+    # Nothing to enumerate: the host is crawled workspace by workspace and no
+    # workspace has been registered, so the sweep had nowhere to look. Distinct
+    # from finishing, because zero shards found here means zero places looked.
+    NO_WORKSPACES_REGISTERED = "no_workspaces_registered"
     # Ran to the end, but a search window held more results than the host would
     # return and could not be narrowed further, so some are unreachable.
     RESULT_CAP_TRUNCATED = "result_cap_truncated"

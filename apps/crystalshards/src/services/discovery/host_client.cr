@@ -24,6 +24,21 @@ module Discovery
     class Error < Exception
     end
 
+    # The host understood the request and will not answer it: a 401, a 403, a
+    # 422. Distinct from Error, which also covers a host that failed to answer
+    # after every retry, because the two want opposite handling. Retrying a
+    # refusal spends quota to be told no again; abandoning what a flaky host
+    # could not serve this minute silently drops it from the crawl.
+    #
+    # A subclass, so `rescue HostClient::Error` still catches both.
+    class Refused < Error
+      getter status_code : Int32
+
+      def initialize(@status_code : Int32, message : String)
+        super(message)
+      end
+    end
+
     # The host told us to slow down for longer than this crawl is prepared to
     # wait. Carries the wait so the caller can record why it stopped.
     class RateLimited < Exception
@@ -41,11 +56,22 @@ module Discovery
 
     USER_AGENT = "crystalshards.org shard discovery"
 
+    # Above this, a rate-limit reset value is a Unix timestamp; below it, it is
+    # a number of seconds to wait. Ten years of seconds is far longer than any
+    # rate-limit window and far earlier than any clock a running process will
+    # report, so nothing real lands near the boundary.
+    EPOCH_THRESHOLD = 315_576_000_i64
+
     getter host : String
     getter base_url : String
     getter requests_made : Int32 = 0
     getter waits : Array(Time::Span) = [] of Time::Span
 
+    # `url_gate` is called with the absolute URL of every request before it is
+    # made, and is expected to raise to refuse it. A crawler whose host hands
+    # back absolute URLs to follow supplies one, because otherwise the response
+    # body decides where the next request goes. Nil is "no gate", which is what
+    # the hosts that only ever build their own relative paths use.
     def initialize(
       @host : String,
       @base_url : String,
@@ -55,6 +81,7 @@ module Discovery
       @base_backoff : Time::Span = 1.second,
       @max_backoff : Time::Span = 30.seconds,
       @sleeper : Proc(Time::Span, Nil) = ->(duration : Time::Span) { sleep duration },
+      @url_gate : Proc(String, Nil)? = nil,
     )
       @headers["User-Agent"] = USER_AGENT unless @headers.has_key?("User-Agent")
     end
@@ -80,7 +107,7 @@ module Discovery
             wait = rate_limit_wait(response)
 
             unless wait
-              raise Error.new("#{host} refused GET #{path}: HTTP #{response.status_code} #{body_hint(response)}")
+              raise Refused.new(response.status_code, "#{host} refused GET #{path}: HTTP #{response.status_code} #{body_hint(response)}")
             end
 
             if wait > @max_rate_limit_wait
@@ -96,7 +123,7 @@ module Discovery
             raise Error.new("#{host} failed GET #{path}: HTTP #{response.status_code} after #{@max_retries} retries") if attempt > @max_retries
             pause(backoff(attempt))
           else
-            raise Error.new("#{host} refused GET #{path}: HTTP #{response.status_code} #{body_hint(response)}")
+            raise Refused.new(response.status_code, "#{host} refused GET #{path}: HTTP #{response.status_code} #{body_hint(response)}")
           end
         rescue ex : IO::Error | Socket::Error
           raise Error.new("#{host} unreachable for GET #{path} after #{@max_retries} retries: #{ex.message}") if attempt > @max_retries
@@ -114,8 +141,12 @@ module Discovery
     getter last_headers : HTTP::Headers = HTTP::Headers.new
 
     private def perform(path : String) : HTTP::Client::Response
+      url = url_for(path)
+      # Before the request, not after: the gate exists to stop a URL that came
+      # out of a response body from being fetched at all.
+      @url_gate.try(&.call(url))
       @requests_made += 1
-      response = HTTP::Client.get(url_for(path), headers: @headers)
+      response = HTTP::Client.get(url, headers: @headers)
       @last_headers = response.headers
       response
     end
@@ -137,14 +168,24 @@ module Discovery
         end
       end
 
-      # GitHub: x-ratelimit-remaining 0 with a reset timestamp. GitLab spells the
-      # same pair without the x- prefix.
+      # Two spellings and two meanings. GitHub sends x-ratelimit-reset as a Unix
+      # timestamp; GitLab spells the pair without the x- prefix and does the
+      # same. Bitbucket sends the same header name as SECONDS REMAINING in the
+      # window: measured live, it read 745 and fell to 728 over 16.5 seconds of
+      # wall clock while the clock stood at 1786448872.
+      #
+      # Read as a timestamp, 745 is decades in the past, the subtraction goes
+      # negative and the floor turns a fourteen minute wait into one second.
+      # The crawl would then burn its retries in five seconds and give up on a
+      # host that only wanted to be left alone. Magnitude is what separates
+      # them, and there is no ambiguity to split: a delta large enough to look
+      # like an epoch would be a window of over fifty years.
       remaining = response.headers["x-ratelimit-remaining"]? || response.headers["ratelimit-remaining"]?
       reset = response.headers["x-ratelimit-reset"]? || response.headers["ratelimit-reset"]?
 
       if remaining.try(&.strip) == "0" && reset
-        if epoch = reset.strip.to_i64?
-          seconds = epoch - Time.utc.to_unix
+        if value = reset.strip.to_i64?
+          seconds = value >= EPOCH_THRESHOLD ? value - Time.utc.to_unix : value
           return seconds > 0 ? seconds.seconds : 1.second
         end
       end

@@ -13,7 +13,7 @@ require "../../src/services/discovery/crawl_runner"
 class Discovery::Backfill < LuckyTask::Task
   summary "Sweep git hosts for shards and record what was found"
 
-  arg :host, "Host to sweep (github.com, gitlab.com, codeberg.org). Defaults to all of them.", optional: true
+  arg :host, "Host to sweep (github.com, gitlab.com, codeberg.org, bitbucket.org). Defaults to all of them.", optional: true
   arg :max_pages, "Stop after this many pages per host, leaving a resumable cursor", optional: true
   switch :fresh, "Discard the saved cursor and sweep the host from the beginning"
 
@@ -93,6 +93,14 @@ class Discovery::Backfill < LuckyTask::Task
           puts "    Run this again to continue from the saved cursor."
         when CrawlState::StopReason::COMPLETED_TOPIC_SCOPED
           puts "    This host is enumerated by topic, so shards without the topic are not discovered here."
+        when CrawlState::StopReason::COMPLETED_WORKSPACE_SCOPED
+          puts "    Every registered workspace was swept. This host has no global enumeration"
+          puts "    to sweep instead, so a shard in a workspace nobody registered is unreachable."
+          puts "    Register more with: lucky discovery.workspaces --add=<workspace>"
+        when CrawlState::StopReason::NO_WORKSPACES_REGISTERED
+          puts "    No workspaces are registered, so this sweep looked nowhere. Zero shards found"
+          puts "    here means zero places looked, not an empty host."
+          puts "    Register one with: lucky discovery.workspaces --add=<workspace>"
         when CrawlState::StopReason::RESULT_CAP_TRUNCATED
           puts "    A search window held more results than the host will return and could not be"
           puts "    narrowed further, so some shards in it are unreachable by any query we can write."

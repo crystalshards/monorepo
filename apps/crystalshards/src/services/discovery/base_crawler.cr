@@ -212,11 +212,24 @@ module Discovery
     end
 
     private def build_client(base_url : String, token : String?, sleeper : Proc(Time::Span, Nil)?) : HostClient
+      gate = url_gate_for(base_url)
+
       if sleeper
-        HostClient.new(host: host, base_url: base_url, headers: auth_headers(token), sleeper: sleeper)
+        HostClient.new(host: host, base_url: base_url, headers: auth_headers(token), sleeper: sleeper, url_gate: gate)
       else
-        HostClient.new(host: host, base_url: base_url, headers: auth_headers(token))
+        HostClient.new(host: host, base_url: base_url, headers: auth_headers(token), url_gate: gate)
       end
+    end
+
+    # A check every request's absolute URL passes before it is sent, or nil for
+    # a host that only ever builds its own relative paths and so has nothing a
+    # response body could redirect.
+    #
+    # Takes the base URL rather than reading one off the instance, because this
+    # is called while the base class is still constructing and a subclass's own
+    # fields are not set yet.
+    def url_gate_for(base_url : String) : Proc(String, Nil)?
+      nil
     end
 
     # How this host wants its token presented.

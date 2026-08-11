@@ -2,6 +2,7 @@ require "./base_crawler"
 require "./github_crawler"
 require "./gitlab_crawler"
 require "./codeberg_crawler"
+require "./bitbucket_crawler"
 
 module Discovery
   # Runs one host's sweep against the crawl_states row that remembers it.
@@ -14,33 +15,76 @@ module Discovery
     # The hosts a sweep enumerates. Named and reasoned about here rather than
     # left implicit, because "the indexer finds all shards on all git hosts" is
     # the claim this module either supports or quietly overstates.
-    HOSTS = ["github.com", "gitlab.com", "codeberg.org"]
+    HOSTS = ["github.com", "gitlab.com", "codeberg.org", "bitbucket.org"]
 
     # Hosts and protocols that are NOT crawled, with why. A shard on one of these
     # still reaches the registry, by being submitted or pushed through a webhook;
     # what it does not do is get found on its own.
     #
-    # The distinction that matters: the first entry is a host with an API we have
-    # not built a crawler for, and the rest are not hosts at all. Generic git,
-    # Mercurial and Fossil are protocols. There is no global index of every git
-    # repository in the world, so there is nothing to enumerate and no crawler
-    # that could exist. Saying "we do not crawl Fossil" is not an admission of a
-    # gap; saying "we do not crawl Bitbucket" is.
+    # What is left here are not hosts. Generic git, Mercurial and Fossil are
+    # protocols. There is no global index of every git repository in the world,
+    # so there is nothing to enumerate and no crawler that could exist. Saying
+    # "we do not crawl Fossil" is not an admission of a gap.
+    #
+    # Bitbucket used to be listed here as one. It is crawled now, though not
+    # globally, because globally is not on offer: see WORKSPACE_SCOPED.
     SUBMISSION_ONLY = {
-      "bitbucket.org" => "has a public repositories API and could be crawled, but no crawler is built yet",
-      "generic git"   => "a protocol, not a host: there is no index of all git repositories to enumerate",
-      "mercurial"     => "a protocol, not a host: nothing global to enumerate",
-      "fossil"        => "a protocol, not a host: nothing global to enumerate",
+      "generic git" => "a protocol, not a host: there is no index of all git repositories to enumerate",
+      "mercurial"   => "a protocol, not a host: nothing global to enumerate",
+      "fossil"      => "a protocol, not a host: nothing global to enumerate",
+    }
+
+    # Hosts that are crawled, but where the crawl cannot see the whole host and
+    # no crawl could. Separate from SUBMISSION_ONLY because "we look, in the
+    # places we were told to look" and "we do not look" are different promises,
+    # and separate from a plain entry in HOSTS because reading this host's row
+    # as a complete view of Bitbucket would be wrong.
+    WORKSPACE_SCOPED = {
+      "bitbucket.org" => "crawled workspace by workspace, because it has no global enumeration: " \
+                         "GET /2.0/repositories answers 410 Gone (CHANGE-2770, functionality deprecated), " \
+                         "GET /2.0/workspaces answers 401 and lists only workspaces the token already belongs to, " \
+                         "and code search is reachable only under a workspace you have already named. " \
+                         "Coverage is the set of registered workspaces, so a shard in an unregistered " \
+                         "workspace is not merely unsearched, it is unreachable",
     }
 
     # One paragraph an operator can read to know what the registry's coverage
     # actually is. Printed by the backfill task so the boundary travels with the
     # numbers rather than living only in a commit message.
     def self.coverage_summary : String
-      lines = ["Crawled hosts: #{HOSTS.join(", ")}."]
+      exhaustive = HOSTS.reject { |host| WORKSPACE_SCOPED.has_key?(host) }
+
+      lines = ["Crawled hosts: #{exhaustive.join(", ")}."]
+
+      unless WORKSPACE_SCOPED.empty?
+        # Spelled out rather than folded into the list above, because a reader
+        # who sees bitbucket.org among "crawled hosts" and stops there has been
+        # told something false about what the registry knows.
+        lines << "Crawled but never complete:"
+        WORKSPACE_SCOPED.each do |name, reason|
+          lines << "  #{name}: #{reason}."
+          lines << "    Registered workspaces: #{workspace_coverage_note(name)}"
+        end
+      end
+
       lines << "Submission only:"
       SUBMISSION_ONLY.each { |name, reason| lines << "  #{name}: #{reason}" }
       lines.join("\n")
+    end
+
+    # How many places the workspace-scoped host is actually looking. A reason
+    # without a number lets "crawled workspace by workspace" read as coverage
+    # when the registration list is empty and the sweep looks nowhere at all.
+    private def self.workspace_coverage_note(host : String) : String
+      return "not applicable" unless host == "bitbucket.org"
+
+      count = BitbucketWorkspaceQuery.new.enabled(true).select_count
+      return "none registered, so nothing on this host is discovered automatically" if count.zero?
+
+      "#{count} enabled. Anything outside them reaches the registry only by being submitted"
+    rescue
+      # Coverage is printed by a task that may run before the table exists.
+      "unavailable"
     end
 
     def self.crawler_for(
@@ -57,6 +101,14 @@ module Discovery
         GitlabCrawler.new(base_url: base_url, token: token, sleeper: sleeper, max_pages: max_pages)
       when "codeberg.org"
         CodebergCrawler.new(base_url: base_url, token: token, sleeper: sleeper, max_pages: max_pages)
+      when "bitbucket.org"
+        BitbucketCrawler.new(
+          workspaces: registered_workspaces,
+          base_url: base_url,
+          token: token,
+          sleeper: sleeper,
+          max_pages: max_pages,
+        )
       else
         raise MissingTokenError.new("#{host} is not a host this registry knows how to crawl")
       end
@@ -111,6 +163,18 @@ module Discovery
         nil
       end
 
+      # Which registered workspaces answered, and which did not, recorded where
+      # an operator manages them rather than only in the host's single error
+      # column, where the second failing workspace overwrites the first.
+      if bitbucket = crawler.as?(BitbucketCrawler)
+        bitbucket.on_workspace_problem = ->(slug : String, reason : String) do
+          note_workspace_problem(slug, reason)
+        end
+        bitbucket.on_workspace_seen = ->(slug : String, count : Int32) do
+          note_workspace_seen(slug, count)
+        end
+      end
+
       report = crawler.run(cursor)
       record(report, cursor: report.cursor)
       Log.info { "Discovery #{report}" }
@@ -123,6 +187,33 @@ module Discovery
 
     def self.state_for(host : String) : CrawlState?
       CrawlStateQuery.new.for_host(host)
+    end
+
+    # The workspaces a Bitbucket sweep will walk. Read here rather than inside
+    # the crawler so the crawler stays drivable without a database, which is
+    # what lets its pagination and backoff be tested over a real socket.
+    def self.registered_workspaces : Array(String)
+      BitbucketWorkspaceQuery.new.enumerable.map(&.slug)
+    end
+
+    private def self.note_workspace_problem(slug : String, reason : String)
+      workspace = BitbucketWorkspaceQuery.new.for_slug(slug)
+      return unless workspace
+
+      operation = SaveBitbucketWorkspace.new(workspace)
+      operation.last_error.value = reason
+      operation.update!
+    end
+
+    private def self.note_workspace_seen(slug : String, count : Int32)
+      workspace = BitbucketWorkspaceQuery.new.for_slug(slug)
+      return unless workspace
+
+      operation = SaveBitbucketWorkspace.new(workspace)
+      operation.last_seen_at.value = Time.utc
+      operation.repository_count.value = count
+      operation.last_error.value = nil
+      operation.update!
     end
 
     private def self.existing_cursor(host : String) : String?
