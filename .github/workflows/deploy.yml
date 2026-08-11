@@ -746,6 +746,32 @@ jobs:
             grep -qxF "$1" /tmp/tf-state-addresses.txt
           }
 
+          # Drop the GKE network from state if it is still there. It left
+          # configuration with the cluster, so terraform wants to DESTROY it, and
+          # that destroy cannot succeed:
+          #
+          #   The network resource 'crystalshards-cluster-vpc' is already being
+          #   used by 'networkEndpointGroups/k8s2-...-prometheus-operator-grafana'
+          #
+          # GKE leaves load balancer NEGs behind when a cluster is deleted, so the
+          # network is pinned until they are reaped, and the failed destroy takes
+          # the whole apply with it. Terraform should not own a teardown it cannot
+          # finish. The GCP resources stay and are reaped separately; an idle VPC
+          # costs nothing and blocks nothing once terraform stops trying.
+          #
+          # Lives here rather than in the teardown workflow because that job
+          # refuses to run once the cluster is already gone, which is correct for
+          # a job whose purpose is deleting it. Idempotent: a no-op on every run
+          # after the first.
+          if grep -q '^module\.networking\.' /tmp/tf-state-addresses.txt; then
+            mapfile -t STALE_NET < <(grep '^module\.networking\.' /tmp/tf-state-addresses.txt)
+            echo "Dropping ${#STALE_NET[@]} stale GKE network address(es) from state:"
+            printf '  %s\n' "${STALE_NET[@]}"
+            terraform state rm -lock-timeout=5m "${STALE_NET[@]}"
+            # The snapshot every later check reads must reflect the removal.
+            terraform state list > /tmp/tf-state-addresses.txt
+          fi
+
           # Adopt service accounts that already exist in the project but are not
           # in state. A partial apply leaves them behind, and the next run then
           # dies with `Error 409: Service account crystalshards already exists`.
