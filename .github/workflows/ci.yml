@@ -33,26 +33,36 @@ jobs:
         ports:
           - 5432:5432
 
-      # CrystalDocs reads documentation from object storage, and the spec that
-      # guards against ever serving shard-authored HTML again has to plant a
-      # real object to prove anything. The env below already pointed at MinIO;
-      # only the service was missing.
-      minio:
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-        options: >-
-          --health-cmd "curl -f http://localhost:9000/minio/health/live"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-        ports:
-          - 9000:9000
+    # MinIO is started as a step rather than a service container: the official
+    # image needs `server /data` as its command, and service containers cannot
+    # override a command. bitnami/minio, which can, no longer publishes a
+    # public tag.
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # CrystalDocs reads documentation from object storage, and the spec that
+      # guards against ever serving shard-authored HTML again has to plant a
+      # real object to prove anything. The MINIO_* env below already pointed
+      # here; only the server was missing.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+              echo "MinIO is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "MinIO did not become healthy"
+          docker logs minio || true
+          exit 1
 
       - name: Install Crystal
         uses: crystal-lang/install-crystal@v1
