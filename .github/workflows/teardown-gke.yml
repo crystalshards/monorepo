@@ -331,48 +331,82 @@ jobs:
         working-directory: ./terraform
         run: |
           set -euo pipefail
-          terraform show -json -no-color > state.json
+          # Deliberately NOT `terraform show -json`. That marshals the WHOLE state,
+          # and this state still holds Kubernetes and Helm resources whose providers
+          # have been removed from configuration, so it dies with
+          #   schema version 1 for helm_release.cert_manager in state does not
+          #   match version 2 from the provider
+          # before it can tell us anything. Those very resources are what this job
+          # exists to remove, so a check that cannot run until they are gone is
+          # useless. `state list` needs no schema at all, and `state show` decodes
+          # only the one resource named, whose provider is still configured.
+          terraform state list > state-list-identity.txt
 
           python3 - <<'PY'
-          import json, os, sys
+          import os, re, subprocess, sys
 
           expected_name = os.environ["EXPECTED_CLUSTER_NAME"]
           expected_loc = os.environ["EXPECTED_CLUSTER_LOCATION"]
 
-          with open("state.json") as fh:
-              state = json.load(fh)
+          def resource_type(address):
+              """Type segment: skip any module.<name> chain, then an optional
+              `data` marker. Bracket aware so an index key containing a dot
+              cannot fool the split."""
+              toks, buf, depth = [], [], 0
+              for ch in address:
+                  if ch == "[":
+                      depth += 1
+                  elif ch == "]":
+                      depth -= 1
+                  if ch == "." and depth == 0:
+                      toks.append("".join(buf)); buf = []
+                  else:
+                      buf.append(ch)
+              toks.append("".join(buf))
+              i = 0
+              while i + 1 < len(toks) and toks[i].split("[", 1)[0] == "module":
+                  i += 2
+              is_data = i < len(toks) and toks[i].split("[", 1)[0] == "data"
+              if is_data:
+                  i += 1
+              return (toks[i].split("[", 1)[0] if i < len(toks) else ""), is_data
 
-          def walk(module):
-              for res in module.get("resources", []):
-                  yield res
-              for child in module.get("child_modules", []):
-                  yield from walk(child)
+          with open("state-list-identity.txt") as fh:
+              addresses = [line.strip() for line in fh if line.strip()]
 
-          root = state.get("values", {}).get("root_module", {})
-          clusters = [r for r in walk(root) if r.get("type") == "google_container_cluster"
-                      and r.get("mode") == "managed"]
+          # Managed only. A data.google_container_cluster is not ours to delete.
+          clusters = []
+          for addr in addresses:
+              rtype, is_data = resource_type(addr)
+              if rtype == "google_container_cluster" and not is_data:
+                  clusters.append(addr)
 
           if len(clusters) != 1:
-              print(f"REFUSED: expected exactly 1 google_container_cluster in state, found {len(clusters)}.")
+              print(f"REFUSED: expected exactly 1 managed google_container_cluster in state, found {len(clusters)}.")
               for c in clusters:
-                  print(f"  {c.get('address')}")
+                  print(f"  {c}")
               sys.exit(1)
 
-          c = clusters[0]
-          vals = c.get("values") or {}
-          name = vals.get("name")
-          loc = vals.get("location")
-          address = (c.get("address") or "").strip()
+          address = clusters[0]
           print(f"state address: {address}")
+
+          shown = subprocess.run(
+              ["terraform", "state", "show", "-no-color", address],
+              capture_output=True, text=True)
+          if shown.returncode != 0:
+              print("REFUSED: could not read the cluster from state.")
+              print(shown.stderr.strip())
+              sys.exit(1)
+
+          def attr(field):
+              m = re.search(rf'^\s*{field}\s*=\s*"([^"]*)"', shown.stdout, re.M)
+              return m.group(1) if m else None
+
+          name, loc = attr("name"), attr("location")
           print(f"state name={name} location={loc}")
 
           if name != expected_name or loc != expected_loc:
               print(f"REFUSED: state cluster is {name}/{loc}, expected {expected_name}/{expected_loc}.")
-              sys.exit(1)
-
-          if not address:
-              print("REFUSED: the verified cluster has no state address. Refusing to "
-                    "continue, because the classifier would have nothing exact to match.")
               sys.exit(1)
 
           # Carry the verified address forward. Every later step matches THIS
