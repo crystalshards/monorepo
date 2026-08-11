@@ -633,6 +633,21 @@ jobs:
           # that silently disables an assertion further down the pipeline.
           #
           # $1 is the terraform output name, $2 the step output name to publish it as.
+          # Published base64 encoded, and every consumer decodes.
+          #
+          # Not paranoia. GCP_SA_KEY is a multiline JSON key, and GitHub registers
+          # EACH LINE of a multiline secret as its own mask value. Two of those
+          # lines are exactly `{` and `}`, so those characters are masked wherever
+          # they appear, in any output, forever. A JSON object published raw comes
+          # out as
+          #   cloud_run_services=***"crystalbits":"crystalbits",...***
+          # and arrives at the consuming job empty, because GitHub refuses to pass
+          # an output containing a masked value. That is what made the release job
+          # report "No Cloud Run service declared" for all four apps while the
+          # stack had in fact applied cleanly. A JSON ARRAY survives, since it uses
+          # brackets, which is why public_hostnames worked and this did not.
+          #
+          # $1 is the terraform output name, $2 the step output name to publish it as.
           emit_json() {
             local tf_name="$1" out_name="${2:-$1}" value
             value="$(terraform output -json "$tf_name" | jq -c .)"
@@ -640,7 +655,7 @@ jobs:
               echo "Terraform output '${tf_name}' is null." >&2
               exit 1
             fi
-            echo "${out_name}=${value}" >> "$GITHUB_OUTPUT"
+            echo "${out_name}=$(printf '%s' "$value" | base64 -w0)" >> "$GITHUB_OUTPUT"
             echo "${tf_name}=${value}"
           }
 
@@ -1005,10 +1020,16 @@ jobs:
           # Composed here, not received as a job output: see ARTIFACT_REPO at the top.
           REGISTRY_URL: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}
           SHA: ${{ needs.gate.outputs.sha }}
-          SERVICES: ${{ needs.infra.outputs.services }}
+          SERVICES_B64: ${{ needs.infra.outputs.services }}
           DOCS_LAUNCHER_SERVICE: ${{ needs.infra.outputs.docs_launcher_service }}
         run: |
           set -uo pipefail
+
+          # Base64 on the wire because GitHub masks `{` and `}`; see emit_json.
+          if ! SERVICES="$(printf '%s' "$SERVICES_B64" | base64 -d)" || [ -z "$SERVICES" ]; then
+            echo "Could not decode the cloud_run_services output. Refusing to roll blind." >&2
+            exit 1
+          fi
 
           failures=0
 
@@ -1105,10 +1126,35 @@ jobs:
               return 1
             fi
 
-            if [ "$serving_image" != "$expected_image" ]; then
-              echo "  ${service}: revision ${latest} runs '${serving_image}', expected '${expected_image}'" >&2
+            # Cloud Run records what it pulled, which is a DIGEST, while we asked
+            # for a tag. A string comparison therefore fails on every successful
+            # deploy: the revision reads `.../crystalshards@sha256:974c54...` and
+            # expected reads `.../crystalshards:04f4102...`. Resolve the tag we
+            # pushed to its digest and compare that, so this asserts the revision
+            # runs the image this run built rather than asserting on spelling.
+            expected_repo="${expected_image%:*}"
+            expected_tag="${expected_image##*:}"
+            if ! expected_digest="$(gcloud artifacts docker images describe \
+                  "$expected_image" --format='value(image_summary.digest)' 2>/dev/null)" \
+               || [ -z "$expected_digest" ]; then
+              echo "  ${service}: could not resolve ${expected_image} to a digest" >&2
               return 1
             fi
+
+            case "$serving_image" in
+              *@sha256:*)
+                if [ "$serving_image" != "${expected_repo}@${expected_digest}" ]; then
+                  echo "  ${service}: revision ${latest} runs '${serving_image}', expected the image built for ${expected_tag} (${expected_repo}@${expected_digest})" >&2
+                  return 1
+                fi
+                ;;
+              *)
+                if [ "$serving_image" != "$expected_image" ]; then
+                  echo "  ${service}: revision ${latest} runs '${serving_image}', expected '${expected_image}'" >&2
+                  return 1
+                fi
+                ;;
+            esac
             case "$serving_image" in
               *:latest)
                 echo "  ${service}: refusing a 'latest' tag; images must be pinned to a commit SHA" >&2
@@ -1347,10 +1393,20 @@ jobs:
         shell: bash
         env:
           LB_IP: ${{ needs.infra.outputs.load_balancer_ip }}
-          CERTS: ${{ needs.infra.outputs.managed_certificates }}
-          HOSTNAMES: ${{ needs.infra.outputs.public_hostnames }}
+          CERTS_B64: ${{ needs.infra.outputs.managed_certificates }}
+          HOSTNAMES_B64: ${{ needs.infra.outputs.public_hostnames }}
         run: |
           set -uo pipefail
+
+          # Base64 on the wire because GitHub masks `{` and `}`; see emit_json.
+          if ! CERTS="$(printf '%s' "$CERTS_B64" | base64 -d)" || [ -z "$CERTS" ]; then
+            echo "Could not decode the managed_certificates output." >&2
+            exit 1
+          fi
+          if ! HOSTNAMES="$(printf '%s' "$HOSTNAMES_B64" | base64 -d)" || [ -z "$HOSTNAMES" ]; then
+            echo "Could not decode the public_hostnames output." >&2
+            exit 1
+          fi
 
           failures=0
           deferred=0
