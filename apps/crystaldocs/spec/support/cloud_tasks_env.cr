@@ -24,6 +24,7 @@ def with_cloud_tasks_env(
   location : String? = "us-central1",
   launcher_url : String? = "https://docs-launcher.example.run.app",
   invoker : String? = "docs-tasks@example.iam.gserviceaccount.com",
+  deadline : String? = nil,
   &
 )
   desired = {
@@ -32,6 +33,7 @@ def with_cloud_tasks_env(
     CrystalDocs::CloudTasksConfig::LOCATION_ENV => location,
     CrystalDocs::CloudTasksConfig::LAUNCHER_ENV => launcher_url,
     CrystalDocs::CloudTasksConfig::INVOKER_ENV  => invoker,
+    CrystalDocs::CloudTasksConfig::DEADLINE_ENV => deadline,
   } of String => String?
 
   previous = desired.keys.to_h { |key| {key, ENV[key]?} }

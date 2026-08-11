@@ -30,7 +30,7 @@ resource "google_cloud_run_v2_job" "docs_build" {
 
     template {
       service_account       = google_service_account.docs_build.email
-      timeout               = "${var.docs_build_timeout_seconds}s"
+      timeout               = local.docs_build_timeout
       max_retries           = 0
       execution_environment = "EXECUTION_ENVIRONMENT_GEN2"
 

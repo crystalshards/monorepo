@@ -431,14 +431,23 @@ jobs:
   # ---------------------------------------------------------------------------
   # Apply the Cloud Run stack.
   #
-  # After build, so terraform creates every service and job at a real SHA image
-  # rather than a placeholder. After secrets, because this apply is what creates the
-  # revisions, and a revision referencing a secret with zero versions never reaches
-  # Ready. Populating afterwards would be too late: the revision is already dead.
+  # This is the apply that creates the four services, so everything a revision needs
+  # in order to come up healthy has to already be true when it runs:
+  #
+  #   after build     so terraform creates each service and job at a real SHA image
+  #                   rather than a placeholder
+  #   after secrets   because a revision referencing a secret with zero versions never
+  #                   reaches Ready, and populating afterwards is too late
+  #   after migrate   because creating a service starts a revision and gives it
+  #                   traffic immediately, so on a first deploy this would otherwise
+  #                   put all four services up against an empty schema
+  #
+  # It also keeps every terraform apply in the pipeline strictly serialised, which
+  # matters beyond ordering: two concurrent applies contend for the same state lock.
   # ---------------------------------------------------------------------------
   infra:
     name: Apply Cloud Run stack
-    needs: [gate, build, secrets]
+    needs: [gate, build, secrets, migrate]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -536,20 +545,37 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Migrations run in Cloud Run Jobs, on the app's own image and over the Cloud SQL
-  # socket, never from this runner against a public database address. They run before
-  # any service is rolled, so a revision is never promoted onto a schema it has not
-  # been migrated to.
+  # socket, never from this runner against a public database address.
   #
   # The Job runs ./migrate, a dedicated entrypoint that requires only the database
   # config, so the Job carries DATABASE_URL and no serving credentials.
+  #
+  # This runs BEFORE the stack apply, not after, and the targeted apply below is why.
+  #
+  # On every deploy after the first, terraform carries ignore_changes on the image, so
+  # a full apply creates no revision and the image roll happens in release. Ordering
+  # would look fine either way. The first apply is different: creating a Cloud Run
+  # service starts a revision and gives it traffic immediately, so a full apply first
+  # would put all four services up against an empty schema. Rather than have the first
+  # deploy behave unlike every other one, this job applies just the migrate Jobs and
+  # the Cloud SQL instance they need, migrates, and lets the full apply create the
+  # services onto a schema that already exists.
+  #
+  # Same shape as the registry and secret bootstraps above: a narrow -target that
+  # creates only what the next step needs.
   # ---------------------------------------------------------------------------
   migrate:
     name: Run database migrations
-    needs: [gate, bootstrap-registry, build, infra]
+    needs: [gate, bootstrap-registry, build, secrets]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -558,13 +584,58 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Create the migration Jobs and their database
+        id: bootstrap
+        working-directory: ./terraform
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
+          IMAGE_TAG: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          # Targets the migration Jobs only. Terraform pulls in what they depend on,
+          # which is the Cloud SQL instance, the databases, their DATABASE_URL secrets
+          # and the per-job service accounts, and stops short of the Cloud Run services.
+          # That is the whole point: the services must not exist yet.
+          terraform init
+          terraform apply -auto-approve \
+            -target=module.services.google_cloud_run_v2_job.app_migrations \
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="image_tag=${IMAGE_TAG}"
+
+          jobs_json="$(terraform output -json migrate_jobs | jq -c .)"
+          if [ -z "$jobs_json" ] || [ "$jobs_json" = "null" ]; then
+            echo "Terraform output migrate_jobs is null after the targeted apply." >&2
+            exit 1
+          fi
+
+          # Positive control: the map must name all four apps. A partial map would
+          # otherwise skip a database silently and still let the deploy proceed.
+          count="$(jq -r 'length' <<< "$jobs_json")"
+          if [ "$count" -ne 4 ]; then
+            echo "migrate_jobs names ${count} job(s), expected 4: ${jobs_json}" >&2
+            exit 1
+          fi
+
+          echo "migrate_jobs=${jobs_json}" >> "$GITHUB_OUTPUT"
+          echo "migrate_jobs=${jobs_json}"
+
       - name: Migrate every application database
         shell: bash
         env:
           REGION: ${{ env.GCP_REGION }}
           REGISTRY_URL: ${{ needs.bootstrap-registry.outputs.registry_url }}
           SHA: ${{ needs.gate.outputs.sha }}
-          MIGRATE_JOBS: ${{ needs.infra.outputs.migrate_jobs }}
+          MIGRATE_JOBS: ${{ steps.bootstrap.outputs.migrate_jobs }}
         run: |
           set -uo pipefail
 
@@ -711,7 +782,7 @@ jobs:
           # Ready after the container booted and answered that endpoint with a 2xx.
           assert_serving() {
             local service="$1" expected_image="$2"
-            local json ready latest traffic_rev rev_json serving_image
+            local json ready latest traffic_entry traffic_rev rev_json serving_image
 
             json="$(gcloud run services describe "$service" --region "$REGION" --format=json)" || return 1
 
@@ -734,11 +805,38 @@ jobs:
             # Assert the revision carrying all the traffic IS the one that just became
             # ready, rather than that some entry mentions it. A split rollout leaves no
             # entry at 100 and fails here.
-            traffic_rev="$(jq -r '[(.status.traffic // .trafficStatuses // [])[] | select((.percent // 0) == 100)] | .[0] | ((.revisionName // .revision) // empty)' <<< "$json")"
+            #
+            # Three shapes to read. v1 puts observed traffic under status.traffic with a
+            # revisionName. v2 reports observed traffic in trafficStatuses and desired
+            # traffic in a top level traffic list, both keyed revision. Preferring the
+            # observed lists matters: a v2 desired entry of type LATEST names no revision
+            # at all, because "latest" is the target rather than a specific name.
+            traffic_entry="$(jq -c '
+              [(.status.traffic // .trafficStatuses // .traffic // [])[]
+               | select((.percent // 0) == 100)] | .[0] // empty' <<< "$json")"
+
+            if [ -z "$traffic_entry" ]; then
+              echo "  ${service}: no traffic target is carrying 100%" >&2
+              jq -r '(.status.traffic // .trafficStatuses // .traffic // [])[]
+                     | "    \((.revisionName // .revision // .type // "?")) \(.percent // 0)%"' <<< "$json" >&2
+              return 1
+            fi
+
+            traffic_rev="$(jq -r '(.revisionName // .revision // empty)' <<< "$traffic_entry")"
             traffic_rev="${traffic_rev##*/}"
+
+            # A LATEST target names no revision because it means whichever revision is
+            # latest ready, which is precisely what this is asserting on. Resolve it
+            # rather than reading the absent name as a mismatch.
+            if [ -z "$traffic_rev" ] \
+               && jq -e '(.type // "") | test("LATEST")' >/dev/null 2>&1 <<< "$traffic_entry"; then
+              traffic_rev="$latest"
+            fi
+
             if [ "$traffic_rev" != "$latest" ]; then
               echo "  ${service}: 100% of traffic is on '${traffic_rev:-<none>}', expected the newly ready revision '${latest}'" >&2
-              jq -r '(.status.traffic // .trafficStatuses // [])[] | "    \((.revisionName // .revision)) \(.percent // 0)%"' <<< "$json" >&2
+              jq -r '(.status.traffic // .trafficStatuses // .traffic // [])[]
+                     | "    \((.revisionName // .revision // .type // "?")) \(.percent // 0)%"' <<< "$json" >&2
               return 1
             fi
 
@@ -838,6 +936,114 @@ jobs:
           esac
 
           echo "${DOCS_BUILD_JOB}: ${configured}"
+
+      - name: Assert the docs build timeout pairing
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          DOCS_LAUNCHER_SERVICE: ${{ needs.infra.outputs.docs_launcher_service }}
+        run: |
+          set -uo pipefail
+
+          # docs-launcher holds the Cloud Tasks request open for the whole build so it
+          # can record the outcome from an identity that has the database. If its Cloud
+          # Run request timeout is below the deadline the producers dispatch with,
+          # Cloud Run kills the request first, Cloud Tasks reads that as a failure, and
+          # the build is redelivered forever.
+          #
+          # Nothing else catches it. The producers' specs assert the task side only, so
+          # they still pass, and the smoke test hits /api/health, which answers in
+          # milliseconds and would pass at any timeout. The symptom is a green deploy
+          # and a documentation pipeline that never finishes a build.
+          #
+          # Both numbers are read from the deployed revision, not from source. An
+          # earlier version parsed a constant out of the producers and would have gone
+          # silently vacuous the moment that constant was refactored away, which is the
+          # same confident-zero failure this check exists to prevent, arriving from the
+          # one direction a source parse cannot see.
+          launcher_json="$(gcloud run services describe "$DOCS_LAUNCHER_SERVICE" \
+            --region "$REGION" --format=json)" || exit 1
+
+          # v1 reports an integer under spec.template.spec, v2 a duration string.
+          timeout_raw="$(jq -r '
+            (.spec.template.spec.timeoutSeconds
+             // .template.timeout
+             // empty) | tostring' <<< "$launcher_json")"
+          timeout_seconds="${timeout_raw%s}"
+
+          # Find each env entry wherever the container sits in the response shape.
+          env_value() {
+            jq -r --arg n "$1" '
+              [.. | objects | select(.name? == $n) | .value?]
+              | map(select(. != null)) | first // empty' <<< "$launcher_json"
+          }
+
+          deadline_seconds="$(env_value DOCS_BUILD_DEADLINE_SECONDS)"
+          sandbox_seconds="$(env_value DOCS_SANDBOX_TIMEOUT_SECONDS)"
+
+          if ! printf '%s' "$timeout_seconds" | grep -Eq '^[0-9]+$'; then
+            echo "Could not read a request timeout for ${DOCS_LAUNCHER_SERVICE}; got '${timeout_raw}'." >&2
+            echo "Top level keys: $(jq -r 'keys | join(", ")' <<< "$launcher_json")" >&2
+            exit 1
+          fi
+
+          # Absent is a real deployable state and it must fail rather than default to
+          # zero, which every timeout would clear. In production the producers raise on
+          # a missing deadline; this catches the same misconfiguration one step earlier,
+          # at deploy time rather than on the first documentation build.
+          if ! printf '%s' "$deadline_seconds" | grep -Eq '^[0-9]+$'; then
+            echo "${DOCS_LAUNCHER_SERVICE} carries no usable DOCS_BUILD_DEADLINE_SECONDS; got '${deadline_seconds}'." >&2
+            echo "The producers require it in production and will refuse to enqueue without it." >&2
+            exit 1
+          fi
+
+          # The sandbox timeout must be published rather than left to the app's own
+          # fallback. The fallback happens to be below the deadline today, so the
+          # ordering would hold by coincidence, and a coincidence is exactly what this
+          # assertion exists to replace with something structural.
+          if ! printf '%s' "$sandbox_seconds" | grep -Eq '^[0-9]+$'; then
+            echo "${DOCS_LAUNCHER_SERVICE} carries no usable DOCS_SANDBOX_TIMEOUT_SECONDS; got '${sandbox_seconds}'." >&2
+            echo "Terraform must publish it, derived from docs_build_timeout_seconds minus the margin," >&2
+            echo "so the ordering below is structural rather than inherited from an app default." >&2
+            exit 1
+          fi
+
+          # Positive control: every number printed, so a pass is visibly a comparison of
+          # real values rather than of silent zeros.
+          echo "  ${DOCS_LAUNCHER_SERVICE}: request timeout ${timeout_seconds}s"
+          echo "  ${DOCS_LAUNCHER_SERVICE}: DOCS_BUILD_DEADLINE_SECONDS ${deadline_seconds}s"
+          echo "  ${DOCS_LAUNCHER_SERVICE}: DOCS_SANDBOX_TIMEOUT_SECONDS ${sandbox_seconds}s"
+
+          # Equality for these two, not >=. Both come from the single terraform local
+          # docs_build_deadline_seconds, so they cannot legitimately differ. Under the
+          # older design, where the producers carried their own literal, >= was the
+          # right test because it encoded the safety property. Now any difference at all
+          # means the single-source derivation has broken, and a launcher timeout above
+          # the deadline is as much evidence of that as one below it.
+          if [ "$timeout_seconds" -ne "$deadline_seconds" ]; then
+            echo "${DOCS_LAUNCHER_SERVICE} request timeout is ${timeout_seconds}s but DOCS_BUILD_DEADLINE_SECONDS is ${deadline_seconds}s." >&2
+            echo "Both are set from docs_build_timeout_seconds in terraform, so a difference means that wiring is broken." >&2
+            if [ "$timeout_seconds" -lt "$deadline_seconds" ]; then
+              echo "This direction is the harmful one: Cloud Run kills the request before Cloud Tasks gives up," >&2
+              echo "so every documentation build is redelivered forever." >&2
+            fi
+            exit 1
+          fi
+
+          # Strictly less, and deliberately NOT equal to the other three. The sandbox
+          # has to give up before the launcher does, or the launcher is killed mid-wait
+          # and the only party holding a database credential never records the outcome.
+          # That is the orphaned build: it sits in `building` forever with nothing in
+          # any log to explain it. Anyone tempted to tidy these two nearly equal
+          # timeouts into one number would reintroduce exactly that.
+          if [ "$sandbox_seconds" -ge "$deadline_seconds" ]; then
+            echo "DOCS_SANDBOX_TIMEOUT_SECONDS is ${sandbox_seconds}s but the build ceiling is ${deadline_seconds}s." >&2
+            echo "The sandbox must give up strictly before the launcher, or a slow build orphans:" >&2
+            echo "the launcher is killed while waiting and never writes the outcome to the database." >&2
+            exit 1
+          fi
+
+          echo "Timeout ordering holds: sandbox ${sandbox_seconds}s < launcher ${timeout_seconds}s == deadline ${deadline_seconds}s."
 
   # ---------------------------------------------------------------------------
   # Smoke test the public hostnames.

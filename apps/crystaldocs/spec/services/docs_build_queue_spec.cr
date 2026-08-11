@@ -59,6 +59,58 @@ describe CrystalDocs::CloudTasksDocsBuildQueue do
     parsed["task"]["dispatchDeadline"].as_s.should eq("1800s")
   end
 
+  # Proves the deadline is read from the deployment rather than baked in.
+  # task_json is called WITHOUT the deadline argument, so it goes through
+  # CloudTasksConfig.deadline_seconds and the env var, which is the path
+  # production uses. Passing it explicitly would prove nothing: the example
+  # would still pass if the env var were ignored entirely.
+  #
+  # 1200 rather than 3600 because Cloud Tasks caps an HTTP target's dispatch
+  # deadline at 1800s, so 3600 would assert a payload the queue rejects.
+  it "reads the deadline the deployment configured rather than a baked-in one" do
+    with_cloud_tasks_env(deadline: "1200") do
+      parsed = JSON.parse(
+        CrystalDocs::CloudTasksDocsBuildQueue.task_json(
+          "https://docs-launcher.example.run.app",
+          "docs-tasks@example.iam.gserviceaccount.com",
+          task
+        )
+      )
+
+      parsed["task"]["dispatchDeadline"].as_s.should eq("1200s")
+    end
+  end
+
+  # Out of range is refused where the message can name the variable. Cloud
+  # Tasks would otherwise reject the CreateTask call, which enqueue catches
+  # and logs as an unreachable queue, so every build would silently fail to be
+  # commissioned with nothing pointing at the real cause.
+  describe "deadline validation" do
+    it "refuses a deadline above the Cloud Tasks ceiling" do
+      with_cloud_tasks_env(deadline: "3600") do
+        expect_raises(CrystalDocs::CloudTasksConfig::InvalidDeadline, /between 15 and 1800/) do
+          CrystalDocs::CloudTasksConfig.deadline_seconds
+        end
+      end
+    end
+
+    it "refuses a non-numeric deadline rather than silently defaulting" do
+      with_cloud_tasks_env(deadline: "half an hour") do
+        expect_raises(CrystalDocs::CloudTasksConfig::InvalidDeadline) do
+          CrystalDocs::CloudTasksConfig.deadline_seconds
+        end
+      end
+    end
+
+    # The development fallback is what keeps local dev and the suite working
+    # with no cloud configuration at all.
+    it "uses the development fallback when unset outside production" do
+      with_cloud_tasks_env(deadline: nil) do
+        CrystalDocs::CloudTasksConfig.deadline_seconds.should eq(1800)
+      end
+    end
+  end
+
   # A trailing slash on the service URL would otherwise produce a double slash,
   # which Cloud Run does not route to the same action.
   it "joins the route cleanly when the launcher url has a trailing slash" do

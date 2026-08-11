@@ -56,10 +56,109 @@ describe CrystalShards::CloudTasksDocsBuildQueue do
     oidc["audience"].as_s.should eq("https://docs-launcher.example.run.app")
   end
 
-  # Must match the launcher's Cloud Run request timeout. Unset it defaults to
-  # 600s, and the launcher holds the request open for the whole build.
+  # Must equal the docs-launcher Cloud Run request timeout. Unset it defaults
+  # to 600s and the launcher holds the request open for the whole build.
+  #
+  # The value is no longer a constant in this file. Two numbers that had to be
+  # equal used to live in two places with nothing able to fail when they
+  # drifted, so terraform now derives the service timeout and the env var from
+  # one local and this reads the env var. The default argument is what
+  # production uses; passing it explicitly is how the shape gets asserted
+  # without a production environment.
   it "gives the launcher the whole build to answer in" do
     request.call["dispatchDeadline"].as_s.should eq("1800s")
+  end
+
+  # Proves the deadline is genuinely read from the deployment rather than
+  # baked in. This calls task_json WITHOUT passing the deadline, so it goes
+  # through CloudTasksConfig.deadline_seconds and the env var, which is the
+  # path production uses. Passing the argument explicitly would prove nothing:
+  # the spec would still pass if the env var were ignored entirely.
+  #
+  # 1200 rather than 3600 because Cloud Tasks caps an HTTP target's dispatch
+  # deadline at 1800s, so 3600 would assert a payload the queue rejects.
+  it "reads the deadline the deployment configured rather than a baked-in one" do
+    with_cloud_tasks_env(deadline: "1200") do
+      parsed = JSON.parse(
+        CrystalShards::CloudTasksDocsBuildQueue.task_json(
+          "https://docs-launcher.example.run.app",
+          "docs-tasks@example.iam.gserviceaccount.com",
+          task
+        )
+      )
+
+      parsed["task"]["dispatchDeadline"].as_s.should eq("1200s")
+    end
+  end
+
+  # The sandbox must finish before the launcher's deadline, or the launcher is
+  # killed mid-wait and never records the outcome: the row stays `building`
+  # forever with no failed_at, so the retry floor never reconsiders it and no
+  # log says why. Terraform derives both from one variable with an explicit
+  # margin, and this proves the app refuses if that ever stops holding.
+  #
+  # Exercised in both directions deliberately. A guard only ever observed
+  # passing is not a guard.
+  describe "sandbox and launcher timeout ordering" do
+    it "accepts a sandbox that finishes comfortably before the deadline" do
+      with_cloud_tasks_env(deadline: "1800") do
+        with_env(CrystalShards::DocsSandbox::TIMEOUT_ENV, "1500") do
+          CrystalShards::DocsSandbox.timeout_seconds.should eq(1500)
+        end
+      end
+    end
+
+    it "refuses a sandbox allowed to run right up to the deadline" do
+      with_cloud_tasks_env(deadline: "1800") do
+        with_env(CrystalShards::DocsSandbox::TIMEOUT_ENV, "1800") do
+          expect_raises(CrystalShards::DocsSandbox::TimeoutOrdering, /must finish at least 300s before/) do
+            CrystalShards::DocsSandbox.timeout_seconds
+          end
+        end
+      end
+    end
+
+    # The boundary itself, so the comparison is proved to be the stated one
+    # rather than off by the margin in either direction.
+    it "refuses a sandbox that leaves less than the margin" do
+      with_cloud_tasks_env(deadline: "1800") do
+        with_env(CrystalShards::DocsSandbox::TIMEOUT_ENV, "1501") do
+          expect_raises(CrystalShards::DocsSandbox::TimeoutOrdering) do
+            CrystalShards::DocsSandbox.timeout_seconds
+          end
+        end
+      end
+    end
+  end
+
+  # Out of range must be refused where the message can name the variable.
+  # Cloud Tasks would otherwise reject the CreateTask call, which enqueue
+  # catches and logs as an unreachable queue, so every build would silently
+  # fail to be commissioned with nothing pointing at the real cause.
+  describe "deadline validation" do
+    it "refuses a deadline above the Cloud Tasks ceiling" do
+      with_cloud_tasks_env(deadline: "3600") do
+        expect_raises(CrystalShards::CloudTasksConfig::InvalidDeadline, /between 15 and 1800/) do
+          CrystalShards::CloudTasksConfig.deadline_seconds
+        end
+      end
+    end
+
+    it "refuses a non-numeric deadline rather than silently defaulting" do
+      with_cloud_tasks_env(deadline: "half an hour") do
+        expect_raises(CrystalShards::CloudTasksConfig::InvalidDeadline) do
+          CrystalShards::CloudTasksConfig.deadline_seconds
+        end
+      end
+    end
+
+    # The development fallback is what keeps local dev and the suite working
+    # with no cloud configuration at all.
+    it "uses the development fallback outside production" do
+      with_cloud_tasks_env(deadline: nil) do
+        CrystalShards::CloudTasksConfig.deadline_seconds.should eq(1800)
+      end
+    end
   end
 
   describe "#enqueue" do

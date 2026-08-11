@@ -27,7 +27,7 @@ resource "google_cloud_run_v2_service" "docs_launcher" {
 
   template {
     service_account                  = google_service_account.docs_launcher.email
-    timeout                          = "${var.docs_build_timeout_seconds}s"
+    timeout                          = local.docs_build_timeout
     max_instance_request_concurrency = 1
 
     scaling {

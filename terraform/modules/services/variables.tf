@@ -88,28 +88,85 @@ variable "docs_build_concurrency" {
 
 variable "docs_build_timeout_seconds" {
   description = <<-DESC
-    Ceiling on a single documentation build. docs-launcher holds the Cloud Tasks
-    request open for the duration of the execution so it can record the outcome
-    from an identity that has the database, which means the launcher's request
-    timeout, the Job's timeout and the Cloud Tasks dispatch deadline all have to
-    sit at or above this. The app side sandbox timeout
-    (DOCS_SANDBOX_TIMEOUT_SECONDS) defaults to 900, so this leaves headroom
-    rather than racing it.
+    Ceiling on a single documentation build, and the single number four things
+    derive from. docs-launcher holds the Cloud Tasks request open for the whole
+    execution so it can record the outcome from an identity that has the
+    database, so the launcher's request timeout, the docs-build Job's timeout
+    and the per-task Cloud Tasks dispatchDeadline set by each producer all have
+    to agree. The sandbox timeout is derived from this too, but deliberately
+    NOT equal to it: see docs_build_launcher_margin_seconds.
 
-    CHANGING THIS ALONE IS NOT ENOUGH. The Cloud Tasks dispatch deadline is a
-    per task field with no queue level equivalent for an HTTP target, so it is
-    set in application code, not here:
+    Changing this here is sufficient, and that is deliberate. This value becomes
+    local.docs_build_deadline_seconds, which sets both timeouts directly and is
+    also published to crystalshards, crystaldocs and docs-launcher as
+    DOCS_BUILD_DEADLINE_SECONDS. The two producers read that env var rather than
+    carrying a literal, so there is no second number to keep in step and no way
+    to move one without the other.
 
-      apps/crystaldocs/src/services/docs_build_queue.cr
-      apps/crystalshards/src/services/docs_build_queue.cr
-
-    Both carry DISPATCH_DEADLINE_SECONDS = 1800 and must move with this value.
-    Lower it here and leave them alone and nothing breaks visibly; the mismatch
-    only appears the first time a shard takes longer than the smaller of the
-    two, at which point Cloud Tasks kills a build mid flight and retries it.
+    It is wired that way because the drift is undetectable. Nothing in the
+    pipeline can see a mismatch: /api/health answers in milliseconds so every
+    readiness probe and deploy gate stays green, and the app side specs can only
+    observe the task half. The only symptom of a dispatch deadline shorter than
+    the build is documentation that never appears, while Cloud Tasks abandons
+    and redelivers a build that is still running.
   DESC
   type        = number
   default     = 1800
+
+  # Upper bound: 1800 is not a preference, it is the ceiling. Cloud Tasks
+  # accepts a dispatchDeadline for an HTTP target only in [15s, 1800s], and this
+  # value is published to the producers as DOCS_BUILD_DEADLINE_SECONDS. Raise it
+  # to 3600 and two of the three consumers accept it happily: the launcher's
+  # Cloud Run timeout and the Job's timeout both allow it. The third does not,
+  # so every CreateTask call is rejected, and because the enqueue path rescues
+  # and logs, that surfaces as "queue unreachable" while documentation is simply
+  # never commissioned.
+  #
+  # Lower bound: 900 rather than the 15 Cloud Tasks would tolerate, because
+  # docs_build_launcher_margin_seconds is subtracted from this to produce the
+  # sandbox timeout, and that subtraction has to stay comfortably positive. The
+  # two bounds are checked independently on purpose. A single cross-variable
+  # condition would be more direct but needs Terraform 1.9 for a validation to
+  # reference another variable, and this configuration declares >= 1.7, so it
+  # would be a check that only runs where someone happens to be newer.
+  #
+  # The apps validate the same bounds at boot. These refuse at plan time, which
+  # is the cheaper place to find out.
+  validation {
+    condition     = var.docs_build_timeout_seconds >= 900 && var.docs_build_timeout_seconds <= 1800
+    error_message = "docs_build_timeout_seconds must be between 900 and 1800. It is published to the documentation build producers as DOCS_BUILD_DEADLINE_SECONDS, and Cloud Tasks rejects a dispatchDeadline outside [15s, 1800s] for an HTTP target; the 900 floor keeps docs_build_timeout_seconds minus docs_build_launcher_margin_seconds positive."
+  }
+}
+
+variable "docs_build_launcher_margin_seconds" {
+  description = <<-DESC
+    How much longer docs-launcher lives than the sandbox it is waiting on.
+
+    The sandbox timeout is docs_build_timeout_seconds minus this, so it is
+    strictly smaller than the launcher's request timeout and the dispatch
+    deadline. That inequality is the point and it must not be tidied into
+    equality. docs-launcher holds the Cloud Tasks request open for the whole
+    build and is the ONLY party in the chain holding a database credential, so
+    it has to outlive the sandbox in order to write the outcome. If the sandbox
+    is allowed to run right up to the launcher's own deadline, the launcher is
+    killed mid wait and records nothing: the row stays in building forever, no
+    failed_at is ever written so the retry floor has nothing to measure from,
+    nothing reconsiders it, and no log line says why. A build orphaned that way
+    is invisible rather than noisy, which is why it earns a variable and a
+    comment rather than a subtraction someone can smooth away.
+
+    The margin is not padding. It covers the work the launcher does outside the
+    sandbox wait: clone, checkout, `shards install --skip-postinstall`, then
+    downloading the artifact, validating it parses, publishing it and writing
+    status. `shards install` on a dependency heavy shard is the slow one.
+  DESC
+  type        = number
+  default     = 300
+
+  validation {
+    condition     = var.docs_build_launcher_margin_seconds >= 300 && var.docs_build_launcher_margin_seconds <= 600
+    error_message = "docs_build_launcher_margin_seconds must be between 300 and 600. Below 300 the launcher may be killed before it can record the build outcome, which orphans the build silently; above 600 it would exceed what the 900 floor on docs_build_timeout_seconds can absorb."
+  }
 }
 
 variable "job_ads_url" {

@@ -18,12 +18,28 @@ private def apply_env(values : Hash(String, String?)) : Nil
   end
 end
 
+# Sets one environment variable for the duration of a block and restores it.
+#
+# Same reasoning as with_cloud_tasks_env: a leaked value makes a later example
+# assert against a configuration it did not choose.
+def with_env(key : String, value : String?, &)
+  previous = ENV[key]?
+  apply_env({key => value})
+
+  begin
+    yield
+  ensure
+    apply_env({key => previous})
+  end
+end
+
 def with_cloud_tasks_env(
   project : String? = "test-project",
   queue : String? = "docs-builds",
   location : String? = "us-central1",
   launcher_url : String? = "https://docs-launcher.example.run.app",
   invoker : String? = "docs-tasks@example.iam.gserviceaccount.com",
+  deadline : String? = nil,
   &
 )
   desired = {
@@ -32,6 +48,7 @@ def with_cloud_tasks_env(
     CrystalShards::CloudTasksConfig::LOCATION_ENV => location,
     CrystalShards::CloudTasksConfig::LAUNCHER_ENV => launcher_url,
     CrystalShards::CloudTasksConfig::INVOKER_ENV  => invoker,
+    CrystalShards::CloudTasksConfig::DEADLINE_ENV => deadline,
   } of String => String?
 
   previous = desired.keys.to_h { |key| {key, ENV[key]?} }

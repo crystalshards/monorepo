@@ -73,6 +73,13 @@ module CrystalDocs
     LOCATION_ENV = "DOCS_BUILD_QUEUE_LOCATION"
     LAUNCHER_ENV = "DOCS_LAUNCHER_URL"
     INVOKER_ENV  = "DOCS_TASKS_SERVICE_ACCOUNT"
+    DEADLINE_ENV = "DOCS_BUILD_DEADLINE_SECONDS"
+
+    # Only used outside production. In production the deadline is required,
+    # because it has to equal the docs-launcher Cloud Run request timeout and
+    # terraform derives both from one value. Defaulting here would recreate
+    # the second source of truth this variable exists to remove.
+    DEFAULT_DEADLINE_SECONDS = 1800
 
     class Missing < Exception
       def initialize(key : String)
@@ -83,7 +90,7 @@ module CrystalDocs
         app will not enqueue one without knowing where to send it. Production
         requires all of:
 
-          #{PROJECT_ENV}, #{QUEUE_ENV}, #{LOCATION_ENV}, #{LAUNCHER_ENV}, #{INVOKER_ENV}
+          #{PROJECT_ENV}, #{QUEUE_ENV}, #{LOCATION_ENV}, #{LAUNCHER_ENV}, #{INVOKER_ENV}, #{DEADLINE_ENV}
 
         In development and test the queue is in-process and none of these are
         read.
@@ -103,16 +110,71 @@ module CrystalDocs
     def self.queue_path : String
       "projects/#{fetch(PROJECT_ENV)}/locations/#{fetch(LOCATION_ENV)}/queues/#{fetch(QUEUE_ENV)}"
     end
+
+    # Cloud Tasks accepts a dispatch deadline only within [15s, 1800s] for an
+    # HTTP target. 1800 is therefore the ceiling, not merely the value we
+    # picked, and the docs-launcher Cloud Run request timeout is pinned to the
+    # same number because it is the largest the queue will honour.
+    MIN_DEADLINE_SECONDS =   15
+    MAX_DEADLINE_SECONDS = 1800
+
+    class InvalidDeadline < Exception
+      def initialize(raw : String)
+        super(
+          "#{DEADLINE_ENV} is #{raw.inspect}, which Cloud Tasks will not accept. " \
+          "An HTTP target dispatch deadline must be a whole number of seconds " \
+          "between #{MIN_DEADLINE_SECONDS} and #{MAX_DEADLINE_SECONDS}."
+        )
+      end
+    end
+
+    # How long the launcher may take before Cloud Tasks gives up on one
+    # delivery.
+    #
+    # This must equal the docs-launcher Cloud Run request timeout, because the
+    # launcher holds the request open for the whole build: it is the only
+    # party in the chain that can write the outcome to the database. Two
+    # numbers that must be equal used to live in two places, and nothing could
+    # fail when they drifted. A wrong value passes every gate in the pipeline,
+    # because /api/health answers in milliseconds, and shows up only as builds
+    # dying mid-compile and being redelivered forever behind a green deploy.
+    #
+    # So terraform derives the service timeout and this variable from one
+    # local, and this reads that variable rather than carrying its own copy.
+    # Cloud Run env values are strings, hence the parse.
+    #
+    # Out of range is refused here rather than at dispatch. Cloud Tasks would
+    # reject the CreateTask call, which this class catches and logs as "queue
+    # unreachable", so every build would silently fail to be commissioned and
+    # the cause would not appear in the message.
+    # Production requires it; elsewhere an unset value falls back so local dev
+    # and the suite need no cloud configuration. But a value that IS set is
+    # always honoured and always validated, in every environment, so a bad
+    # deadline is caught in CI rather than only once it reaches production.
+    def self.deadline_seconds : Int32
+      raw = ENV[DEADLINE_ENV]?
+
+      if raw.nil? || raw.blank?
+        raise Missing.new(DEADLINE_ENV) if LuckyEnv.production?
+        return DEFAULT_DEADLINE_SECONDS
+      end
+
+      seconds = raw.to_i?
+
+      unless seconds && seconds >= MIN_DEADLINE_SECONDS && seconds <= MAX_DEADLINE_SECONDS
+        raise InvalidDeadline.new(raw)
+      end
+
+      seconds
+    end
   end
 
   class CloudTasksDocsBuildQueue < DocsBuildQueue
     API_HOST = "https://cloudtasks.googleapis.com"
 
-    # How long the launcher may take before Cloud Tasks gives up on one
-    # delivery. Must match the docs-launcher Cloud Run request timeout: the
-    # launcher holds this request open for the whole build, because it is the
-    # only party in the chain that can write the outcome to the database.
-    DISPATCH_DEADLINE_SECONDS = 1800
+    # The deadline is not a constant here any more. It has to equal the
+    # docs-launcher Cloud Run request timeout, terraform derives both from one
+    # local, and this reads that. See CloudTasksConfig.deadline_seconds.
 
     # Test seam. Receives the queue path and the serialised task, and returns
     # nothing. Defaults to the real API call, so production works with nothing
@@ -126,15 +188,15 @@ module CrystalDocs
     # Separated from sending it because the shape is the contract, and a
     # contract that can only be checked by dispatching a real task is a
     # contract nobody checks.
-    def self.task_json(launcher_url : String, invoker : String, task : DocsBuildTask) : String
+    def self.task_json(launcher_url : String, invoker : String, task : DocsBuildTask, deadline_seconds : Int32 = CloudTasksConfig.deadline_seconds) : String
       {
         task: {
           # Per task, not a queue setting: Cloud Tasks has no queue level
           # dispatch deadline for an HTTP target. Left unset it defaults to
           # 600s, and the launcher holds the request open for the whole build,
           # so a slow shard would be killed mid compile and redelivered
-          # forever. This is the launcher's Cloud Run request timeout.
-          dispatchDeadline: "#{DISPATCH_DEADLINE_SECONDS}s",
+          # forever.
+          dispatchDeadline: "#{deadline_seconds}s",
           httpRequest:      {
             httpMethod: "POST",
             url:        "#{launcher_url.rstrip('/')}#{DocsBuildQueue::PATH}",

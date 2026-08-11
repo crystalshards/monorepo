@@ -123,19 +123,31 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Setup Terraform
-        # v3 matches deploy.yml. The version pin does NOT match it: deploy.yml
-        # still says 1.6.0, and terraform.tf now declares `required_version =
-        # ">= 1.7"` because imports.edge.tf uses for_each inside an import
-        # block, which is 1.7+. 1.6.0 cannot parse this configuration at all,
-        # so init would fail the constraint before anything else ran. Reported
-        # to DeployWorkflow; both files should land on the same pin.
+        # Pinned to match ci.yml:175, agreed with DeployWorkflow so all three
+        # workflows install the same terraform.
+        #
+        # Two separate reasons this cannot be 1.6.0, which is where deploy.yml
+        # and this file both started. First, terraform.tf declares
+        # `required_version = ">= 1.7"` because imports.edge.tf uses for_each
+        # inside an import block, so 1.6.0 cannot parse the configuration at
+        # all. Second and less obvious, ci.yml records that 1.6.0 embeds a
+        # HashiCorp GPG key that has since EXPIRED, so it cannot verify any
+        # provider release and dies in init with "openpgp: key expired".
+        #
+        # That second one is why this is not pinned to the oldest version
+        # satisfying the floor. An expired signing key is a wall clock failure
+        # that arrived without anything in the repo changing, and nobody knows
+        # where between 1.6 and 1.7 the shipped key rotated. Older is more
+        # exposed to it, not less, so "conservative" and "old" point in
+        # opposite directions here. 1.15.8 is the only version this repo has
+        # actually observed installing providers.
         #
         # cli_config_credentials_token is deliberately absent. It configures
-        # Terraform Cloud, this repo uses a GCS backend, and deploy.yml dropped
-        # it in the Cloud Run rewrite.
+        # Terraform Cloud, this repo uses a GCS backend with local module
+        # sources, and deploy.yml dropped it in the Cloud Run rewrite.
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.7.5
+          terraform_version: 1.15.8
           terraform_wrapper: false
 
       # ---------------------------------------------------------------------

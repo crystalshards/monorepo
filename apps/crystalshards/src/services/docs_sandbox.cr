@@ -108,8 +108,49 @@ module CrystalShards
       ENV.fetch("DOCS_SANDBOX_IMAGE", DEFAULT_IMAGE)
     end
 
+    TIMEOUT_ENV = "DOCS_SANDBOX_TIMEOUT_SECONDS"
+
+    # The launcher must outlive the sandbox, and this is what enforces it.
+    #
+    # The launcher holds the Cloud Tasks request open for the whole build and
+    # is the only party in the chain holding a database credential. If the
+    # sandbox is allowed to run as long as the launcher's own deadline, the
+    # launcher is killed mid-wait having written nothing: the request row
+    # stays `building` forever, no failed_at is written so the retry floor has
+    # nothing to measure from, nothing ever reconsiders the version, and no
+    # log line says why. An orphaned build is invisible rather than noisy,
+    # which is why the ordering is checked here rather than trusted.
+    #
+    # The margin is not padding. It has to cover the work the launcher does
+    # outside the sandbox wait: clone, checkout, `shards install`, then
+    # downloading the artifact, validating it parses, publishing it and
+    # writing status. `shards install` on a dependency-heavy shard is the slow
+    # one.
+    #
+    # Terraform derives this from the same variable as the deadline, minus an
+    # explicit margin, so the ordering is structural. This refuses at config
+    # time if that ever stops being true, naming both variables, rather than
+    # letting it surface as a build that hangs.
+    MIN_LAUNCHER_MARGIN_SECONDS = 300
+
+    class TimeoutOrdering < Exception
+      def initialize(sandbox : Int32, deadline : Int32)
+        super(
+          "#{TIMEOUT_ENV} is #{sandbox}s and #{CloudTasksConfig::DEADLINE_ENV} is #{deadline}s. " \
+          "The sandbox must finish at least #{MIN_LAUNCHER_MARGIN_SECONDS}s before the launcher's " \
+          "deadline, so the launcher survives to record the outcome. Lower #{TIMEOUT_ENV} " \
+          "or raise #{CloudTasksConfig::DEADLINE_ENV}."
+        )
+      end
+    end
+
     def self.timeout_seconds : Int32
-      ENV["DOCS_SANDBOX_TIMEOUT_SECONDS"]?.try(&.to_i?) || DEFAULT_TIMEOUT
+      seconds = ENV[TIMEOUT_ENV]?.try(&.to_i?) || DEFAULT_TIMEOUT
+      deadline = CloudTasksConfig.deadline_seconds
+
+      raise TimeoutOrdering.new(seconds, deadline) if seconds + MIN_LAUNCHER_MARGIN_SECONDS > deadline
+
+      seconds
     end
 
     def self.memory : String

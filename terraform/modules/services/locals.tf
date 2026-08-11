@@ -46,6 +46,49 @@ locals {
     CLOUD_SQL_CONNECTION_NAME = var.cloud_sql_connection_name
   }
 
+  # The documentation build deadline, written once and read by everything that
+  # has to agree with it.
+  #
+  # Four values must be equal or the build path breaks in a way no gate can
+  # see: docs-launcher's request timeout, the docs-build Job's timeout, and the
+  # per-task Cloud Tasks dispatchDeadline set by each of the two producers. The
+  # launcher holds the Cloud Tasks request open for the whole execution so it
+  # can record the outcome from an identity that has the database, so if the
+  # dispatch deadline is the smaller of the two, Cloud Tasks abandons and
+  # redelivers a build that is still running, forever.
+  #
+  # Nothing detects that. /api/health answers in milliseconds, so every readiness
+  # probe and every deploy gate stays green; the app side specs can only see the
+  # task half; and the only symptom is documentation that never appears. So the
+  # producers do not carry their own literal, they read
+  # DOCS_BUILD_DEADLINE_SECONDS, and that env var and the launcher timeout below
+  # are the same local rather than two numbers that happen to match today.
+  docs_build_deadline_seconds = var.docs_build_timeout_seconds
+  docs_build_timeout          = "${local.docs_build_deadline_seconds}s"
+
+  # The sandbox deadline, derived from the same number but deliberately SMALLER
+  # than it. Do not tidy these into one value.
+  #
+  # docs-launcher holds the Cloud Tasks request open for the whole build and is
+  # the only party in the chain with a database credential, so it has to outlive
+  # the sandbox in order to record the outcome. Let the sandbox run to the
+  # launcher's own deadline and the launcher is killed mid wait having written
+  # nothing: the row stays in building forever, no failed_at is written so the
+  # retry floor has nothing to measure from, nothing reconsiders it, and no log
+  # line says why. That failure is silent rather than noisy, which is exactly
+  # the kind that survives a green pipeline.
+  #
+  # The margin is not padding. It covers the work the launcher does either side
+  # of the sandbox wait: clone, checkout, shards install, then downloading the
+  # artifact, validating it parses, publishing it and writing status.
+  #
+  # Ordering, structural rather than coincidental:
+  #   docs_sandbox_timeout_seconds  <  docs_build_deadline_seconds
+  #                                 == launcher request timeout
+  #                                 == docs-build Job timeout
+  #                                 == Cloud Tasks dispatchDeadline
+  docs_sandbox_timeout_seconds = local.docs_build_deadline_seconds - var.docs_build_launcher_margin_seconds
+
   # Both crystalshards and crystaldocs put documentation builds on the queue.
   # crystaldocs is the primary producer: a reader opens a page for a version
   # with no artifact and the request commissions the build. crystalshards is
@@ -56,21 +99,12 @@ locals {
   # for that identity is a 403, and the symptom is documentation that never
   # appears rather than an error anybody sees.
   enqueuer_env = {
-    DOCS_BUILD_QUEUE           = var.docs_build_queue_name
-    DOCS_BUILD_QUEUE_LOCATION  = var.docs_build_queue_location
-    DOCS_LAUNCHER_URL          = google_cloud_run_v2_service.docs_launcher.uri
-    DOCS_TASKS_SERVICE_ACCOUNT = google_service_account.docs_tasks.email
+    DOCS_BUILD_QUEUE            = var.docs_build_queue_name
+    DOCS_BUILD_QUEUE_LOCATION   = var.docs_build_queue_location
+    DOCS_LAUNCHER_URL           = google_cloud_run_v2_service.docs_launcher.uri
+    DOCS_TASKS_SERVICE_ACCOUNT  = google_service_account.docs_tasks.email
+    DOCS_BUILD_DEADLINE_SECONDS = tostring(local.docs_build_deadline_seconds)
   }
-
-  # Env keys that only mean something to a request serving revision. The
-  # migration Jobs below strip them: a migration never enqueues anything, and
-  # handing it a launcher URL invites someone to make it do so.
-  enqueue_only_env_keys = [
-    "DOCS_BUILD_QUEUE",
-    "DOCS_BUILD_QUEUE_LOCATION",
-    "DOCS_LAUNCHER_URL",
-    "DOCS_TASKS_SERVICE_ACCOUNT",
-  ]
 
   # Per service shape and wiring. Everything that differs between the four apps
   # is visible in this one table, so the resource below stays uniform and the
@@ -216,6 +250,12 @@ locals {
     DOCS_BUILD_JOB_REGION      = var.region
     DOCS_BUILD_MAX_CONCURRENCY = tostring(var.docs_build_concurrency)
     DOCS_SANDBOX               = "cloudrun"
+    # Same local that sets this service's request timeout below, so the
+    # launcher cannot be told a deadline it does not itself honour.
+    DOCS_BUILD_DEADLINE_SECONDS = tostring(local.docs_build_deadline_seconds)
+    # And the sandbox deadline, which is that value minus the launcher margin.
+    # Only docs-launcher gets this; the two enqueuers never run a build.
+    DOCS_SANDBOX_TIMEOUT_SECONDS = tostring(local.docs_sandbox_timeout_seconds)
   })
 
   # The launcher records build outcomes itself, because it is the only identity

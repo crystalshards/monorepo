@@ -31,7 +31,13 @@ jobs:
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.6.0
+        # 1.15.8, matching ci.yml, deploy.yml and teardown-gke.yml. NOT 1.6.0:
+        # that release's embedded HashiCorp key has expired, so `terraform init`
+        # can no longer verify any provider and dies with "openpgp: key expired".
+        # This is a wall-clock failure rather than a version-compatibility one,
+        # so an older pin is not the conservative choice here, it is the broken
+        # one. Keep all four workflows on the same version.
+        terraform_version: 1.15.8
         terraform_wrapper: false
 
     - name: Force Unlock State
