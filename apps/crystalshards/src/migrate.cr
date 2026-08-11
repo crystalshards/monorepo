@@ -3,9 +3,9 @@
 # This deliberately does NOT require ./app. Loading the whole application pulls in
 # every file under config/, and each of those raises at load time when its own
 # production variable is absent: config/server.cr reads PORT and SECRET_KEY_BASE,
-# config/email.cr calls exit(1) without SEND_GRID_KEY, and individual apps add more
+# config/object_store_buckets.cr raises without DOCS_BUCKET, and individual apps add
 # over time. None of it is reachable from a migration, so requiring the app would
-# hand the one identity holding DDL rights a session signing key and a mail key to
+# hand the one identity holding DDL rights a session signing key and a bucket name to
 # run a DDL statement, and every new boot time config would silently break
 # migrations until somebody remembered to add another variable to the Job.
 #

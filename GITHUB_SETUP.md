@@ -8,19 +8,34 @@ Go to Settings → Secrets and variables → Actions and add:
 
 ### Required Secrets
 
+Six, and the workflows read no others.
+
+Two authenticate CI to Google Cloud:
+
 - `GCP_SA_KEY` - Service account JSON key CI authenticates with
 - `GCP_PROJECT_ID` - The Google Cloud project to deploy into
 
-Those two are what the Terraform deploy path requires. The deploy workflow may
-consume others for steps outside Terraform.
+Four are the third party application credentials. The deploy workflow's
+`Add a version to every required secret` step reads them and adds a Secret Manager
+version from each, so these are the only place an operator enters a value:
 
-The SendGrid and Stripe keys are not repository secrets. Terraform never sees them,
-so nothing sensitive is written into Terraform state. They live in Secret Manager
-and an operator adds each version by hand.
-[`.github/SETUP.md`](.github/SETUP.md) has that step, how to mint the Google Cloud
-key, and the boundary it creates: CrystalShards and CrystalDocs serve on a clean
-apply with no third party credentials, while CrystalGigs and CrystalBits will not
-start until their Secret Manager secrets have a version.
+| GitHub secret | What it unblocks |
+| --- | --- |
+| `CRYSTALGIGS_RESEND_KEY` | CrystalGigs mail, which delivers job applications |
+| `CRYSTALGIGS_STRIPE_SECRET_KEY` | CrystalGigs payments, server side |
+| `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY` | CrystalGigs payments, browser side |
+| `CRYSTALBITS_RESEND_KEY` | CrystalBits mail, which sends the newsletter |
+
+Terraform creates the Secret Manager containers those four populate, but never a
+version for any of them. No third party credential is a Terraform variable and
+none is written into Terraform state.
+
+CrystalGigs and CrystalBits will not start until theirs have a version, and the
+populate step fails closed rather than deploying without them. CrystalShards,
+CrystalDocs and docs-launcher hold no third party secret and serve on a clean
+apply with none of the four set.
+[`.github/SETUP.md`](.github/SETUP.md) has the container ids, how to mint the
+Google Cloud key, and how to add a version by hand.
 
 ## 2. Service Account Permissions
 

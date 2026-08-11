@@ -56,6 +56,21 @@ variable "database_url_secret_ids" {
   type        = map(string)
 }
 
+variable "mail_enabled_apps" {
+  description = <<-DESC
+    App slugs whose Resend secret CI has actually populated with a version.
+    RESEND_API_KEY is attached to a revision only for these, because a revision
+    referencing a versionless secret never reaches Ready.
+
+    Names only, never a key value. Intersected with local.mail_senders, so a slug
+    outside crystalgigs/crystalbits is dropped rather than wired. Empty is the
+    normal case until the keys exist: all four services serve, and the two
+    senders raise on an actual send attempt naming RESEND_API_KEY.
+  DESC
+  type        = set(string)
+  default     = []
+}
+
 variable "docs_bucket_name" {
   description = "Built documentation bucket"
   type        = string

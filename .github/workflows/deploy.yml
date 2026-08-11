@@ -270,11 +270,14 @@ jobs:
   # nothing else, specifically not the Cloud Run services, which the full apply in
   # the next job creates once the values are in place.
   #
-  # Four values, not one per service. crystalgigs and crystalbits exit at boot
-  # without their keys and so are genuinely gated on them; crystalshards and
-  # crystaldocs deliberately no longer require a mail key, and docs-launcher runs
-  # the crystalshards image so it inherits that. The list below is grounded in what
-  # the app code actually demands rather than in what the stack happens to wire.
+  # Four values, not one per service, and they are not all mandatory. crystalgigs
+  # needs its Stripe keys in order to serve, so those stop the deploy when absent.
+  # The two mail keys do not: a missing mail key disables mail on that one service
+  # and the deploy carries on, because serving is the primary function and mail is
+  # a feature. crystalshards and crystaldocs require no mail key at all, and
+  # docs-launcher runs the crystalshards image so it inherits that. Which mail
+  # secrets ended up populated is published as a job output and handed to the stack
+  # apply, so the mail env var is wired only where a version actually exists.
   # ---------------------------------------------------------------------------
   secrets:
     name: Populate Secret Manager versions
@@ -282,6 +285,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
+    outputs:
+      mail_enabled_apps: ${{ steps.populate.outputs.mail_enabled_apps }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -313,34 +318,52 @@ jobs:
           set -euo pipefail
           terraform init
           terraform apply -auto-approve \
-            -target=module.services.google_secret_manager_secret.sendgrid_key \
+            -target=module.services.google_secret_manager_secret.resend_key \
             -target=module.services.google_secret_manager_secret.stripe_secret_key \
             -target=module.services.google_secret_manager_secret.stripe_publishable_key \
             -var="project_id=${PROJECT_ID}" \
             -var="region=${REGION}" \
             -var="image_tag=${IMAGE_TAG}"
 
-      - name: Add a version to every required secret
+      - name: Populate the application secrets
+        id: populate
         shell: bash
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-          CRYSTALGIGS_SENDGRID_KEY: ${{ secrets.CRYSTALGIGS_SENDGRID_KEY }}
-          CRYSTALBITS_SENDGRID_KEY: ${{ secrets.CRYSTALBITS_SENDGRID_KEY }}
+          CRYSTALGIGS_RESEND_KEY: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
+          CRYSTALBITS_RESEND_KEY: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
           CRYSTALGIGS_STRIPE_SECRET_KEY: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
           CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
         run: |
           set -uo pipefail
 
           failures=0
+          mail_enabled=()
+          mail_skipped=()
 
-          # $1 Secret Manager secret_id, $2 the GitHub secret name holding the value.
+          # $1 Secret Manager secret_id, $2 the GitHub secret name holding the value,
+          # $3 required|optional, $4 the app slug, for optional mail secrets only.
           # The value is read out of the environment by name, so it is never an
           # argument and never reaches a process listing.
+          #
+          # required  an absence stops the deploy. Stripe, because crystalgigs cannot
+          #           serve without it.
+          # optional  an absence is a supported state. Mail: the service still boots
+          #           and serves, and raises naming RESEND_API_KEY if anything tries
+          #           to send. Every skip is recorded and printed, never inferred.
+          #
+          # A present but broken value is an error in both modes. Only a genuine
+          # absence is skippable.
           populate() {
-            local secret_id="$1" var_name="$2"
+            local secret_id="$1" var_name="$2" mode="$3" slug="${4-}"
             local value="${!2-}" current had_version access_err readback
 
             if [ -z "$value" ]; then
+              if [ "$mode" = "optional" ]; then
+                echo "  ${secret_id}: ${var_name} is not set, skipping."
+                mail_skipped+=("${slug}|${var_name}")
+                return
+              fi
               echo "  ${secret_id}: GitHub secret ${var_name} is not set." >&2
               echo "    The service that consumes it exits at boot without it, so the revision" >&2
               echo "    will not start. Set it in repository secrets. Do not substitute a" >&2
@@ -378,6 +401,7 @@ jobs:
 
             if [ "$had_version" -eq 1 ] && [ "$current" = "$value" ]; then
               echo "  ${secret_id}: already current"
+              if [ -n "$slug" ]; then mail_enabled+=("$slug"); fi
               return
             fi
 
@@ -402,31 +426,69 @@ jobs:
             fi
 
             echo "  ${secret_id}: new version added"
+            if [ -n "$slug" ]; then mail_enabled+=("$slug"); fi
           }
 
-          # The four third party credentials this system genuinely consumes, grounded
-          # in the app code rather than in the terraform wiring:
+          # The third party credentials this system consumes, grounded in the app code
+          # rather than in the terraform wiring:
           #
-          #   crystalgigs  config/email.cr and config/payments.cr both exit(1) at boot
-          #                without their key. It delivers job applications by mail and
-          #                takes payment, so both are real start up dependencies.
-          #   crystalbits  config/email.cr exits(1) at boot. It sends the newsletter.
+          #   crystalgigs  config/payments.cr exits(1) at boot without its Stripe keys,
+          #                so those are a real start up dependency. Mail is not. It
+          #                delivers job applications when configured, and raises on a
+          #                send attempt when it is not.
+          #   crystalbits  mail sends the newsletter. Same treatment.
           #
-          # crystalshards and crystaldocs deliberately no longer require one: a
-          # registry and a docs site should not refuse to serve a page because a mail
-          # credential is absent. docs-launcher runs the crystalshards image, so it
-          # inherits that. None of those three is listed here, and none should be.
-          populate crystalgigs-sendgrid-key           CRYSTALGIGS_SENDGRID_KEY
-          populate crystalbits-sendgrid-key           CRYSTALBITS_SENDGRID_KEY
-          populate crystalgigs-stripe-secret-key      CRYSTALGIGS_STRIPE_SECRET_KEY
-          populate crystalgigs-stripe-publishable-key CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY
+          # A missing mail key therefore disables the feature loudly rather than
+          # stopping the deploy. Nothing reports a send that did not happen: the app
+          # raises naming RESEND_API_KEY instead of no-opping.
+          #
+          # crystalshards and crystaldocs require no mail key at all: a registry and a
+          # docs site should not refuse to serve a page over mail configuration.
+          # docs-launcher runs the crystalshards image, so it inherits that. None of
+          # those three is listed here, and none should be.
+          #
+          # The second column is a GitHub repository secret name and has to match
+          # `gh secret list` verbatim. A name that does not exist there reads as an
+          # absence, which stops the deploy for a required secret and silently disables
+          # mail for an optional one. A previous revision of this job named two mail
+          # secrets that had never existed in this repository, and every deploy stopped
+          # here. Check the column against `gh secret list` when editing it.
+          populate crystalgigs-resend-key             CRYSTALGIGS_RESEND_KEY             optional crystalgigs
+          populate crystalbits-resend-key             CRYSTALBITS_RESEND_KEY             optional crystalbits
+          populate crystalgigs-stripe-secret-key      CRYSTALGIGS_STRIPE_SECRET_KEY      required
+          populate crystalgigs-stripe-publishable-key CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY required
 
           if [ "$failures" -ne 0 ]; then
             echo "${failures} secret(s) could not be populated. Not applying the stack: a revision referencing an empty secret will not start." >&2
             exit 1
           fi
 
-          echo "All four required credentials hold a current version."
+          if [ "${#mail_skipped[@]}" -ne 0 ]; then
+            echo
+            echo "Mail is NOT configured for:"
+            for entry in "${mail_skipped[@]}"; do
+              echo "  ${entry%%|*}: no version, because ${entry#*|} is not set in repository secrets."
+            done
+            echo "  Those services deploy and serve normally. An attempted send raises naming"
+            echo "  RESEND_API_KEY rather than reporting a delivery that did not happen."
+            echo "  Add the secret and re-run this workflow to switch mail on. No code change"
+            echo "  and no terraform change is needed."
+          fi
+
+          # Hand terraform the apps whose mail secret actually holds a version, so it
+          # wires the mail env var for those only. A revision referencing a versionless
+          # secret never reaches Ready, so wiring all of them unconditionally is the one
+          # failure this must not ship.
+          mail_json='[]'
+          if [ "${#mail_enabled[@]}" -ne 0 ]; then
+            mail_json="$(printf '%s\n' "${mail_enabled[@]}" \
+              | jq -Rsc 'split("\n") | map(select(length > 0))')"
+          fi
+          echo "mail_enabled_apps=${mail_json}" >> "$GITHUB_OUTPUT"
+
+          echo
+          echo "Mail enabled for: ${mail_json}"
+          echo "Stripe: both keys hold a current version."
 
   # ---------------------------------------------------------------------------
   # Apply the Cloud Run stack.
@@ -485,21 +547,28 @@ jobs:
           # `gcloud secrets versions add`, so no credential is ever a terraform
           # variable and none is ever written to the state bucket.
           #
-          # A revision referencing a secret with no versions will not start, so
-          # crystalgigs and crystalbits stay down until theirs are populated. The
-          # release job reports that as a failed readiness condition naming the secret,
-          # which is the honest outcome: do not add a placeholder version to get past
-          # it, that is how mail and payments end up silently disabled behind green.
+          # A revision referencing a secret with no versions will not start, so the mail
+          # env var is wired only for the apps whose mail secret the secrets job actually
+          # populated. That list arrives as MAIL_ENABLED_APPS below. Do not add a
+          # placeholder version to force one on: that is how mail ends up silently
+          # disabled behind green.
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           REGION: ${{ env.GCP_REGION }}
           IMAGE_TAG: ${{ needs.gate.outputs.sha }}
+          MAIL_ENABLED_APPS: ${{ needs.secrets.outputs.mail_enabled_apps }}
         run: |
           set -euo pipefail
           terraform init
+          # Empty rather than unset if the secrets job published nothing, since an
+          # empty -var value is a parse error while [] is a valid empty set.
+          mail_enabled_apps="${MAIL_ENABLED_APPS:-[]}"
+          [ -n "$mail_enabled_apps" ] || mail_enabled_apps='[]'
+
           terraform apply -auto-approve \
             -var="project_id=${PROJECT_ID}" \
             -var="region=${REGION}" \
-            -var="image_tag=${IMAGE_TAG}"
+            -var="image_tag=${IMAGE_TAG}" \
+            -var="mail_enabled_apps=${mail_enabled_apps}"
 
       - name: Read stack outputs
         id: outputs

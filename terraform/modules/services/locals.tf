@@ -3,21 +3,50 @@ locals {
 
   # Every service built from a Lucky codebase, which is the four apps plus
   # docs-launcher. They all load config/** at boot and so all demand
-  # SECRET_KEY_BASE and SEND_GRID_KEY, whether or not they serve a page or send
-  # a mail.
+  # SECRET_KEY_BASE, whether or not they serve a page or send a mail. A mail
+  # credential is deliberately not on that list: only the two senders below ask
+  # for one.
   lucky_services = setunion(local.apps, toset(["docs-launcher"]))
 
   # The services that actually send mail, and therefore the only ones that get a
-  # SEND_GRID_KEY or a secret to hold it.
+  # RESEND_API_KEY or a secret to hold it.
   #
   # crystalshards, crystaldocs and docs-launcher are absent because they send
   # nothing: config/email.cr in those apps selects a non-sending adapter and asks
-  # for no credential. They used to hard-exit at boot without SEND_GRID_KEY,
-  # which meant a package registry refusing to serve a page over a mail key it
-  # never used, and it is what made the sentinel string "unused" look necessary.
-  # With the app fixed, the right answer here is not a placeholder value but no
-  # secret at all.
+  # for no credential. They used to hard-exit at boot without a mail key, which
+  # meant a package registry refusing to serve a page over a credential it never
+  # used, and it is what made the sentinel string "unused" look necessary. With
+  # the app fixed, the right answer here is not a placeholder value but no secret
+  # at all.
   mail_senders = toset(["crystalgigs", "crystalbits"])
+
+  # Of the senders, the ones whose Resend secret CI has actually put a version
+  # into. Only these get RESEND_API_KEY on their revision.
+  #
+  # A Cloud Run revision that references a secret with no versions never reaches
+  # Ready, so wiring this unconditionally would keep crystalgigs.com and
+  # crystalbits.org down for as long as the key is missing. Serving is the
+  # primary function and mail is a feature: the site serves without a key and the
+  # adapter raises on an actual send attempt naming RESEND_API_KEY.
+  #
+  # The intersection is deliberate rather than a straight read of the variable.
+  # No value CI can pass can wire a mail secret into crystalshards, crystaldocs
+  # or docs-launcher, so the three way split is enforced here rather than by CI
+  # passing the right list.
+  mail_enabled = setintersection(local.mail_senders, var.mail_enabled_apps)
+
+  # RESEND_API_KEY for the enabled senders, nothing for the rest. Merged into
+  # each sender's secret_env below, and because the accessor bindings derive from
+  # that same table, absent here means absent from IAM too. Adding the GitHub
+  # secret is the whole switch: the next deploy passes the slug, the env var and
+  # the binding appear together, and no terraform edit is involved.
+  mail_secret_env = {
+    for app in local.mail_senders : app => (
+      contains(local.mail_enabled, app)
+      ? { RESEND_API_KEY = google_secret_manager_secret.resend_key[app].secret_id }
+      : {}
+    )
+  }
 
 
   # Image references. Terraform sets a real, already pushed SHA at create time
@@ -161,15 +190,14 @@ locals {
       env = merge(local.common_env, {
         APP_DOMAIN = var.app_domains["crystalgigs"]
       })
-      secret_env = {
+      secret_env = merge({
         DATABASE_URL    = var.database_url_secret_ids["crystalgigs"]
         SECRET_KEY_BASE = google_secret_manager_secret.secret_key_base["crystalgigs"].secret_id
-        SEND_GRID_KEY   = google_secret_manager_secret.sendgrid_key["crystalgigs"].secret_id
         # config/payments.cr calls exit(1) at boot in production without the
         # secret key, so this is a start up dependency and not a lazy one.
         STRIPE_SECRET_KEY      = google_secret_manager_secret.stripe_secret_key.secret_id
         STRIPE_PUBLISHABLE_KEY = google_secret_manager_secret.stripe_publishable_key.secret_id
-      }
+      }, local.mail_secret_env["crystalgigs"])
     }
 
     crystalbits = {
@@ -180,11 +208,10 @@ locals {
         APP_DOMAIN  = var.app_domains["crystalbits"]
         JOB_ADS_URL = var.job_ads_url
       })
-      secret_env = {
+      secret_env = merge({
         DATABASE_URL    = var.database_url_secret_ids["crystalbits"]
         SECRET_KEY_BASE = google_secret_manager_secret.secret_key_base["crystalbits"].secret_id
-        SEND_GRID_KEY   = google_secret_manager_secret.sendgrid_key["crystalbits"].secret_id
-      }
+      }, local.mail_secret_env["crystalbits"])
     }
   }
 
@@ -198,7 +225,7 @@ locals {
   # src/app, which requires config/**, so a migration loaded the entire serving
   # configuration surface and inherited every one of its boot time demands. That
   # produced a treadmill: PORT, because Cloud Run injects it into services and
-  # not into Jobs, then SECRET_KEY_BASE, then SEND_GRID_KEY, then
+  # not into Jobs, then SECRET_KEY_BASE, then the mail key, then
   # PAYMENTS_DISABLED for config/payments.cr, then JOB_ADS_URL for
   # config/job_ads.cr. Each was found by a Job dying rather than by anyone
   # reading, and the supply was not running out.
@@ -233,8 +260,8 @@ locals {
   #
   # It is built from the registry codebase, so it inherits that codebase's boot
   # time demands: LUCKY_ENV, APP_DOMAIN, PORT (supplied by Cloud Run through
-  # container_port), SECRET_KEY_BASE, SEND_GRID_KEY and JOB_ADS_URL. None of
-  # those describe what it does, they are the price of loading config/**.
+  # container_port), SECRET_KEY_BASE and JOB_ADS_URL. None of those describe
+  # what it does, they are the price of loading config/**.
   #
   # What it actually needs is below them: the two bucket names it signs URLs
   # against, the Job it starts, and the concurrency it must not exceed.

@@ -23,7 +23,7 @@ variable "image_tag" {
   type        = string
 }
 
-# There are deliberately NO variables here for the SendGrid keys or the Stripe
+# There are deliberately NO variables here for the Resend API keys or the Stripe
 # keys. They are third party credentials, so terraform cannot generate them, and
 # routing them through a variable would put them in CI, in the plan, and then in
 # the state file in gs://crystalshards-org-terraform-state permanently. Reading
@@ -37,3 +37,13 @@ variable "image_tag" {
 #
 # See terraform/modules/services/resource.google_secret_manager_secret.*.tf for
 # the full reasoning and the exact secret ids.
+
+# Names, not values. This is the list of app slugs whose Resend secret CI has
+# populated, so terraform knows which revisions may reference it. A revision
+# pointing at a versionless secret never reaches Ready, and no site should be
+# down because mail is unconfigured.
+variable "mail_enabled_apps" {
+  description = "App slugs whose Resend secret has a version. Empty until the keys exist; the two senders then raise on send rather than failing to boot"
+  type        = set(string)
+  default     = []
+}

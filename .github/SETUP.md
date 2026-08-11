@@ -17,13 +17,13 @@ The Google Cloud project the Cloud Run services are deployed into.
 
 **Example**: `crystalshards-org`
 
-Those two are what the Terraform deploy path requires. The deploy workflow may
-consume other secrets for steps outside Terraform; `.github/workflows/` is the
-authority on that.
+Those two authenticate CI to Google Cloud. The deploy workflow reads four more
+repository secrets, the third party application credentials, and adds a Secret
+Manager version from each. They are listed below under Populate the Application
+Secrets, together with the container id each one fills.
 
-The SendGrid and Stripe keys are not repository secrets. Terraform never sees them.
-They live in Secret Manager and an operator adds each version by hand, which is
-covered below under Populate the Application Secrets.
+Terraform creates those containers but never a version for any of them, so no
+third party credential is a Terraform variable and none reaches Terraform state.
 
 #### Roles for the deploy service account
 
@@ -147,7 +147,7 @@ so exporting `TF_VAR_project_id` alongside the tracked file changes nothing whil
 the run still reports success. That precedence is what let a tracked values file
 pinning credentials to a placeholder silently override what CI passed.
 
-No third-party credential is a Terraform variable. The SendGrid and Stripe keys
+No third-party credential is a Terraform variable. The Resend and Stripe keys
 reach the services through Secret Manager instead, so nothing sensitive is written
 into Terraform state.
 
@@ -165,13 +165,30 @@ gcloud run jobs list --region us-central1
 
 ## Populate the Application Secrets
 
-Terraform creates these four as empty Secret Manager containers, so there is no
-`gcloud secrets create` step. Each one needs a version added by hand:
+Terraform creates four empty Secret Manager containers, so there is no
+`gcloud secrets create` step. Each one needs a version before the service that
+reads it can start.
 
-- `crystalgigs-sendgrid-key`
-- `crystalgigs-stripe-secret-key`
-- `crystalgigs-stripe-publishable-key`
-- `crystalbits-sendgrid-key`
+The deploy workflow populates them. Its `Add a version to every required secret`
+step reads four GitHub repository secrets and adds a Secret Manager version from
+each, so an operator supplies the values once under
+Settings, then Secrets and variables, then Actions, and never runs `gcloud` by
+hand. The step fails closed: if any of the four is unset it stops the deploy
+before the stack is applied, rather than putting up a revision that cannot start.
+
+| GitHub secret | Secret Manager container | What it unblocks |
+| --- | --- | --- |
+| `CRYSTALGIGS_RESEND_KEY` | `crystalgigs-resend-key` | CrystalGigs mail, which delivers job applications |
+| `CRYSTALGIGS_STRIPE_SECRET_KEY` | `crystalgigs-stripe-secret-key` | CrystalGigs payments, server side |
+| `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY` | `crystalgigs-stripe-publishable-key` | CrystalGigs payments, browser side |
+| `CRYSTALBITS_RESEND_KEY` | `crystalbits-resend-key` | CrystalBits mail, which sends the newsletter |
+
+Those four are the whole list. `crystalshards`, `crystaldocs` and `docs-launcher`
+are deliberately absent from it and must stay absent: a registry and a docs site
+should not refuse to serve a page because a mail credential is missing, and
+`docs-launcher` runs the `crystalshards` image, so it inherits that.
+
+To add a version by hand, outside the pipeline:
 
 ```bash
 gcloud secrets versions add <secret-id> --data-file=- --project=crystalshards-org
@@ -180,22 +197,22 @@ gcloud secrets versions add <secret-id> --data-file=- --project=crystalshards-or
 A Cloud Run revision that references a secret with zero versions fails to start.
 It does not start degraded, and it does not start with an empty string.
 
-Two of the four domains therefore come up on a clean apply with no third party
-credentials at all, and two stay dark until their keys are added:
+Three of the five services therefore come up on a clean apply with no third party
+credential at all, and two stay dark until theirs have a version:
 
 | Service | On a clean apply |
 | --- | --- |
 | `crystalshards` | Serves. Holds no third party secret. |
 | `crystaldocs` | Serves. Holds no third party secret. |
 | `docs-launcher` | Serves. Holds no third party secret. |
-| `crystalbits` | Will not start until `crystalbits-sendgrid-key` has a version. |
+| `crystalbits` | Will not start until `crystalbits-resend-key` has a version. |
 | `crystalgigs` | Will not start until all three of its secrets have a version. |
 
 The four `*-migrate` Jobs are unaffected, holding only the `DATABASE_URL`
 Terraform generates, and `docs-build` is unaffected because it holds no secret
 at all.
 
-Only CrystalGigs and CrystalBits send mail, so only they require a SendGrid key,
+Only CrystalGigs and CrystalBits send mail, so only they require a Resend key,
 and each fails closed naming the variable rather than starting without it. There
 is no opt out value: a service that does not send mail has no secret to set.
 CrystalGigs needs real Stripe keys or it does not serve.

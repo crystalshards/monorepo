@@ -14,6 +14,10 @@ module "services" {
   cloud_sql_connection_name = module.database.connection_name
   database_url_secret_ids   = module.database.database_url_secret_ids
 
+  # Which senders may reference their Resend secret. Empty means both serve with
+  # mail raising on send. CI passes the slugs it populated.
+  mail_enabled_apps = var.mail_enabled_apps
+
   docs_bucket_name     = module.storage.docs_bucket_name
   packages_bucket_name = module.storage.packages_bucket_name
 

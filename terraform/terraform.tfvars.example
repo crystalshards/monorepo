@@ -21,18 +21,33 @@ region     = "us-central1"
 # -var="image_tag=<sha>" rather than written here.
 image_tag = "abc1234"
 
-# THAT IS EVERY VARIABLE. Do not add a SendGrid or Stripe entry below; those
-# variables no longer exist and terraform will reject them as undeclared.
+# mail_enabled_apps is the one other variable, and CI owns it. It is a list of
+# app slugs, never a key value, naming the senders whose Resend secret actually
+# has a version. Leave it out here: the default is [] and the deploy passes the
+# real list.
 #
-# Four secrets must be populated out of band before crystalgigs.com and
-# crystalbits.org will start. The other services need nothing:
+# Do not add a Resend or Stripe entry below. Those variables do not exist and
+# terraform will reject them as undeclared.
 #
-#   gcloud secrets versions add crystalgigs-sendgrid-key           --data-file=- --project=crystalshards-org
+# Two secrets must be populated out of band before crystalgigs.com will start,
+# because config/payments.cr exits at boot in production without them:
+#
 #   gcloud secrets versions add crystalgigs-stripe-secret-key      --data-file=- --project=crystalshards-org
 #   gcloud secrets versions add crystalgigs-stripe-publishable-key --data-file=- --project=crystalshards-org
-#   gcloud secrets versions add crystalbits-sendgrid-key           --data-file=- --project=crystalshards-org
 #
-# Terraform creates the containers, so there is no `gcloud secrets create` step.
-# Use real keys. An empty version fails at boot exactly like a missing one, and
-# there is no "off" value: the apps that send mail deleted their opt-out, and
-# the apps that do not send no longer ask for a key at all.
+# The two mail secrets are NOT start up requirements. All four services serve
+# without them; crystalgigs and crystalbits simply raise on an actual send
+# attempt, naming RESEND_API_KEY, so nothing reports a send that did not happen:
+#
+#   gcloud secrets versions add crystalgigs-resend-key             --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add crystalbits-resend-key             --data-file=- --project=crystalshards-org
+#
+# Terraform creates all four containers, so there is no `gcloud secrets create`
+# step, and the mail containers exist even while empty so a key has somewhere to
+# land. Adding CRYSTALGIGS_RESEND_KEY or CRYSTALBITS_RESEND_KEY to the
+# repository secrets is the whole switch: the next deploy populates the version,
+# passes the slug in mail_enabled_apps, and the env var and its IAM binding
+# appear together with no terraform edit.
+#
+# Use real keys. An empty version fails exactly like a missing one, and there is
+# no "off" value: the apps that do not send mail never ask for a key at all.

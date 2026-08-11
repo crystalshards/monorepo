@@ -629,7 +629,7 @@ jobs:
       # writing, not inherited from deploy.yml. Three variables exist and this
       # passes exactly those three.
       #
-      # There are deliberately NO SendGrid or Stripe values here. Those seven
+      # There are deliberately NO Resend or Stripe values here. Those seven
       # variables were deleted: they are third party credentials terraform
       # cannot generate, and routing them through a variable put them in CI, in
       # the plan, and permanently in the state bucket. An operator adds the
@@ -831,14 +831,42 @@ jobs:
               changes = []
 
           # ---------------------------- classify ----------------------------
+          # Every entry is schema-checked before classification. Tolerating a
+          # missing `change` or a non-list `actions` would silently drop that
+          # resource from the destroy set, and a resource dropped from the
+          # destroy set is a resource this job reports as safe. Under-reporting
+          # is the exact failure mode the whole assertion exists to prevent, so
+          # a plan that does not match the documented shape is refused rather
+          # than partially understood.
           destroys = []
-          for change in changes:
-              if not isinstance(change, dict):
-                  print(f"FAILED: malformed resource_changes entry: {change!r}. Refusing.")
+          for i, change in enumerate(changes):
+              def bad(why):
+                  print(f"FAILED: resource_changes[{i}] {why}. Refusing to classify "
+                        f"a plan whose shape is not understood.")
                   sys.exit(1)
-              actions = (change.get("change") or {}).get("actions") or []
+
+              if not isinstance(change, dict):
+                  bad(f"is {type(change).__name__}, not an object")
+              if not isinstance(change.get("address"), str) or not change["address"]:
+                  bad("has no string address")
+              if not isinstance(change.get("type"), str) or not change["type"]:
+                  bad(f"({change['address']}) has no string type")
+              if not isinstance(change.get("change"), dict):
+                  bad(f"({change['address']}) has no change object")
+              actions = change["change"].get("actions")
+              if not isinstance(actions, list):
+                  bad(f"({change['address']}) has actions "
+                      f"{type(actions).__name__}, not a list")
+              if not all(isinstance(a, str) for a in actions):
+                  bad(f"({change['address']}) has a non-string action")
+              mod = change.get("module_address", "")
+              if mod is not None and not isinstance(mod, str):
+                  bad(f"({change['address']}) has a non-string module_address")
+
               # "delete" covers a straight destroy and both halves of a
               # replace, which for a DNS zone is still a destroyed DNS zone.
+              # Membership on a list, never on a string: "delete" in "no-delete"
+              # is True and would misclassify.
               if "delete" in actions:
                   destroys.append(change)
 
@@ -1016,12 +1044,16 @@ jobs:
               with open(step_summary, "a") as fh:
                   fh.write("\n".join(summary) + "\n")
 
-          # Redacted evidence. tfplan.json carries every SendGrid and Stripe key
-          # in cleartext and must never become a 90 day downloadable artifact,
-          # so the audit trail gets identity and verdict without values. Written
-          # here rather than in a later step because a later step would be
-          # skipped on a refusal, and a refusal is exactly when the evidence
-          # matters most.
+          # Redacted evidence. tfplan.json carries terraform-GENERATED secret
+          # material in cleartext, the secret_key_base and database passwords it
+          # must know by definition, and must never become a 90 day downloadable
+          # artifact. The Resend and Stripe keys are not in it: those are third
+          # party credentials that left terraform entirely when the seven
+          # variables were deleted, and only their empty Secret Manager
+          # containers remain. The audit trail gets identity and verdict without
+          # values. Written here rather than in a later step, because a later
+          # step is skipped on a refusal and a refusal is exactly when the
+          # evidence matters most.
           verdicts = (
               [("permitted", a, t, w) for a, t, w in permitted]
               + [("REFUSED_protected", a, t, w) for a, t, w in violations]
@@ -1052,10 +1084,11 @@ jobs:
         # terraform/tfplan.json is deliberately NOT uploaded. Plan JSON carries
         # sensitive values in cleartext, flagging them in a parallel
         # after_sensitive structure rather than masking them, so uploading it
-        # would put every SendGrid and Stripe key into a downloadable artifact
-        # for 90 days. tfplan.txt is the human-readable form, which renders
-        # those as "(sensitive value)", and destroy-set.json is the redacted
-        # derivative the assertion writes: address, type and verdict, no values.
+        # would put the secret_key_base and database passwords terraform
+        # generates into a downloadable artifact for 90 days. tfplan.txt is the
+        # human-readable form, which renders those as "(sensitive value)", and
+        # destroy-set.json is the redacted derivative the assertion writes:
+        # address, type and verdict, no values.
         if: always()
         uses: actions/upload-artifact@v4
         with:
