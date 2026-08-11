@@ -704,6 +704,25 @@ jobs:
           # That is the whole point: the services must not exist yet.
           terraform init
 
+          # One authoritative snapshot of what terraform already tracks, taken
+          # once and failing the step if it cannot be read.
+          #
+          # The first version of this called `terraform state list 2>/dev/null`
+          # inside each check, which fail-OPEN: any error from that command
+          # produced no output, the grep found nothing, and the code concluded
+          # "not in state" and tried to import something terraform already owned.
+          # It died with `Resource already managed by Terraform`. Absence has to
+          # be proven here for exactly the same reason it does for the gcloud
+          # probes below.
+          if ! terraform state list > /tmp/tf-state-addresses.txt; then
+            echo "Could not read terraform state. Refusing to guess at what is already managed." >&2
+            exit 1
+          fi
+
+          in_state() {
+            grep -qxF "$1" /tmp/tf-state-addresses.txt
+          }
+
           # Adopt service accounts that already exist in the project but are not
           # in state. A partial apply leaves them behind, and the next run then
           # dies with `Error 409: Service account crystalshards already exists`.
@@ -717,7 +736,7 @@ jobs:
             local email="${account_id}@${PROJECT_ID}.iam.gserviceaccount.com"
             local err
 
-            if terraform state list 2>/dev/null | grep -qxF "$address"; then
+            if in_state "$address"; then
               return 0
             fi
             # Only a confirmed absence means there is nothing to adopt. Any other
@@ -756,7 +775,7 @@ jobs:
             local kind="$1" address="$2" name="$3"
             local err
 
-            if terraform state list 2>/dev/null | grep -qxF "$address"; then
+            if in_state "$address"; then
               return 0
             fi
             if err="$(gcloud run "$kind" describe "$name" \
