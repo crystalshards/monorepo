@@ -703,6 +703,48 @@ jobs:
           # and the per-job service accounts, and stops short of the Cloud Run services.
           # That is the whole point: the services must not exist yet.
           terraform init
+
+          # Adopt service accounts that already exist in the project but are not
+          # in state. A partial apply leaves them behind, and the next run then
+          # dies with `Error 409: Service account crystalshards already exists`.
+          #
+          # Import rather than delete. GCP reserves a deleted service account's
+          # id, so recreating it under the same name fails or resurrects the old
+          # one. Adoption is the only non-destructive way through, and it is a
+          # no-op on a clean project.
+          adopt_service_account() {
+            local address="$1" account_id="$2"
+            local email="${account_id}@${PROJECT_ID}.iam.gserviceaccount.com"
+            local err
+
+            if terraform state list 2>/dev/null | grep -qxF "$address"; then
+              return 0
+            fi
+            # Only a confirmed absence means there is nothing to adopt. Any other
+            # failure is a real error and must not be read as "not there".
+            if err="$(gcloud iam service-accounts describe "$email" \
+                        --project "$PROJECT_ID" --format='value(email)' 2>&1)"; then
+              echo "Adopting pre-existing ${email}"
+              terraform import \
+                -var="project_id=${PROJECT_ID}" \
+                -var="region=${REGION}" \
+                -var="image_tag=${IMAGE_TAG}" \
+                "$address" "projects/${PROJECT_ID}/serviceAccounts/${email}"
+            elif printf '%s' "$err" | grep -qiE 'not_found|not found|404|does not exist'; then
+              return 0
+            else
+              echo "Could not determine whether ${email} exists: ${err}" >&2
+              return 1
+            fi
+          }
+
+          for app in crystalshards crystaldocs crystalgigs crystalbits; do
+            adopt_service_account "module.services.google_service_account.apps[\"${app}\"]" "$app"
+            adopt_service_account "module.services.google_service_account.app_migrations[\"${app}\"]" "${app}-migrate"
+          done
+          adopt_service_account "module.services.google_service_account.docs_build" "docs-build"
+          adopt_service_account "module.services.google_service_account.docs_launcher" "docs-launcher"
+          adopt_service_account "module.services.google_service_account.docs_tasks" "docs-tasks"
           terraform apply -auto-approve \
             -target=module.services.google_cloud_run_v2_job.app_migrations \
             -var="project_id=${PROJECT_ID}" \
