@@ -745,7 +745,20 @@ jobs:
           adopt_service_account "module.services.google_service_account.docs_build" "docs-build"
           adopt_service_account "module.services.google_service_account.docs_launcher" "docs-launcher"
           adopt_service_account "module.services.google_service_account.docs_tasks" "docs-tasks"
+
+          # module.database is targeted explicitly, not left to be pulled in as a
+          # dependency. The migration Jobs reference each database-url secret by
+          # CONTAINER, so the secret VERSIONS are not in their dependency closure,
+          # and terraform happily created containers with nothing in them. Anything
+          # that then resolves `versions/latest` fails with
+          #   Secret projects/<n>/secrets/crystalshards-database-url/versions/latest
+          #   was not found
+          # which is what killed this apply once docs-launcher came into scope.
+          # Targeting the whole module creates the instance, databases, users,
+          # passwords, secrets AND their versions together, which is the only
+          # grouping that leaves a usable database behind.
           terraform apply -auto-approve \
+            -target=module.database \
             -target=module.services.google_cloud_run_v2_job.app_migrations \
             -var="project_id=${PROJECT_ID}" \
             -var="region=${REGION}" \
