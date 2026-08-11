@@ -96,8 +96,8 @@ module CrystalShards
     end
 
     # Scratch space used to hand source into a sandboxed build and take
-    # documentation back out. Keys are build-scoped and deleted when the build
-    # finishes, so nothing here is durable.
+    # documentation back out. Keys are build-scoped, so nothing here is
+    # durable.
     def upload_scratch(key : String, content : String)
       @docs.put(key, content, "application/gzip")
     end
@@ -108,8 +108,19 @@ module CrystalShards
       )
     end
 
+    # Best effort, and deliberately so. The launcher identity holds
+    # objectViewer and objectCreator on the docs bucket and nothing that grants
+    # storage.objects.delete, because the only predefined role carrying delete
+    # is objectAdmin, which would also let it erase published documentation.
+    # So this 403s in production and that is the intended posture, not a
+    # missing grant. Real cleanup is a bucket lifecycle rule on the
+    # build-scratch prefix, which also collects scratch from an execution that
+    # died before any ensure block could run. Failing a completed build over a
+    # failed tidy-up would be the wrong trade.
     def delete_scratch_prefix(prefix : String)
       @docs.delete_prefix(prefix)
+    rescue ex : CrystalStorage::Unavailable
+      Log.info { "Scratch cleanup skipped for #{prefix}: #{ex.message}. The bucket lifecycle rule collects it." }
     end
 
     # Mint the URL a credentialless build uses for exactly one object.

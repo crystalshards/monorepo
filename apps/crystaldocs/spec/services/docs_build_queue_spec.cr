@@ -26,7 +26,7 @@ end
 describe CrystalDocs::CloudTasksDocsBuildQueue do
   task = CrystalDocs::DocsBuildTask.new("kemal", "1.6.0", "build-7")
 
-  body = ->do
+  body = -> do
     JSON.parse(
       CrystalDocs::CloudTasksDocsBuildQueue.task_json(
         "https://docs-launcher.example.run.app",
@@ -39,6 +39,24 @@ describe CrystalDocs::CloudTasksDocsBuildQueue do
   it "targets the launcher's build route with POST" do
     body.call["httpMethod"].as_s.should eq("POST")
     body.call["url"].as_s.should eq("https://docs-launcher.example.run.app/internal/docs/build")
+  end
+
+  # Cloud Tasks has no queue level dispatch deadline for an HTTP target, so
+  # this has to be set per task or it silently defaults to 600s. The launcher
+  # holds the request open for the whole build, so at 600s a slow shard is
+  # killed mid compile and redelivered, forever, and the symptom is a build
+  # that never finishes rather than an error anyone sees. Asserted because a
+  # missing field here is invisible until a shard takes eleven minutes.
+  it "gives the launcher the whole build to answer in" do
+    parsed = JSON.parse(
+      CrystalDocs::CloudTasksDocsBuildQueue.task_json(
+        "https://docs-launcher.example.run.app",
+        "docs-tasks@example.iam.gserviceaccount.com",
+        task
+      )
+    )
+
+    parsed["task"]["dispatchDeadline"].as_s.should eq("1800s")
   end
 
   # A trailing slash on the service URL would otherwise produce a double slash,

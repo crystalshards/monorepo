@@ -116,7 +116,6 @@ resource "google_cloud_run_v2_service" "docs_launcher" {
   depends_on = [
     google_secret_manager_secret_iam_member.docs_launcher_secrets,
     google_secret_manager_secret_version.secret_key_base,
-    google_secret_manager_secret_version.sendgrid_key,
     google_project_iam_member.cloudsql_client,
   ]
 }

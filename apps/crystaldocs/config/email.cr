@@ -1,26 +1,25 @@
-require "carbon_sendgrid_adapter"
-
+# This app sends no mail, in any environment, and therefore asks for no mail
+# credential.
+#
+# It used to hard-exit at boot in production without SEND_GRID_KEY, which meant
+# the documentation site would refuse to serve a single page because a
+# credential it has no use for was absent. That is the wrong failure: the blast
+# radius of a missing mail key should be mail, not the site.
+#
+# The scaffold this replaced suggested setting the variable to the string
+# 'unused' to get past the check. Do not reintroduce that, here or anywhere. A
+# sentinel credential is indistinguishable from a real one to everything
+# downstream, and it is how a values file ended up pinning four secrets to
+# "unused" and silently overriding what CI passed. If a service needs a key it
+# fails closed and names it; if it does not need one it does not ask.
+#
+# If this app ever does need to send, add the SendGrid adapter back together
+# with the code that sends, and make the key required at that point.
 BaseEmail.configure do |settings|
-  if LuckyEnv.production?
-    # If you don't need to send emails, set the adapter to DevAdapter instead:
-    #
-    #   settings.adapter = Carbon::DevAdapter.new
-    #
-    # If you do need emails, get a key from SendGrid and set an ENV variable
-    send_grid_key = send_grid_key_from_env
-    settings.adapter = Carbon::SendGridAdapter.new(api_key: send_grid_key)
-  elsif LuckyEnv.development?
-    settings.adapter = Carbon::DevAdapter.new(print_emails: true)
-  else
-    settings.adapter = Carbon::DevAdapter.new
-  end
-end
-
-private def send_grid_key_from_env
-  ENV["SEND_GRID_KEY"]? || raise_missing_key_message
-end
-
-private def raise_missing_key_message
-  puts "Missing SEND_GRID_KEY. Set the SEND_GRID_KEY env variable to 'unused' if not sending emails, or set the SEND_GRID_KEY ENV var.".colorize.red
-  exit(1)
+  settings.adapter =
+    if LuckyEnv.development?
+      Carbon::DevAdapter.new(print_emails: true)
+    else
+      Carbon::DevAdapter.new
+    end
 end

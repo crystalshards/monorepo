@@ -29,39 +29,49 @@ jobs:
         credentials_json: ${{ secrets.GCP_SA_KEY }}
 
     - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
+      uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.15.8
-        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+        terraform_version: 1.6.0
+        terraform_wrapper: false
 
     - name: Force Unlock State
       working-directory: ./terraform
+      shell: bash
       env:
-        TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
-        TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
-        TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
-        TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+        LOCK_ID: ${{ inputs.lock_id }}
       run: |
+        set -euo pipefail
+
+        # Neither `init` nor `force-unlock` evaluates input variables: both operate on
+        # the backend rather than the configuration. So this workflow needs no
+        # application secrets, and it should not be handed any.
         echo "Initializing Terraform..."
         terraform init
 
-        echo "Force unlocking state with Lock ID: ${{ inputs.lock_id }}"
-        terraform force-unlock -force ${{ inputs.lock_id }}
+        echo "Force unlocking state with Lock ID: ${LOCK_ID}"
+        terraform force-unlock -force "${LOCK_ID}"
 
-        echo "✅ Lock successfully removed"
+        echo "Lock removed."
 
     - name: Verify State Accessible
       working-directory: ./terraform
+      shell: bash
       run: |
-        echo "Verifying state is now accessible..."
-        terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
-                      -var="region=us-central1" \
-                      -detailed-exitcode || EXIT_CODE=$?
+        set -euo pipefail
 
-        # Exit code 0 = no changes, 2 = changes present, both are success
-        if [ "$EXIT_CODE" = "1" ]; then
-          echo "❌ State verification failed"
+        # `terraform state list` reads the state directly, so unlike `plan` it needs no
+        # input variables and cannot start failing because an unrelated variable was
+        # renamed. The lock itself is already proven gone by force-unlock succeeding
+        # above; what is left to confirm is that the state is readable and intact.
+        echo "Verifying state is readable..."
+        resources="$(terraform state list)"
+        count="$(printf '%s' "$resources" | grep -c . || true)"
+
+        # A readable but empty state would also print nothing and exit 0, so require a
+        # non-zero count rather than treating silence as success.
+        if [ "$count" -eq 0 ]; then
+          echo "State is readable but lists no resources. That is not what an unlock should leave behind." >&2
           exit 1
         fi
 
-        echo "✅ State is accessible and valid"
+        echo "State is accessible and lists ${count} resource(s)."

@@ -123,9 +123,6 @@ resource "google_cloud_run_v2_service" "apps" {
   depends_on = [
     google_secret_manager_secret_iam_member.secret_accessors,
     google_secret_manager_secret_version.secret_key_base,
-    google_secret_manager_secret_version.sendgrid_key,
-    google_secret_manager_secret_version.stripe_secret_key,
-    google_secret_manager_secret_version.stripe_publishable_key,
     google_project_iam_member.cloudsql_client,
   ]
 }

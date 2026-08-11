@@ -30,7 +30,7 @@ Building CrystalShards.org and CrystalDocs.org - a comprehensive Crystal languag
 - Project #4: CrystalBits.org
 - Project #5: Agent Enhancements
 
-**See PROMPT.md for active tasks. See .claude/ULTRATHINK.md for strategic guidance.**
+**See PROMPT.md for active tasks.**
 
 ## Development Principles
 
@@ -130,8 +130,8 @@ Project `crystalshards-org`, region `us-central1`.
 - **Object storage**: Cloud Storage buckets `crystalshards-docs` for built documentation and `crystalshards-packages`
 - **Queue**: Cloud Tasks queue `docs-builds`. A task targets `POST /internal/docs/build` on `docs-launcher`, which creates a `docs-build` Job execution
 - **Doc build isolation**: the `docs-build` job runs untrusted third-party shard code during `crystal docs`, so its service account holds zero IAM bindings. It takes input by signed GET URL and writes output by signed PUT URL, both minted by `docs-launcher`. This isolation is why the platform runs on Cloud Run
-- **Edge**: one global external Application Load Balancer with serverless NEGs and Google-managed certificates, serving all eight hostnames (apex and www for crystalshards.org, crystaldocs.org, crystalgigs.com, crystalbits.org). Cloud DNS holds the four managed zones
-- **Secrets**: Secret Manager, referenced by Cloud Run as environment variables. Never default a credential in code. Missing required production config fails closed at boot with a message naming the variable
+- **Edge**: one global external Application Load Balancer with serverless NEGs and Google-managed certificates, serving the apex and www hostname for each of the four sites. Cloud DNS holds the four managed zones, and every hostname derives from the terraform site locals rather than being restated
+- **Secrets**: Secret Manager containers are created empty by terraform and populated out of band with `gcloud secrets versions add`, so no credential passes through a terraform variable or the state bucket. Cloud Run references them as environment variables. Never default a credential in code. A service exits at boot when a required secret has no version, naming the variable
 - **Images**: Artifact Registry repository `docker-images`, image path `us-central1-docker.pkg.dev/crystalshards-org/docker-images/<app>:<sha>`
 - **Observability**: Cloud Logging and Cloud Monitoring, which Cloud Run provides by default
 - **Terraform** lives in `terraform/` and applies run in CI only. Locally, limit yourself to `terraform fmt`, `terraform init -backend=false`, `terraform validate` and `terraform plan`
@@ -741,7 +741,7 @@ lucky db.migrate
 ### Commit Strategy
 
 1. **Atomic Commits**: Each commit should represent one logical change
-2. **Frequent Commits**: Commit working code at least every 30 minutes
+2. **Frequent Commits**: Commit working code as soon as a logical unit is done
 3. **Descriptive Messages**: Use clear, concise commit messages
 4. **Feature Branches**: Create branches for each major feature
 5. **Push Frequently**: Push to remote after completing logical units of work
@@ -999,7 +999,7 @@ Expected completion: [timeframe if relevant]"
 **During active work (provide progress updates):**
 
 ```bash
-# Regular progress updates (every few hours or at milestones)
+# Progress updates at milestones
 gh issue comment <number> --body "Progress update:
 
 Completed:
@@ -1114,7 +1114,7 @@ While gh CLI doesn't easily update project fields, you can:
 Always comment when:
 - Starting work on an issue
 - Encountering blockers or errors
-- Making significant progress (every few hours)
+- Making significant progress
 - Completing work or submitting PR
 - Needing input or review
 - Discovering new tasks or scope changes
@@ -1158,7 +1158,7 @@ This creates a transparent audit trail and enables async coordination without co
 4. **Update project status**: Move to "In Progress" via web UI
 5. **Create branch**: `git checkout -b issue-<number>-<brief-description>`
 6. **Check prerequisites**: Verify dependencies and requirements
-7. **Implement**: Build the feature – include unit/integration tests
+7. **Implement**: Build the feature, including unit and integration tests
 8. **Test**: Write and run E2E tests that exercise the browser
 9. **Verify UI/UX**: Use Playwright MCP to check deployed app for pleasant UX (see section 12)
    - Navigate to live site
@@ -1168,7 +1168,7 @@ This creates a transparent audit trail and enables async coordination without co
    - Verify responsive design
    - Document any issues found as GitHub issues
 10. **Commit frequently**: With issue reference (`refs #<number>` in commit body)
-11. **Progress comments**: Update issue with progress every few hours or at milestones
+11. **Progress comments**: Update the issue at each milestone
 12. **Push regularly**: Push to remote after completing logical units
 13. **Handle errors**: Document errors in issue comments (see Task Lifecycle section)
 14. **Create PR**: When complete, create PR with `Closes #<number>` in description
@@ -1182,7 +1182,6 @@ This creates a transparent audit trail and enables async coordination without co
 - After implementing a function/method
 - After passing tests
 - Before switching to a different task
-- Every 30 minutes of active development
 - When achieving any milestone
 
 ### Before Moving to Next Task

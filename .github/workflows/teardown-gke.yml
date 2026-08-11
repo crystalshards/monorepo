@@ -123,10 +123,19 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
 
       - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
+        # v3 matches deploy.yml. The version pin does NOT match it: deploy.yml
+        # still says 1.6.0, and terraform.tf now declares `required_version =
+        # ">= 1.7"` because imports.edge.tf uses for_each inside an import
+        # block, which is 1.7+. 1.6.0 cannot parse this configuration at all,
+        # so init would fail the constraint before anything else ran. Reported
+        # to DeployWorkflow; both files should land on the same pin.
+        #
+        # cli_config_credentials_token is deliberately absent. It configures
+        # Terraform Cloud, this repo uses a GCS backend, and deploy.yml dropped
+        # it in the Cloud Run rewrite.
+        uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.6.0
-          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+          terraform_version: 1.7.5
           terraform_wrapper: false
 
       # ---------------------------------------------------------------------
@@ -604,14 +613,30 @@ jobs:
       # ---------------------------------------------------------------------
       # Step 5: refresh state, then plan and print it.
       # ---------------------------------------------------------------------
+      # Variable contract re-read from terraform/variables.tf at the moment of
+      # writing, not inherited from deploy.yml. Three variables exist and this
+      # passes exactly those three.
+      #
+      # There are deliberately NO SendGrid or Stripe values here. Those seven
+      # variables were deleted: they are third party credentials terraform
+      # cannot generate, and routing them through a variable put them in CI, in
+      # the plan, and permanently in the state bucket. An operator adds the
+      # values out of band with `gcloud secrets versions add`, and terraform
+      # never sees them. Passing them anyway would be dead plumbing pointing at
+      # GitHub secrets that are going away.
+      #
+      # This job applies nothing, so none of these values change any resource.
+      # They are supplied only because terraform refuses to plan while a
+      # required variable has no value.
       - name: Refresh state
         working-directory: ./terraform
-        env:
+        env: &terraform_vars
           TF_VAR_project_id: crystalshards-org
-          TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
-          TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
-          TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
-          TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+          TF_VAR_region: us-central1
+          # image_tag is required with no default. Nothing here creates an
+          # image, so the value is immaterial to this job; the commit being
+          # planned is the honest and deterministic choice.
+          TF_VAR_image_tag: ${{ github.sha }}
         run: |
           set -euo pipefail
           # -refresh-only reconciles state with the API. It reads infrastructure
@@ -620,22 +645,25 @@ jobs:
 
       - name: Plan and print it
         working-directory: ./terraform
-        env:
-          TF_VAR_project_id: crystalshards-org
-          TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
-          TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
-          TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
-          TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+        env: *terraform_vars
         run: |
           set -euo pipefail
           terraform plan -input=false -no-color -lock-timeout=5m -out=tfplan.binary
 
+          # The human-readable form redacts sensitive values as "(sensitive
+          # value)", so this is the copy that is safe to print and keep.
           echo "=================== TERRAFORM PLAN ==================="
           terraform show -no-color tfplan.binary | tee tfplan.txt
           echo "======================================================"
 
           # The assertion reads this, not the text above. Grep on plan text is
           # how a guard passes while the thing it guards against happens.
+          #
+          # This file DOES contain sensitive values in cleartext: the plan JSON
+          # carries every SendGrid and Stripe key headed for Secret Manager, and
+          # flags them in a parallel `after_sensitive` structure rather than
+          # masking them. It is consumed in-job and never uploaded. The evidence
+          # artifact gets a redacted derivative instead.
           terraform show -json -no-color tfplan.binary > tfplan.json
 
           if [ ! -s tfplan.json ]; then
@@ -970,12 +998,46 @@ jobs:
               with open(step_summary, "a") as fh:
                   fh.write("\n".join(summary) + "\n")
 
+          # Redacted evidence. tfplan.json carries every SendGrid and Stripe key
+          # in cleartext and must never become a 90 day downloadable artifact,
+          # so the audit trail gets identity and verdict without values. Written
+          # here rather than in a later step because a later step would be
+          # skipped on a refusal, and a refusal is exactly when the evidence
+          # matters most.
+          verdicts = (
+              [("permitted", a, t, w) for a, t, w in permitted]
+              + [("REFUSED_protected", a, t, w) for a, t, w in violations]
+              + [("REFUSED_stranded", a, t, "cluster-scoped resource still in plan")
+                 for a, t in stranded]
+              + [("REFUSED_unclassified", a, t, w) for a, t, w in unclassified]
+          )
+          with open("destroy-set.json", "w") as fh:
+              json.dump({
+                  "format_version": plan.get("format_version"),
+                  "terraform_version": plan.get("terraform_version"),
+                  "destroy_count": len(destroys),
+                  "result": "refused" if failed else "passed",
+                  "resources": [
+                      {"verdict": v, "address": a, "type": t, "reason": w}
+                      for v, a, t, w in sorted(verdicts)
+                  ],
+              }, fh, indent=2)
+          print(f"Wrote redacted destroy-set.json ({len(verdicts)} classified resources).")
+
           sys.exit(1 if failed else 0)
           PY
 
       - name: Upload teardown evidence
         # Evidence must survive a refusal. This uploads artifacts without
         # changing the job's outcome.
+        #
+        # terraform/tfplan.json is deliberately NOT uploaded. Plan JSON carries
+        # sensitive values in cleartext, flagging them in a parallel
+        # after_sensitive structure rather than masking them, so uploading it
+        # would put every SendGrid and Stripe key into a downloadable artifact
+        # for 90 days. tfplan.txt is the human-readable form, which renders
+        # those as "(sensitive value)", and destroy-set.json is the redacted
+        # derivative the assertion writes: address, type and verdict, no values.
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -989,5 +1051,5 @@ jobs:
             terraform/state-rm-addresses.txt
             terraform/cluster-address.txt
             terraform/tfplan.txt
-            terraform/tfplan.json
+            terraform/destroy-set.json
             cluster.json

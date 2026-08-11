@@ -546,4 +546,3 @@ module CrystalStorage
     LuckyEnv.production? ? GCS.new(bucket) : Local.new(bucket)
   end
 end
-

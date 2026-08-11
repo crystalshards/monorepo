@@ -21,7 +21,10 @@ permissions:
 
 env:
   GCP_REGION: us-central1
-  TERRAFORM_VERSION: "1.6.0"
+  # Must match the version CI validates with. 1.6.0 embeds a HashiCorp GPG key that
+  # has since expired, so it cannot verify any provider release and `terraform init`
+  # dies with "openpgp: key expired".
+  TERRAFORM_VERSION: "1.15.8"
   TF_IN_AUTOMATION: "1"
   TF_INPUT: "0"
 
@@ -110,16 +113,10 @@ jobs:
         working-directory: ./terraform
         shell: bash
         env:
-          # Secrets go through TF_VAR_ rather than -var so they never reach a process
-          # listing. terraform.tfvars deliberately holds no secret values: a values
-          # file outranks TF_VAR_ and would silently override every one of these.
-          TF_VAR_crystalshards_sendgrid_key: ${{ secrets.CRYSTALSHARDS_SENDGRID_KEY }}
-          TF_VAR_crystaldocs_sendgrid_key: ${{ secrets.CRYSTALDOCS_SENDGRID_KEY }}
-          TF_VAR_crystalgigs_sendgrid_key: ${{ secrets.CRYSTALGIGS_SENDGRID_KEY }}
-          TF_VAR_crystalbits_sendgrid_key: ${{ secrets.CRYSTALBITS_SENDGRID_KEY }}
-          TF_VAR_docs_launcher_sendgrid_key: ${{ secrets.DOCS_LAUNCHER_SENDGRID_KEY }}
-          TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
-          TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+          # No application secrets here on purpose. The Secret Manager secrets are
+          # created empty by terraform and their versions are added out of band with
+          # `gcloud secrets versions add`, so no credential is ever a terraform
+          # variable and none is ever written to the state bucket.
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           REGION: ${{ env.GCP_REGION }}
           IMAGE_TAG: ${{ needs.gate.outputs.sha }}
@@ -299,13 +296,16 @@ jobs:
         working-directory: ./terraform
         shell: bash
         env:
-          TF_VAR_crystalshards_sendgrid_key: ${{ secrets.CRYSTALSHARDS_SENDGRID_KEY }}
-          TF_VAR_crystaldocs_sendgrid_key: ${{ secrets.CRYSTALDOCS_SENDGRID_KEY }}
-          TF_VAR_crystalgigs_sendgrid_key: ${{ secrets.CRYSTALGIGS_SENDGRID_KEY }}
-          TF_VAR_crystalbits_sendgrid_key: ${{ secrets.CRYSTALBITS_SENDGRID_KEY }}
-          TF_VAR_docs_launcher_sendgrid_key: ${{ secrets.DOCS_LAUNCHER_SENDGRID_KEY }}
-          TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
-          TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+          # No application secrets here on purpose. Terraform creates the Secret
+          # Manager secrets empty and their versions are added out of band with
+          # `gcloud secrets versions add`, so no credential is ever a terraform
+          # variable and none is ever written to the state bucket.
+          #
+          # A revision referencing a secret with no versions will not start, so
+          # crystalgigs and crystalbits stay down until theirs are populated. The
+          # release job reports that as a failed readiness condition naming the secret,
+          # which is the honest outcome: do not add a placeholder version to get past
+          # it, that is how mail and payments end up silently disabled behind green.
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           REGION: ${{ env.GCP_REGION }}
           IMAGE_TAG: ${{ needs.gate.outputs.sha }}

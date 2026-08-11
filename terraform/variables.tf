@@ -23,50 +23,17 @@ variable "image_tag" {
   type        = string
 }
 
-# Outbound email. Every app calls exit(1) at boot in production without its key,
-# so these are start up dependencies rather than optional integrations. One key
-# per service so revoking a compromised key takes one site down, not all of
-# them. The literal string "unused" is the app's own documented value for
-# running with outbound email switched off.
-variable "crystalshards_sendgrid_key" {
-  description = "SendGrid API key for CrystalShards"
-  type        = string
-  sensitive   = true
-}
-
-variable "crystaldocs_sendgrid_key" {
-  description = "SendGrid API key for CrystalDocs"
-  type        = string
-  sensitive   = true
-}
-
-variable "crystalgigs_sendgrid_key" {
-  description = "SendGrid API key for CrystalGigs"
-  type        = string
-  sensitive   = true
-}
-
-variable "crystalbits_sendgrid_key" {
-  description = "SendGrid API key for CrystalBits"
-  type        = string
-  sensitive   = true
-}
-
-variable "docs_launcher_sendgrid_key" {
-  description = "SendGrid API key for docs-launcher. It sends no mail, but it is built from the registry codebase and inherits that boot time requirement"
-  type        = string
-  sensitive   = true
-}
-
-# CrystalGigs payments
-variable "crystalgigs_stripe_secret_key" {
-  description = "Stripe secret key for CrystalGigs payment processing"
-  type        = string
-  sensitive   = true
-}
-
-variable "crystalgigs_stripe_publishable_key" {
-  description = "Stripe publishable key for CrystalGigs payment processing"
-  type        = string
-  sensitive   = true
-}
+# There are deliberately NO variables here for the SendGrid keys or the Stripe
+# keys. They are third party credentials, so terraform cannot generate them, and
+# routing them through a variable would put them in CI, in the plan, and then in
+# the state file in gs://crystalshards-org-terraform-state permanently. Reading
+# them back with a data source lands them in state too, so that relocates the
+# exposure rather than removing it.
+#
+# Terraform creates the Secret Manager containers and Cloud Run references them.
+# The values are added out of band by an operator and never enter terraform:
+#
+#   gcloud secrets versions add <secret-id> --data-file=-
+#
+# See terraform/modules/services/resource.google_secret_manager_secret.*.tf for
+# the full reasoning and the exact secret ids.

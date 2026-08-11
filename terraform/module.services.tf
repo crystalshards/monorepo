@@ -29,14 +29,5 @@ module "services" {
   job_ads_url              = "https://${local.sites["crystalgigs"].apex}/api/ads"
   docs_launcher_app_domain = "https://${local.sites["crystalshards"].apex}"
 
-  crystalshards_sendgrid_key = var.crystalshards_sendgrid_key
-  crystaldocs_sendgrid_key   = var.crystaldocs_sendgrid_key
-  crystalgigs_sendgrid_key   = var.crystalgigs_sendgrid_key
-  crystalbits_sendgrid_key   = var.crystalbits_sendgrid_key
-  docs_launcher_sendgrid_key = var.docs_launcher_sendgrid_key
-
-  crystalgigs_stripe_secret_key      = var.crystalgigs_stripe_secret_key
-  crystalgigs_stripe_publishable_key = var.crystalgigs_stripe_publishable_key
-
   depends_on = [module.project_services]
 }

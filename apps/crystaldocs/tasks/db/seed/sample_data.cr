@@ -7,57 +7,57 @@ class Db::Seed::SampleData < LuckyTask::Task
   PACKAGES = [
     {
       name: "kemal", version: "1.6.0", released_at: 20.months.ago,
-      description:    "Lightning Fast, Super Simple web framework for Crystal.",
+      description: "Lightning Fast, Super Simple web framework for Crystal.",
       repository_url: "https://github.com/kemalcr/kemal",
     },
     {
       name: "amber", version: "1.5.0", released_at: 12.months.ago,
-      description:    "A Crystal web framework that makes building applications fast, simple, and enjoyable.",
+      description: "A Crystal web framework that makes building applications fast, simple, and enjoyable.",
       repository_url: "https://github.com/amberframework/amber",
     },
     {
       name: "lucky", version: "1.5.0", released_at: 6.months.ago,
-      description:    "A full-featured Crystal web framework that catches bugs for you, runs incredibly fast, and helps you write code that lasts.",
+      description: "A full-featured Crystal web framework that catches bugs for you, runs incredibly fast, and helps you write code that lasts.",
       repository_url: "https://github.com/luckyframework/lucky",
     },
     {
       name: "granite", version: "0.23.4", released_at: 24.months.ago,
-      description:    "ORM for Crystal. Inspired by ActiveRecord and Ecto.",
+      description: "ORM for Crystal. Inspired by ActiveRecord and Ecto.",
       repository_url: "https://github.com/amberframework/granite",
     },
     {
       name: "jennifer", version: "0.13.0", released_at: 24.months.ago,
-      description:    "Active Record pattern implementation for Crystal with flexible query chainable builder and migration system.",
+      description: "Active Record pattern implementation for Crystal with flexible query chainable builder and migration system.",
       repository_url: "https://github.com/imdrasil/jennifer.cr",
     },
     {
       name: "ameba", version: "1.6.4", released_at: 15.months.ago,
-      description:    "A static code analysis tool for Crystal.",
+      description: "A static code analysis tool for Crystal.",
       repository_url: "https://github.com/crystal-ameba/ameba",
     },
     {
       name: "spectator", version: "0.12.4", released_at: 14.months.ago,
-      description:    "Feature-rich spec testing framework for Crystal inspired by RSpec.",
+      description: "Feature-rich spec testing framework for Crystal inspired by RSpec.",
       repository_url: "https://github.com/icy-arctic-fox/spectator",
     },
     {
       name: "crystal-pg", version: "0.30.0", released_at: 10.months.ago,
-      description:    "PostgreSQL driver for Crystal.",
+      description: "PostgreSQL driver for Crystal.",
       repository_url: "https://github.com/will/crystal-pg",
     },
     {
       name: "crystal-redis", version: "2.9.1", released_at: 26.months.ago,
-      description:    "Full featured Redis client for Crystal.",
+      description: "Full featured Redis client for Crystal.",
       repository_url: "https://github.com/stefanwille/crystal-redis",
     },
     {
       name: "jwt", version: "1.7.2", released_at: 16.months.ago,
-      description:    "JSON Web Token implementation in Crystal.",
+      description: "JSON Web Token implementation in Crystal.",
       repository_url: "https://github.com/crystal-community/jwt",
     },
     {
       name: "spec-kemal", version: "1.3.0", released_at: 18.months.ago,
-      description:    "Easy testing for Kemal applications.",
+      description: "Easy testing for Kemal applications.",
       repository_url: "https://github.com/kemalcr/spec-kemal",
     },
   ]

@@ -1,5 +1,5 @@
-# Managed DNS zone for crystaldocs.org. See crystalshards_org for why dns_name is
-# derived and why this zone must not be replaced.
+# Managed DNS zone for the crystaldocs site. See crystalshards_org for why
+# dns_name is derived and why this zone must not be replaced.
 resource "google_dns_managed_zone" "crystaldocs_org" {
   name        = "crystaldocs-org"
   dns_name    = "${var.sites["crystaldocs"].apex}."

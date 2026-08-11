@@ -7,13 +7,6 @@ locals {
   # a mail.
   lucky_services = setunion(local.apps, toset(["docs-launcher"]))
 
-  sendgrid_keys = {
-    crystalshards   = var.crystalshards_sendgrid_key
-    crystaldocs     = var.crystaldocs_sendgrid_key
-    crystalgigs     = var.crystalgigs_sendgrid_key
-    crystalbits     = var.crystalbits_sendgrid_key
-    "docs-launcher" = var.docs_launcher_sendgrid_key
-  }
 
   # Image references. Terraform sets a real, already pushed SHA at create time
   # and then stops caring: every service and Job below carries

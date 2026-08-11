@@ -36,18 +36,12 @@ Whether you're a library author, job seeker, employer, or Crystal developer, the
 
 ## API Documentation
 
-API documentation for each application:
+One OpenAPI specification covers all four applications:
 
-- **CrystalShards API**: [docs/api/crystalshards/](api/crystalshards/)
-- **CrystalDocs API**: [docs/api/crystaldocs/](api/crystaldocs/)
-- **CrystalGigs API**: [docs/api/crystalgigs/](api/crystalgigs/)
-- **CrystalBits API**: [docs/api/crystalbits/](api/crystalbits/)
-
-Each API directory contains:
-- OpenAPI 3.0 specifications
-- Endpoint documentation
-- Authentication guides
-- Example requests/responses
+- **Specification**: [docs/api/openapi.yml](api/openapi.yml)
+- **Guide**: [docs/api/README.md](api/README.md) - authentication, error handling and endpoint walkthroughs
+- **Examples**: [docs/api/examples/](api/examples/) - runnable curl examples
+- **Browsable docs**: `docs/api/serve.sh` renders the specification locally
 
 ## Infrastructure
 

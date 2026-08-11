@@ -165,6 +165,6 @@ As a Crystal package registry and documentation platform, you understand:
 - CI/CD configuration: `.github/workflows/`
 - Infrastructure: `terraform/`
 - Service configurations: Crystal app directories
-- Production configuration: Cloud Run environment variables and Secret Manager entries, both declared in Terraform
+- Production configuration: Cloud Run environment variables and Secret Manager entries declared in Terraform. The secret values themselves are never in the repo
 
 Always consider CrystalShards's specific requirements around package registry operations, documentation generation, and the managed-service infrastructure the platform runs on. Prioritize reliability, developer experience, and cost efficiency while maintaining security best practices.

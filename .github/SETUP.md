@@ -13,24 +13,17 @@ reads it as `credentials_json`, so the secret holds the contents of the key file
 
 #### `GCP_PROJECT_ID`
 
-The Google Cloud project the Cloud Run services are deployed into. CI passes it to
-Terraform as `TF_VAR_project_id`.
+The Google Cloud project the Cloud Run services are deployed into.
 
 **Example**: `crystalshards-org`
 
-#### Application secrets
+Those two are what the Terraform deploy path requires. The deploy workflow may
+consume other secrets for steps outside Terraform; `.github/workflows/` is the
+authority on that.
 
-One SendGrid key per service, plus the CrystalGigs Stripe pair:
-
-- `CRYSTALSHARDS_SENDGRID_KEY`
-- `CRYSTALDOCS_SENDGRID_KEY`
-- `CRYSTALGIGS_SENDGRID_KEY`
-- `CRYSTALBITS_SENDGRID_KEY`
-- `DOCS_LAUNCHER_SENDGRID_KEY`
-- `CRYSTALGIGS_STRIPE_SECRET_KEY`
-- `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY`
-
-Those nine are the complete set. The pipeline reads no other repository secret.
+The SendGrid and Stripe keys are not repository secrets. Terraform never sees them.
+They live in Secret Manager and an operator adds each version by hand, which is
+covered below under Populate the Application Secrets.
 
 #### Roles for the deploy service account
 
@@ -142,26 +135,26 @@ gcloud auth configure-docker us-central1-docker.pkg.dev
 The `roles/artifactregistry.writer` binding above already covers pushes, so the CI
 identity needs no further grant on the repository.
 
-## Terraform Variables Setup
+## Terraform Variables
 
-Create `terraform.tfvars` in the terraform directory:
+`terraform/variables.tf` declares exactly three: `project_id`, `region` and
+`image_tag`. `project_id` and `region` come from `terraform/terraform.tfvars`.
+`image_tag` is the commit SHA, passed on the command line with `-var`.
 
-```hcl
-project_id = "crystalshards-org"
-region     = "us-central1"
-```
+Do not add a second source for a variable that already has one. Terraform
+auto-loads `terraform.tfvars`, and an auto-loaded values file outranks `TF_VAR_`,
+so exporting `TF_VAR_project_id` alongside the tracked file changes nothing while
+the run still reports success. That precedence is how a values file pinning
+credentials to `"unused"` once overrode what CI passed.
+
+No third-party credential is a Terraform variable. The SendGrid and Stripe keys
+reach the services through Secret Manager instead, so nothing sensitive is written
+into Terraform state.
 
 ## Initial Infrastructure Deployment
 
-Infrastructure is applied by CI, never from a workstation. Review a change with a
-plan locally, then let the pipeline apply it once the change merges.
-
-```bash
-# Review a proposed change
-cd terraform
-terraform init
-terraform plan
-```
+Infrastructure is applied by CI, never from a workstation. CI holds the deployment
+credential and the GCS state backend, and applies run there by policy.
 
 After CI applies the change, verify what is running:
 
@@ -169,6 +162,41 @@ After CI applies the change, verify what is running:
 gcloud run services list --region us-central1
 gcloud run jobs list --region us-central1
 ```
+
+## Populate the Application Secrets
+
+Terraform creates these seven as empty Secret Manager containers, so there is no
+`gcloud secrets create` step. Each one needs a version added by hand:
+
+- `crystalshards-sendgrid-key`
+- `crystaldocs-sendgrid-key`
+- `crystalgigs-sendgrid-key`
+- `crystalbits-sendgrid-key`
+- `docs-launcher-sendgrid-key`
+- `crystalgigs-stripe-secret-key`
+- `crystalgigs-stripe-publishable-key`
+
+```bash
+gcloud secrets versions add <secret-id> --data-file=- --project=crystalshards-org
+```
+
+On a clean apply no site serves until all seven have a version. A Cloud Run
+revision that references a secret with zero versions fails to start. It does not
+start degraded, and it does not start with an empty string.
+
+All five services are blocked, not only the one taking payments. Every Lucky
+service reads `SEND_GRID_KEY`, and `config/email.cr` calls `exit(1)` at boot in
+production without it, so `crystalshards`, `crystaldocs`, `crystalbits` and
+`docs-launcher` each wait on their own SendGrid secret, and `crystalgigs` waits on
+all three of its SendGrid, Stripe secret and Stripe publishable keys. The four
+migrate Jobs are unaffected, holding only the `DATABASE_URL` Terraform generates,
+and `docs-build` is unaffected because it holds no secret at all.
+
+To run a service without outbound mail, set that service's SendGrid secret to the
+literal string `unused`, the value `config/email.cr` names in its own error
+message. That is an operator decision recorded in Secret Manager, which is not the
+same thing as a fake value committed to a tracked file. Stripe has no equivalent:
+CrystalGigs needs real Stripe keys or it does not serve.
 
 ## Security Considerations
 

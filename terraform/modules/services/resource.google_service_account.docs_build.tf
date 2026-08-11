@@ -18,7 +18,8 @@
 # add roles/storage.objectAdmin: don't. The signed URL is either missing,
 # expired, or scoped to a different object than the one being written, and the
 # fix is in docs-launcher. Granting a role here is how the sandbox stops being
-# a sandbox, and choosing Cloud Run over GKE bought precisely this property.
+# a sandbox, and an identity with no permissions is the property that made this
+# runtime the right choice for running strangers' code.
 resource "google_service_account" "docs_build" {
   project      = var.project_id
   account_id   = "docs-build"
