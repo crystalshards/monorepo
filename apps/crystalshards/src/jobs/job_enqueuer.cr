@@ -1,4 +1,3 @@
-require "joobq"
 require "../workers/*"
 
 module CrystalShards::Jobs

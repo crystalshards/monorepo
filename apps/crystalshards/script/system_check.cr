@@ -6,12 +6,12 @@ require "./helpers/*"
 #
 # A few examples you might use here:
 #   * 'lucky db.verify_connection' to test postgres can be connected
-#   * Checking that elasticsearch, redis, or postgres is installed and/or booted
+#   * Checking that postgres is installed and/or booted
 #   * Note: Booting additional processes for things like mail, background jobs, etc...
 #     should go in your Procfile.dev.
 
 # CUSTOM PRE-BOOT CHECKS
 # example:
-# if command_not_running "redis-cli", "ping"
-#   print_error "Redis is not running."
+# if command_not_running "pg_isready", "-q"
+#   print_error "Postgres is not running."
 # end

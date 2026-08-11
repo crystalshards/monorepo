@@ -124,7 +124,7 @@ class Api::Shards::Upload < ApiAction
 
     # At this point we have a shard (either found or created)
     begin
-      # Upload to storage (skip in test environment if MinIO not available)
+      # Upload to storage (skip when the object store is unavailable)
       begin
         storage = CrystalShards::StorageService.new
         storage.upload_package_from_io(
@@ -133,7 +133,7 @@ class Api::Shards::Upload < ApiAction
           content: package_content
         )
       rescue ex : Exception
-        # In test environments, MinIO may not be available - log and continue
+        # The store may be unavailable in a test environment; log and continue
         Log.warn { "Failed to upload package to storage: #{ex.message}" }
       end
 

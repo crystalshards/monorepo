@@ -25,20 +25,11 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis Cache & Queue
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  # MinIO Object Storage
+  # Object storage for local development. This container is the development
+  # implementation of the apps' object store interface; production is Google
+  # Cloud Storage and never runs this. MINIO_ROOT_* below configure the
+  # container itself, which is why they keep the vendor's names; the apps read
+  # backend-neutral STORAGE_* instead.
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -73,17 +64,23 @@ services:
     environment:
       LUCKY_ENV: development
       DATABASE_URL: postgres://postgres:password@postgres/crystalshards_development
-      REDIS_URL: redis://redis:6379
       SECRET_KEY_BASE: development_secret_key_base_change_in_production
       # The ad strip reads promotable jobs from CrystalGigs. Unset would turn
       # the strip off rather than break the app, so it is wired here to keep
       # development honest about what production renders.
       JOB_ADS_URL: http://crystalgigs:3002/api/ads
       PORT: 3000
+      # Object storage. Backend-neutral names: the app talks to the interface,
+      # not to a backend. No Google Cloud credentials are involved locally.
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ACCESS_KEY: minioadmin
+      STORAGE_SECRET_KEY: minioadmin
+      DOCS_BUCKET: crystal-docs
+      PACKAGES_BUCKET: packages
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
+      minio:
         condition: service_healthy
     volumes:
       - ./apps/crystalshards:/app
@@ -100,9 +97,11 @@ services:
       LUCKY_ENV: development
       DATABASE_URL: postgres://postgres:password@postgres/crystaldocs_development
       SECRET_KEY_BASE: development_secret_key_base_change_in_production
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ACCESS_KEY: minioadmin
+      STORAGE_SECRET_KEY: minioadmin
+      # Shared with CrystalShards, which writes what this app reads.
+      DOCS_BUCKET: crystal-docs
       JOB_ADS_URL: http://crystalgigs:3002/api/ads
       PORT: 3001
     depends_on:
@@ -155,5 +154,4 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   minio_data:

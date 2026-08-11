@@ -1,0 +1,18 @@
+# Build artifacts. lib/ is produced inside the image by `shards install --production`;
+# letting a host-built lib/ in through `COPY . .` would overwrite it with artifacts
+# compiled for the developer's platform.
+lib/
+bin/
+node_modules/
+tmp/
+.shards/
+
+# Neither the server (src/<app>.cr) nor the migrator (src/migrate.cr) reaches these.
+spec/
+tasks.cr
+tasks/
+.git/
+.gitignore
+docker/
+Dockerfile
+.dockerignore

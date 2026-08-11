@@ -23,7 +23,6 @@ RUN apt-get -qq update && apt-get -qq install -y \
     libpcre2-dev \
     libpcre3-dev \
     postgresql-client \
-    redis-tools \
     tmux \
     vim \
     htop \

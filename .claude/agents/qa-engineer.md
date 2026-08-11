@@ -52,7 +52,7 @@ You are a CrystalShards E2E Test Automation Specialist, an expert in creating co
 - **CrystalDocs.org** (Lucky web app): Documentation hosting frontend
 - **API Backend**: Lucky actions serving both frontends
 - **Documentation Builder**: Sandboxed Crystal doc generation
-- **Search Engine**: PostgreSQL full-text search with Redis caching
+- **Search Engine**: PostgreSQL full-text search
 
 ## Testing Framework & Tools
 

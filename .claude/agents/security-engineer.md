@@ -58,7 +58,8 @@ You are a Senior Security Engineer specializing in application security for the 
    - Data masking and redaction
    - Secure file upload/download (shards)
    - Database encryption
-   - Secrets management via Kubernetes Secrets
+   - Secrets management via Secret Manager, referenced by Cloud Run as environment variables
+   - One service account per Cloud Run service, each holding only what that service needs
 
 4. **Compliance & Standards**
    - Open source security best practices
@@ -128,37 +129,34 @@ end
 
 ### Documentation Build Sandboxing
 
-```crystal
-# CRITICAL: Sandbox doc builds to prevent malicious code execution
-class DocBuilder
-  def build_docs(shard : Shard, version : Version)
-    # SECURITY: Use isolated container with resource limits
-    sandbox = DockerSandbox.new(
-      image: "crystal:latest",
-      memory_limit: "512m",
-      cpu_limit: "0.5",
-      network: "none",  # No network access
-      timeout: 600.seconds
-    )
+Documentation is generated from third-party shard source, and Crystal expands
+macros at compile time, so `crystal docs` executes code written by a stranger.
+That compile runs in the `docs-build` Cloud Run Job, and the isolation of that
+job is the central security property of the platform.
 
-    # SECURITY: Never pass user input directly to shell
-    result = sandbox.run([
-      "crystal", "doc",
-      "--output=/docs",
-      "--project-name=#{shell_escape(shard.name)}",
-      "--project-version=#{shell_escape(version.number)}"
-    ])
+- The `docs-build` service account holds **zero IAM bindings**. Not read-only on
+  one bucket, none. It cannot call a Google API, read a secret or reach the
+  database, and an access token minted for it opens nothing.
+- It receives its input through a signed GET URL and writes its output through a
+  signed PUT URL, both minted by `docs-launcher`, each good for one object and
+  one method.
+- `docs-launcher` is the trusted half: it prepares the source, starts the
+  execution, validates what comes back, publishes it and records the outcome,
+  because the build identity can do none of those things.
+- Nothing the build writes gets to decide where the output lands.
 
-    raise SecurityError.new("Doc build failed") unless result.success?
-    result
-  end
+Rules for anyone touching this path:
 
-  private def shell_escape(input : String) : String
-    # SECURITY: Escape shell characters
-    input.gsub(/[^a-zA-Z0-9._-]/, "")
-  end
-end
-```
+- **Never grant the `docs-build` identity a role**, however convenient. The
+  convenience is the whole attack.
+- **Never put a secret, a bucket name or a database URL in the job's
+  environment.** Everything it may touch arrives as a signed URL.
+- **Always validate the artifact** before it is published.
+
+The two files that implement this are
+`apps/crystalshards/src/services/docs_sandbox/cloud_run_job_docs_sandbox.cr` and
+`apps/crystalshards/src/actions/api/internal/docs/build.cr`. Read both before
+changing either.
 
 ### User Data Protection
 
@@ -268,22 +266,22 @@ end
 
 ### Secrets Management
 
-```yaml
-# Use Kubernetes Secrets, never commit secrets
-# config/database.yml
-production:
-  url: <%= ENV["DATABASE_URL"] %>
+Secrets live in Secret Manager and are referenced by Cloud Run as environment
+variables. Nothing is committed, and nothing is defaulted: a missing required
+production variable fails closed at boot with a message naming the variable, so
+a misconfigured deploy is loud rather than quietly insecure.
 
-# Kubernetes secret
-apiVersion: v1
-kind: Secret
-metadata:
-  name: crystalshards-secrets
-type: Opaque
-data:
-  database-url: <base64-encoded>
-  api-key: <base64-encoded>
+```crystal
+# SECURITY: required production config is fetched, never defaulted
+def self.fetch(key : String) : String
+  value = ENV[key]?
+  raise Missing.new(key) if value.nil? || value.blank?
+  value
+end
 ```
+
+The `docs-build` job is the exception that proves the rule: it reads no secret
+at all, because everything it may touch arrives as a signed URL.
 
 ## Incident Response
 
@@ -293,26 +291,22 @@ data:
 2. **Contain** - Limit the damage (disable feature, block IP)
 3. **Investigate** - Determine root cause
 4. **Remediate** - Fix the vulnerability
-5. **Document** - Create incident report in `pers/`
+5. **Document** - Create incident report in `.agent/post-event-reviews/`
 6. **Review** - Post-mortem analysis
 
 ### Emergency Response
 
-```crystal
-# Quick disable for compromised features
-class FeatureFlags
-  def self.emergency_disable(feature : String)
-    # Disable feature immediately
-    Redis.new.set("feature:#{feature}:enabled", "false")
+Containment on Cloud Run is a traffic decision before it is a code change:
 
-    # Log security event
-    Log.error { "SECURITY: Feature disabled: #{feature}" }
+1. Shift traffic on the affected service back to the last known good revision.
+2. If one route is the problem rather than the whole revision, ship a change
+   that closes it and let CI deploy it. Deploys and Terraform applies run in CI,
+   never from a workstation.
+3. Log the security event and notify the team.
 
-    # Alert team
-    AlertService.notify_security_team(feature)
-  end
-end
-```
+In the documentation build path the blast radius is already bounded. The build
+identity holds nothing, so there is no credential to rotate: the signed GET and
+PUT it was handed simply expire.
 
 ## Testing & Validation
 

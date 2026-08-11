@@ -453,8 +453,8 @@ What you'll be doing day-to-day
 
 - Crystal (backend services)
 - Lucky framework
-- PostgreSQL + Redis
-- Docker + Kubernetes
+- PostgreSQL
+- Docker
 - GitHub Actions
 
 # What We Offer

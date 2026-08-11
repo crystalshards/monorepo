@@ -1,6 +1,6 @@
 # Fakes for worker specs. Each one plugs into a `class_property` seam on the
 # collaborator it stands in for, so workers can be exercised with no network,
-# no git and no Redis.
+# no git and no broker.
 
 # Stands in for a real repository provider behind `ProviderFactory.builder`.
 class MockProvider < BaseProvider
@@ -44,7 +44,7 @@ class MockProvider < BaseProvider
   end
 end
 
-# Stands in for MinIO behind `CrystalShards::StorageService.builder`.
+# Stands in for the object store behind `CrystalShards::StorageService.builder`.
 module CrystalShards
   class MockStorageService
     include DocsStorage
@@ -55,9 +55,45 @@ module CrystalShards
     def upload_docs_json(shard_name : String, version : String, docs_json_path : String) : String
       raise "Storage upload failed" if should_fail
 
-      key = "#{shard_name}/#{version}/docs.json"
+      key = CrystalStorage::Keys.docs_json(shard_name, version)
       @uploaded_docs << key
       key
+    end
+  end
+
+  # Stands in for the object store behind
+  # `CrystalShards::StorageService.scratch_builder`, so a sandbox spec runs
+  # with no object store at all.
+  #
+  # `scratch_signed_url` returns a URL that is deliberately not fetchable. The
+  # point of the signed-URL seam is that the build receives exactly one URL per
+  # object and cannot name its own key, and a fake proves that by recording
+  # what was minted, not by serving bytes.
+  class MockScratchStorage
+    include ScratchStorage
+
+    record Minted, key : String, method : String, content_type : String?
+
+    property objects : Hash(String, String) = {} of String => String
+    property minted : Array(Minted) = [] of Minted
+    property deleted_prefixes : Array(String) = [] of String
+
+    def upload_scratch(key : String, content : String)
+      @objects[key] = content
+    end
+
+    def download_scratch(key : String) : String
+      @objects[key]? || raise "no scratch object at #{key}"
+    end
+
+    def delete_scratch_prefix(prefix : String)
+      @deleted_prefixes << prefix
+      @objects.reject! { |key, _| key.starts_with?(prefix) }
+    end
+
+    def scratch_signed_url(key : String, method : String, content_type : String? = nil) : String
+      @minted << Minted.new(key, method.upcase, content_type)
+      "https://signed.invalid/#{key}?method=#{method.upcase}"
     end
   end
 
@@ -121,8 +157,9 @@ module WorkerSeams
     end
   end
 
-  # Captures the follow-up jobs IndexShardWorker schedules instead of pushing
-  # them onto the JoobQ queue, which needs a Redis connection specs do not have.
+  # Captures the follow-up jobs IndexShardWorker schedules instead of running
+  # them, so an indexing example asserts on what was chained rather than on
+  # the whole pipeline downstream of it.
   def self.capturing_followups(&)
     captured = [] of {IndexShardWorker::Followup, String, String}
     original = IndexShardWorker.dispatcher

@@ -4,6 +4,20 @@ require "../services/storage_service"
 require "../services/docs_build_status"
 
 struct BuildDocsWorker < BaseJob
+  # The only job that is never run where it was asked for.
+  #
+  # A build compiles code the shard author wrote, and Crystal expands macros
+  # while compiling, so `crystal docs` on a third party shard is arbitrary
+  # command execution. This process holds the registry database and object
+  # storage credentials, so the request goes to Cloud Tasks, the launcher
+  # starts a Cloud Run Job that holds no credentials, and `perform` below runs
+  # only in the launcher.
+  #
+  # Returns the build id, or nil when the request could not be delivered.
+  def self.enqueue(shard_name : String, version : String) : String?
+    CrystalShards::JobQueue.current.build_docs(shard_name, version)
+  end
+
   # @shard_name is the wire field name crystaldocs already produces, so it
   # stays. What it CARRIES is now the canonical slug
   # ("github.com/kemalcr/kemal") for anything crystalshards enqueues, because
@@ -62,16 +76,15 @@ struct BuildDocsWorker < BaseJob
   rescue ex : Exception
     log_error "Failed to build docs for #{@shard_name}@#{@version}", ex
     # Recorded before re-raising, so the reader sees a failure even though
-    # JoobQ will retry the job. A retry that succeeds overwrites this; one
-    # that fails again just refreshes failed_at.
+    # Cloud Tasks will redeliver the request. A retry that succeeds overwrites
+    # this; one that fails again just refreshes failed_at.
     docs_status.failed(ex.message)
     raise ex
   end
 
-  # Named docs_status, not status: JoobQ::Job already defines a public
-  # `status` property holding the job's own lifecycle state, and shadowing it
-  # with an unrelated type here silently breaks anything in the queue that
-  # reads it back.
+  # Named docs_status, not status, so it cannot be confused with the build
+  # request's own lifecycle column of the same name, which crystaldocs owns
+  # and this only ever writes through the statements in DocsBuildStatus.
   private def docs_status : CrystalShards::DocsBuildStatus
     CrystalShards::DocsBuildStatus.new(@shard_name, @version)
   end
@@ -99,10 +112,10 @@ struct BuildDocsWorker < BaseJob
     storage = CrystalShards::StorageService.build
     key = storage.upload_docs_json(shard.name, shard_version.version, docs_json)
 
-    log_info "Uploaded #{key} (#{File.size(docs_json)} bytes) to MinIO"
+    log_info "Uploaded #{key} (#{File.size(docs_json)} bytes) to object storage"
     "https://crystaldocs.org/#{shard.name}/#{shard_version.version}"
   rescue ex : Exception
-    log_error "Error uploading docs to MinIO", ex
+    log_error "Error uploading docs to object storage", ex
     raise ex
   end
 end

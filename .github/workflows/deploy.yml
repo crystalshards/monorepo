@@ -7,316 +7,1370 @@ on:
     branches: [main]
     types:
       - completed
-  # Allow manual deployment with approval
+  # Allow manual deployment
   workflow_dispatch:
 
-# Prevent concurrent Terraform operations that could conflict
-# Re-enabled with branch-specific grouping to resolve hung workflow 18379587131
+# One production deploy at a time, and never cancel one in flight: a half rolled
+# service or a half run migration is worse than a queued run.
 concurrency:
-  group: terraform-deploy-${{ github.ref }}
+  group: deploy-production
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
+env:
+  GCP_REGION: us-central1
+  # Must match the version CI validates with. 1.6.0 embeds a HashiCorp GPG key that
+  # has since expired, so it cannot verify any provider release and `terraform init`
+  # dies with "openpgp: key expired".
+  TERRAFORM_VERSION: "1.15.8"
+  TF_IN_AUTOMATION: "1"
+  TF_INPUT: "0"
+
 jobs:
-  # Step 1: Deploy cluster module to create Artifact Registry
-  deploy-cluster:
-    name: Deploy Cluster & Artifact Registry
+  # ---------------------------------------------------------------------------
+  # Refuse to deploy unless CI succeeded on main, and pin the exact commit.
+  # ---------------------------------------------------------------------------
+  gate:
+    name: Gate on CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Resolve the commit under deploy
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            if [ "$RUN_CONCLUSION" != "success" ]; then
+              echo "CI concluded '${RUN_CONCLUSION}'. Refusing to deploy." >&2
+              exit 1
+            fi
+            if [ "$RUN_HEAD_BRANCH" != "main" ]; then
+              echo "CI ran on '${RUN_HEAD_BRANCH}', not main. Refusing to deploy." >&2
+              exit 1
+            fi
+            # Deploy the commit CI actually validated. For workflow_run, github.sha is
+            # the head of the default branch when this run starts, which is not
+            # necessarily the commit that was tested.
+            sha="$RUN_HEAD_SHA"
+          else
+            sha="$DISPATCH_SHA"
+          fi
+
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "Resolved commit '${sha}' is not a 40 character SHA. Refusing to deploy." >&2
+            exit 1
+          fi
+
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "Deploying commit ${sha}"
+
+  # ---------------------------------------------------------------------------
+  # The registry must exist before anything can be pushed, and the rest of the stack
+  # cannot apply until the images it references exist. So the registry module goes
+  # first, on its own.
+  # ---------------------------------------------------------------------------
+  bootstrap-registry:
+    name: Bootstrap Artifact Registry
+    needs: gate
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
-    # Only deploy if CI passed or manual trigger
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
-
+    outputs:
+      registry_url: ${{ steps.registry.outputs.url }}
     steps:
-    - name: Check CI Status
-      if: github.event_name == 'workflow_run'
-      run: |
-        echo "CI workflow conclusion: ${{ github.event.workflow_run.conclusion }}"
-        if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
-          echo "❌ CI failed. Deployment blocked."
-          exit 1
-        fi
-        echo "✅ CI passed. Proceeding with deployment."
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
 
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.15.8
-        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-        terraform_wrapper: false  # Disable wrapper to get clean output
+      - name: Apply registry module
+        working-directory: ./terraform
+        shell: bash
+        env:
+          # No application secrets here on purpose. The Secret Manager secrets are
+          # created empty by terraform and their versions are added out of band with
+          # `gcloud secrets versions add`, so no credential is ever a terraform
+          # variable and none is ever written to the state bucket.
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
+          IMAGE_TAG: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          terraform init
+          terraform apply -auto-approve \
+            -target=module.registry \
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="image_tag=${IMAGE_TAG}"
 
-    - name: Deploy Cluster Module
-      working-directory: ./terraform
-      env:
-        TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
-        TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
-        TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
-        TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
-      run: |
-        echo "Step 1/3: Deploying cluster module (creates Artifact Registry)..."
-        terraform init
-        terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
-                      -var="region=us-central1" \
-                      -target=module.cluster \
-                      -out=tfplan
-        terraform apply tfplan
-        echo "✅ Cluster and Artifact Registry deployed"
+      - name: Publish registry URL
+        id: registry
+        working-directory: ./terraform
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          url="$(terraform output -raw artifact_registry_url)"
 
-  # Step 2: Build and push Docker images
-  build-images:
-    name: Build and Push Docker Images
-    needs: deploy-cluster
+          if [ -z "$url" ]; then
+            echo "Terraform output artifact_registry_url is empty." >&2
+            exit 1
+          fi
+          if ! printf '%s' "$url" | grep -Eq '^[a-z0-9-]+-docker\.pkg\.dev/[^/]+/[^/]+$'; then
+            echo "artifact_registry_url='${url}' is not an Artifact Registry repository path." >&2
+            exit 1
+          fi
+          # Catch a stack pointed at a different project than the one CI is deploying.
+          if [ "$(printf '%s' "$url" | cut -d/ -f2)" != "$PROJECT_ID" ]; then
+            echo "artifact_registry_url='${url}' is not in project '${PROJECT_ID}'." >&2
+            exit 1
+          fi
+
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "Registry: ${url}"
+
+  # ---------------------------------------------------------------------------
+  # One image per app, plus the documentation build image. Tagged with the full commit
+  # SHA and nothing else: no `latest`, so nothing downstream can resolve to a tag this
+  # pipeline did not push.
+  #
+  # There is no docs-launcher image. That service runs the crystalshards image under a
+  # second name, because the trusted half of a docs build already lives in that app.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Build ${{ matrix.image }}
+    needs: [gate, bootstrap-registry]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        app: [crystalshards, crystaldocs, crystalgigs, crystalbits]
-        target: [api, worker]
-        exclude:
-          - app: crystaldocs
-            target: worker
-          - app: crystalgigs
-            target: worker
-          - app: crystalbits
-            target: worker
-
-    permissions:
-      contents: read
-      id-token: write
-
+        include:
+          - image: crystalshards
+            context: apps/crystalshards
+          - image: crystaldocs
+            context: apps/crystaldocs
+          - image: crystalgigs
+            context: apps/crystalgigs
+          - image: crystalbits
+            context: apps/crystalbits
+          # Runs `crystal docs` over untrusted third party shards, so unlike the app
+          # images its runtime stage keeps the Crystal toolchain.
+          - image: docs-build
+            context: apps/docs-build
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Assert the build context exists
+        shell: bash
+        env:
+          CONTEXT: ${{ matrix.context }}
+        run: |
+          set -euo pipefail
+          if [ ! -f "${CONTEXT}/Dockerfile" ]; then
+            echo "No Dockerfile at ${CONTEXT}/Dockerfile." >&2
+            echo "This image is part of the deploy contract, so a missing build context fails the deploy rather than being skipped." >&2
+            exit 1
+          fi
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v2
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-    - name: Configure Docker for Artifact Registry
-      run: gcloud auth configure-docker us-docker.pkg.dev
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
+      - name: Resolve image reference
+        id: image
+        shell: bash
+        env:
+          REGISTRY_URL: ${{ needs.bootstrap-registry.outputs.registry_url }}
+          IMAGE: ${{ matrix.image }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          echo "ref=${REGISTRY_URL}/${IMAGE}:${SHA}" >> "$GITHUB_OUTPUT"
+          echo "host=${REGISTRY_URL%%/*}" >> "$GITHUB_OUTPUT"
 
-    - name: Set image tags
-      id: tags
-      run: |
-        APP="${{ matrix.app }}"
-        TARGET="${{ matrix.target }}"
-        PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
-        SHA="${GITHUB_SHA::8}"
+      - name: Configure Docker for Artifact Registry
+        shell: bash
+        run: gcloud auth configure-docker "${{ steps.image.outputs.host }}" --quiet
 
-        if [ "$TARGET" = "worker" ]; then
-          IMAGE_NAME="${APP}-worker"
-        else
-          IMAGE_NAME="${APP}"
-        fi
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-        echo "image_name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-        echo "full_image=us-docker.pkg.dev/$PROJECT_ID/crystalshards/$IMAGE_NAME:$SHA" >> $GITHUB_OUTPUT
-        echo "latest_image=us-docker.pkg.dev/$PROJECT_ID/crystalshards/$IMAGE_NAME:latest" >> $GITHUB_OUTPUT
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          # Cloud Run runs linux/amd64. Say so rather than inheriting the runner's arch.
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.ref }}
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
-    - name: Build Docker image
-      working-directory: ./apps/${{ matrix.app }}
-      run: |
-        echo "Building ${{ steps.tags.outputs.image_name }}..."
+      - name: Assert the pushed image is resolvable
+        shell: bash
+        env:
+          IMAGE_REF: ${{ steps.image.outputs.ref }}
+        run: |
+          set -euo pipefail
+          # A successful push proves the layers uploaded. This proves the tag resolves
+          # to a manifest in the repository the rest of the deploy reads from.
+          digest="$(gcloud artifacts docker images describe "$IMAGE_REF" --format='value(image_summary.digest)')"
+          if [ -z "$digest" ]; then
+            echo "Pushed ${IMAGE_REF} but the registry reports no digest for it." >&2
+            exit 1
+          fi
+          echo "${IMAGE_REF} -> ${digest}"
 
-        BUILD_ARG=""
-        if [ "${{ matrix.target }}" = "worker" ]; then
-          BUILD_ARG="--build-arg BUILD_TARGET=worker"
-        fi
-
-        docker buildx build $BUILD_ARG \
-          --load \
-          -t ${{ steps.tags.outputs.full_image }} \
-          -t ${{ steps.tags.outputs.latest_image }} \
-          .
-
-    - name: Push Docker image
-      run: |
-        echo "Pushing ${{ steps.tags.outputs.image_name }}..."
-        docker push ${{ steps.tags.outputs.full_image }}
-        docker push ${{ steps.tags.outputs.latest_image }}
-        echo "✅ Image pushed: ${{ steps.tags.outputs.latest_image }}"
-
-  # Step 3: Deploy full infrastructure
-  deploy-full:
-    name: Deploy Full Infrastructure
-    needs: build-images
+  # ---------------------------------------------------------------------------
+  # Populate Secret Manager versions.
+  #
+  # Terraform creates these secrets as empty containers and never writes their
+  # values, so no third party credential is ever a terraform variable and none is
+  # ever written to the state bucket. That leaves CI to supply the versions, and the
+  # ordering is unforgiving: a Cloud Run revision referencing a secret with zero
+  # versions does not start, so this must complete before the stack is applied.
+  #
+  # Hence the narrowly targeted apply below. It creates the secret containers and
+  # nothing else, specifically not the Cloud Run services, which the full apply in
+  # the next job creates once the values are in place.
+  #
+  # Four values, not one per service, and they are not all mandatory. crystalgigs
+  # needs its Stripe keys in order to serve, so those stop the deploy when absent.
+  # The two mail keys do not: a missing mail key disables mail on that one service
+  # and the deploy carries on, because serving is the primary function and mail is
+  # a feature. crystalshards and crystaldocs require no mail key at all, and
+  # docs-launcher runs the crystalshards image so it inherits that. Which mail
+  # secrets ended up populated is published as a job output and handed to the stack
+  # apply, so the mail env var is wired only where a version actually exists.
+  # ---------------------------------------------------------------------------
+  secrets:
+    name: Populate Secret Manager versions
+    needs: [gate, bootstrap-registry]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
-
+    outputs:
+      mail_enabled_apps: ${{ steps.populate.outputs.mail_enabled_apps }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
 
-    - name: Authenticate to Google Cloud
-      uses: google-github-actions/auth@v2
-      with:
-        credentials_json: ${{ secrets.GCP_SA_KEY }}
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v2
-      with:
-        terraform_version: 1.15.8
-        cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
-        terraform_wrapper: false  # Disable wrapper to get clean output
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
 
-    - name: Deploy Full Infrastructure
-      working-directory: ./terraform
-      env:
-        TF_VAR_crystalbits_resend_key: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
-        TF_VAR_crystalgigs_resend_key: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
-        TF_VAR_crystalgigs_stripe_secret_key: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
-        TF_VAR_crystalgigs_stripe_publishable_key: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
-      run: |
-        echo "Step 3/3: Deploying full infrastructure..."
-        terraform init
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
 
-        # Plan infrastructure changes
-        # Pod templates include secret-hash annotation, so pods automatically restart
-        # when secret values change. No manual -replace flags needed.
-        terraform plan -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
-                      -var="region=us-central1" \
-                      -out=tfplan
+      - name: Create the secret containers
+        working-directory: ./terraform
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
+          IMAGE_TAG: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          terraform init
+          terraform apply -auto-approve \
+            -target=module.services.google_secret_manager_secret.resend_key \
+            -target=module.services.google_secret_manager_secret.stripe_secret_key \
+            -target=module.services.google_secret_manager_secret.stripe_publishable_key \
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="image_tag=${IMAGE_TAG}"
 
-        # Apply changes
-        terraform apply tfplan
-        echo "✅ Full infrastructure deployed"
+      - name: Populate the application secrets
+        id: populate
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          CRYSTALGIGS_RESEND_KEY: ${{ secrets.CRYSTALGIGS_RESEND_KEY }}
+          CRYSTALBITS_RESEND_KEY: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
+          CRYSTALGIGS_STRIPE_SECRET_KEY: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
+          CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+        run: |
+          set -uo pipefail
 
-    - name: Get cluster info
-      working-directory: ./terraform
-      run: |
-        echo "Getting cluster information..."
-        terraform output cluster_name || true
-        terraform output kubectl_config || true
-        terraform output load_balancer_ip_command || true
+          failures=0
+          mail_enabled=()
+          mail_skipped=()
 
-    - name: Set up Cloud SDK
-      uses: google-github-actions/setup-gcloud@v2
+          # $1 Secret Manager secret_id, $2 the GitHub secret name holding the value,
+          # $3 required|optional, $4 the app slug, for optional mail secrets only.
+          # The value is read out of the environment by name, so it is never an
+          # argument and never reaches a process listing.
+          #
+          # required  an absence stops the deploy. Stripe, because crystalgigs cannot
+          #           serve without it.
+          # optional  an absence is a supported state. Mail: the service still boots
+          #           and serves, and raises naming RESEND_API_KEY if anything tries
+          #           to send. Every skip is recorded and printed, never inferred.
+          #
+          # A present but broken value is an error in both modes. Only a genuine
+          # absence is skippable.
+          populate() {
+            local secret_id="$1" var_name="$2" mode="$3" slug="${4-}"
+            local value="${!2-}" current had_version access_err readback
 
-    - name: Install gke-gcloud-auth-plugin
-      run: |
-        gcloud components install gke-gcloud-auth-plugin --quiet
-
-    - name: Configure kubectl
-      run: |
-        # Get cluster name from Terraform using JSON output
-        cd terraform
-        CLUSTER_NAME=$(terraform output -json cluster_name | jq -r '.')
-        cd ..
-
-        echo "Cluster name: $CLUSTER_NAME"
-
-        # Configure kubectl using gcloud
-        gcloud container clusters get-credentials "$CLUSTER_NAME" \
-          --region us-central1 \
-          --project ${{ secrets.GCP_PROJECT_ID }}
-
-        # Verify connection
-        kubectl cluster-info
-        kubectl get nodes
-
-    - name: Debug - Check Secret Values
-      run: |
-        echo "=== Checking actual DATABASE_URL values in secrets ==="
-        for app in crystalshards crystaldocs crystalgigs crystalbits; do
-          echo ""
-          echo "--- $app ---"
-          kubectl get secret ${app}-secrets -n $app -o jsonpath='{.data.database_url}' 2>/dev/null | base64 -d || echo "Failed to read secret"
-          echo ""
-        done
-
-        echo "=== Checking CNPG postgres app secret usernames ==="
-        for app in crystalshards crystaldocs crystalgigs crystalbits; do
-          echo ""
-          echo "--- $app-postgres-app secret ---"
-          kubectl get secret ${app}-postgres-app -n $app -o jsonpath='{.data.username}' 2>/dev/null | base64 -d || echo "Failed to read secret"
-          echo ""
-        done
-
-    - name: Verify Deployment Health
-      run: |
-        echo "Verifying application health..."
-        sleep 60  # Give applications time to start after deployment
-
-        declare -A app_urls=(
-          ["crystalshards"]="https://crystalshards.org/api/health"
-          ["crystaldocs"]="https://crystaldocs.org/api/health"
-          ["crystalgigs"]="https://crystalgigs.com/api/health"
-          ["crystalbits"]="https://crystalbits.org/api/health"
-        )
-
-        failed=0
-        for app in "${!app_urls[@]}"; do
-          url="${app_urls[$app]}"
-          echo "Checking $app health at $url..."
-
-          # Retry up to 5 times with 30 second delays
-          for i in {1..5}; do
-            response=$(curl -s -w "\n%{http_code}" "$url" || echo "000")
-            http_code=$(echo "$response" | tail -n1)
-            body=$(echo "$response" | sed '$d')
-
-            if [ "$http_code" != "200" ]; then
-              echo "  Attempt $i: HTTP $http_code - retrying..."
-              sleep 30
-              continue
+            if [ -z "$value" ]; then
+              if [ "$mode" = "optional" ]; then
+                echo "  ${secret_id}: ${var_name} is not set, skipping."
+                mail_skipped+=("${slug}|${var_name}")
+                return
+              fi
+              echo "  ${secret_id}: GitHub secret ${var_name} is not set." >&2
+              echo "    The service that consumes it exits at boot without it, so the revision" >&2
+              echo "    will not start. Set it in repository secrets. Do not substitute a" >&2
+              echo "    placeholder." >&2
+              failures=$((failures + 1)); return
             fi
 
-            # Check if services are healthy
-            unhealthy=$(echo "$body" | jq -r '.services | to_entries[] | select(.value | contains("unhealthy")) | .key' 2>/dev/null || echo "")
+            # The old scaffold told operators to set the key to the literal string
+            # "unused", which is how a tracked tfvars ended up pinning four real
+            # credentials to it. Refuse the whole family by name.
+            case "$value" in
+              unused|UNUSED|changeme|CHANGEME|placeholder|PLACEHOLDER|TODO|todo|test|xxx)
+                echo "  ${secret_id}: ${var_name} holds the placeholder '${value}'." >&2
+                echo "    A placeholder here ships a green pipeline with the capability silently dead." >&2
+                failures=$((failures + 1)); return
+                ;;
+            esac
 
-            if [ -n "$unhealthy" ]; then
-              echo "  Attempt $i: Unhealthy services detected: $unhealthy - retrying..."
-              echo "$body" | jq '.' || echo "$body"
-              sleep 30
-              continue
+            # Treat only a genuine absence as absent. Reading every non-zero exit as
+            # "no version yet" would turn a 403 into a spurious new version.
+            if current="$(gcloud secrets versions access latest \
+                            --secret="$secret_id" --project="$PROJECT_ID" 2>/tmp/access.err)"; then
+              had_version=1
+            else
+              access_err="$(cat /tmp/access.err)"
+              case "$access_err" in
+                *NOT_FOUND*|*"has no versions"*|*"was not found"*)
+                  had_version=0; current="" ;;
+                *)
+                  echo "  ${secret_id}: cannot read current version: ${access_err}" >&2
+                  failures=$((failures + 1)); return
+                  ;;
+              esac
             fi
 
-            echo "✅ $app is healthy"
-            break
+            if [ "$had_version" -eq 1 ] && [ "$current" = "$value" ]; then
+              echo "  ${secret_id}: already current"
+              if [ -n "$slug" ]; then mail_enabled+=("$slug"); fi
+              return
+            fi
+
+            # printf rather than echo: a trailing newline inside an API key is a 401
+            # that presents as a wrong key.
+            if ! printf '%s' "$value" | gcloud secrets versions add "$secret_id" \
+                   --project="$PROJECT_ID" --data-file=- >/dev/null; then
+              echo "  ${secret_id}: failed to add a version" >&2
+              failures=$((failures + 1)); return
+            fi
+
+            # Read it back. An accepted write is not the same as the value a revision
+            # will resolve, and this is the last chance to catch it before one boots.
+            if ! readback="$(gcloud secrets versions access latest \
+                               --secret="$secret_id" --project="$PROJECT_ID" 2>&1)"; then
+              echo "  ${secret_id}: wrote a version but cannot read it back: ${readback}" >&2
+              failures=$((failures + 1)); return
+            fi
+            if [ "$readback" != "$value" ]; then
+              echo "  ${secret_id}: read back a value that does not match what was written" >&2
+              failures=$((failures + 1)); return
+            fi
+
+            echo "  ${secret_id}: new version added"
+            if [ -n "$slug" ]; then mail_enabled+=("$slug"); fi
+          }
+
+          # The third party credentials this system consumes, grounded in the app code
+          # rather than in the terraform wiring:
+          #
+          #   crystalgigs  config/payments.cr exits(1) at boot without its Stripe keys,
+          #                so those are a real start up dependency. Mail is not. It
+          #                delivers job applications when configured, and raises on a
+          #                send attempt when it is not.
+          #   crystalbits  mail sends the newsletter. Same treatment.
+          #
+          # A missing mail key therefore disables the feature loudly rather than
+          # stopping the deploy. Nothing reports a send that did not happen: the app
+          # raises naming RESEND_API_KEY instead of no-opping.
+          #
+          # crystalshards and crystaldocs require no mail key at all: a registry and a
+          # docs site should not refuse to serve a page over mail configuration.
+          # docs-launcher runs the crystalshards image, so it inherits that. None of
+          # those three is listed here, and none should be.
+          #
+          # The second column is a GitHub repository secret name and has to match
+          # `gh secret list` verbatim. A name that does not exist there reads as an
+          # absence, which stops the deploy for a required secret and silently disables
+          # mail for an optional one. A previous revision of this job named two mail
+          # secrets that had never existed in this repository, and every deploy stopped
+          # here. Check the column against `gh secret list` when editing it.
+          populate crystalgigs-resend-key             CRYSTALGIGS_RESEND_KEY             optional crystalgigs
+          populate crystalbits-resend-key             CRYSTALBITS_RESEND_KEY             optional crystalbits
+          populate crystalgigs-stripe-secret-key      CRYSTALGIGS_STRIPE_SECRET_KEY      required
+          populate crystalgigs-stripe-publishable-key CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY required
+
+          if [ "$failures" -ne 0 ]; then
+            echo "${failures} secret(s) could not be populated. Not applying the stack: a revision referencing an empty secret will not start." >&2
+            exit 1
+          fi
+
+          if [ "${#mail_skipped[@]}" -ne 0 ]; then
+            echo
+            echo "Mail is NOT configured for:"
+            for entry in "${mail_skipped[@]}"; do
+              echo "  ${entry%%|*}: no version, because ${entry#*|} is not set in repository secrets."
+            done
+            echo "  Those services deploy and serve normally. An attempted send raises naming"
+            echo "  RESEND_API_KEY rather than reporting a delivery that did not happen."
+            echo "  Add the secret and re-run this workflow to switch mail on. No code change"
+            echo "  and no terraform change is needed."
+          fi
+
+          # Hand terraform the apps whose mail secret actually holds a version, so it
+          # wires the mail env var for those only. A revision referencing a versionless
+          # secret never reaches Ready, so wiring all of them unconditionally is the one
+          # failure this must not ship.
+          mail_json='[]'
+          if [ "${#mail_enabled[@]}" -ne 0 ]; then
+            mail_json="$(printf '%s\n' "${mail_enabled[@]}" \
+              | jq -Rsc 'split("\n") | map(select(length > 0))')"
+          fi
+          echo "mail_enabled_apps=${mail_json}" >> "$GITHUB_OUTPUT"
+
+          echo
+          echo "Mail enabled for: ${mail_json}"
+          echo "Stripe: both keys hold a current version."
+
+  # ---------------------------------------------------------------------------
+  # Apply the Cloud Run stack.
+  #
+  # This is the apply that creates the four services, so everything a revision needs
+  # in order to come up healthy has to already be true when it runs:
+  #
+  #   after build     so terraform creates each service and job at a real SHA image
+  #                   rather than a placeholder
+  #   after secrets   because a revision referencing a secret with zero versions never
+  #                   reaches Ready, and populating afterwards is too late
+  #   after migrate   because creating a service starts a revision and gives it
+  #                   traffic immediately, so on a first deploy this would otherwise
+  #                   put all four services up against an empty schema
+  #
+  # It also keeps every terraform apply in the pipeline strictly serialised, which
+  # matters beyond ordering: two concurrent applies contend for the same state lock.
+  # ---------------------------------------------------------------------------
+  infra:
+    name: Apply Cloud Run stack
+    needs: [gate, build, secrets, migrate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    outputs:
+      services: ${{ steps.outputs.outputs.services }}
+      migrate_jobs: ${{ steps.outputs.outputs.migrate_jobs }}
+      docs_build_job: ${{ steps.outputs.outputs.docs_build_job }}
+      docs_launcher_service: ${{ steps.outputs.outputs.docs_launcher_service }}
+      load_balancer_ip: ${{ steps.outputs.outputs.load_balancer_ip }}
+      managed_certificates: ${{ steps.outputs.outputs.managed_certificates }}
+      public_hostnames: ${{ steps.outputs.outputs.public_hostnames }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform apply
+        working-directory: ./terraform
+        shell: bash
+        env:
+          # No application secrets here on purpose. Terraform creates the Secret
+          # Manager secrets empty and their versions are added out of band with
+          # `gcloud secrets versions add`, so no credential is ever a terraform
+          # variable and none is ever written to the state bucket.
+          #
+          # A revision referencing a secret with no versions will not start, so the mail
+          # env var is wired only for the apps whose mail secret the secrets job actually
+          # populated. That list arrives as MAIL_ENABLED_APPS below. Do not add a
+          # placeholder version to force one on: that is how mail ends up silently
+          # disabled behind green.
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
+          IMAGE_TAG: ${{ needs.gate.outputs.sha }}
+          MAIL_ENABLED_APPS: ${{ needs.secrets.outputs.mail_enabled_apps }}
+        run: |
+          set -euo pipefail
+          terraform init
+          # Empty rather than unset if the secrets job published nothing, since an
+          # empty -var value is a parse error while [] is a valid empty set.
+          mail_enabled_apps="${MAIL_ENABLED_APPS:-[]}"
+          [ -n "$mail_enabled_apps" ] || mail_enabled_apps='[]'
+
+          terraform apply -auto-approve \
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="image_tag=${IMAGE_TAG}" \
+            -var="mail_enabled_apps=${mail_enabled_apps}"
+
+      - name: Read stack outputs
+        id: outputs
+        working-directory: ./terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # `terraform output` exits non-zero on an output the stack does not declare,
+          # so a missing one fails here by name rather than becoming an empty string
+          # that silently disables an assertion further down the pipeline.
+          #
+          # $1 is the terraform output name, $2 the step output name to publish it as.
+          emit_json() {
+            local tf_name="$1" out_name="${2:-$1}" value
+            value="$(terraform output -json "$tf_name" | jq -c .)"
+            if [ -z "$value" ] || [ "$value" = "null" ]; then
+              echo "Terraform output '${tf_name}' is null." >&2
+              exit 1
+            fi
+            echo "${out_name}=${value}" >> "$GITHUB_OUTPUT"
+            echo "${tf_name}=${value}"
+          }
+
+          emit_raw() {
+            local tf_name="$1" out_name="${2:-$1}" value
+            value="$(terraform output -raw "$tf_name")"
+            if [ -z "$value" ]; then
+              echo "Terraform output '${tf_name}' is empty." >&2
+              exit 1
+            fi
+            echo "${out_name}=${value}" >> "$GITHUB_OUTPUT"
+            echo "${tf_name}=${value}"
+          }
+
+          emit_json cloud_run_services services
+          emit_json migrate_jobs
+          emit_json managed_certificates
+          emit_json public_hostnames
+          emit_raw docs_build_job
+          emit_raw docs_launcher_service
+          emit_raw load_balancer_ip
+
+  # ---------------------------------------------------------------------------
+  # Migrations run in Cloud Run Jobs, on the app's own image and over the Cloud SQL
+  # socket, never from this runner against a public database address.
+  #
+  # The Job runs ./migrate, a dedicated entrypoint that requires only the database
+  # config, so the Job carries DATABASE_URL and no serving credentials.
+  #
+  # This runs BEFORE the stack apply, not after, and the targeted apply below is why.
+  #
+  # On every deploy after the first, terraform carries ignore_changes on the image, so
+  # a full apply creates no revision and the image roll happens in release. Ordering
+  # would look fine either way. The first apply is different: creating a Cloud Run
+  # service starts a revision and gives it traffic immediately, so a full apply first
+  # would put all four services up against an empty schema. Rather than have the first
+  # deploy behave unlike every other one, this job applies just the migrate Jobs and
+  # the Cloud SQL instance they need, migrates, and lets the full apply create the
+  # services onto a schema that already exists.
+  #
+  # Same shape as the registry and secret bootstraps above: a narrow -target that
+  # creates only what the next step needs.
+  # ---------------------------------------------------------------------------
+  migrate:
+    name: Run database migrations
+    needs: [gate, bootstrap-registry, build, secrets]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Create the migration Jobs and their database
+        id: bootstrap
+        working-directory: ./terraform
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
+          IMAGE_TAG: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          # Targets the migration Jobs only. Terraform pulls in what they depend on,
+          # which is the Cloud SQL instance, the databases, their DATABASE_URL secrets
+          # and the per-job service accounts, and stops short of the Cloud Run services.
+          # That is the whole point: the services must not exist yet.
+          terraform init
+          terraform apply -auto-approve \
+            -target=module.services.google_cloud_run_v2_job.app_migrations \
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="image_tag=${IMAGE_TAG}"
+
+          jobs_json="$(terraform output -json migrate_jobs | jq -c .)"
+          if [ -z "$jobs_json" ] || [ "$jobs_json" = "null" ]; then
+            echo "Terraform output migrate_jobs is null after the targeted apply." >&2
+            exit 1
+          fi
+
+          # Positive control: the map must name all four apps. A partial map would
+          # otherwise skip a database silently and still let the deploy proceed.
+          count="$(jq -r 'length' <<< "$jobs_json")"
+          if [ "$count" -ne 4 ]; then
+            echo "migrate_jobs names ${count} job(s), expected 4: ${jobs_json}" >&2
+            exit 1
+          fi
+
+          echo "migrate_jobs=${jobs_json}" >> "$GITHUB_OUTPUT"
+          echo "migrate_jobs=${jobs_json}"
+
+      - name: Migrate every application database
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          REGISTRY_URL: ${{ needs.bootstrap-registry.outputs.registry_url }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          MIGRATE_JOBS: ${{ steps.bootstrap.outputs.migrate_jobs }}
+        run: |
+          set -uo pipefail
+
+          failures=0
+
+          for app in crystalshards crystaldocs crystalgigs crystalbits; do
+            echo "::group::${app}"
+
+            if ! job="$(jq -er --arg a "$app" '.[$a]' <<< "$MIGRATE_JOBS")"; then
+              echo "No migrate job declared for '${app}' in the migrate_jobs output." >&2
+              failures=$((failures + 1)); echo "::endgroup::"; continue
+            fi
+
+            # A deploy that skips migrations leaves a service running against an
+            # unmigrated schema, which looks healthy until the first query. Report the
+            # real error rather than reading every non-zero exit as "does not exist":
+            # a 403 or an API blip is not an absent job.
+            if ! describe_err="$(gcloud run jobs describe "$job" --region "$REGION" 2>&1 >/dev/null)"; then
+              echo "Cannot read Cloud Run Job '${job}'. Migrations for ${app} will not run." >&2
+              echo "${describe_err}" >&2
+              failures=$((failures + 1)); echo "::endgroup::"; continue
+            fi
+
+            image="${REGISTRY_URL}/${app}:${SHA}"
+            if ! gcloud run jobs update "$job" --region "$REGION" --image "$image" --quiet; then
+              echo "Failed to point ${job} at ${image}." >&2
+              failures=$((failures + 1)); echo "::endgroup::"; continue
+            fi
+
+            # Bounds the window used to recover the execution name if execute does not
+            # print one. Backdated slightly to tolerate clock skew against the API.
+            window_start="$(date -u -d '-30 seconds' +%Y-%m-%dT%H:%M:%SZ)"
+
+            execute_rc=0
+            execution="$(gcloud run jobs execute "$job" --region "$REGION" --wait \
+              --format='value(metadata.name)' 2>/tmp/execute.err)" || execute_rc=$?
+
+            if [ -z "$execution" ]; then
+              # A failed execution can exit before printing its name. Recover it by
+              # creation window and refuse to guess if that window is ambiguous.
+              # Reading back "the newest execution" would happily report somebody
+              # else's run as this deploy's result.
+              matches="$(gcloud run jobs executions list \
+                --job "$job" --region "$REGION" \
+                --filter="metadata.creationTimestamp>=${window_start}" \
+                --format='value(metadata.name)')"
+              count="$(printf '%s' "$matches" | grep -c . || true)"
+
+              if [ "$count" != "1" ]; then
+                echo "Started ${job} but could not identify exactly one execution created since ${window_start}." >&2
+                echo "  matched ${count}: ${matches:-<none>}" >&2
+                cat /tmp/execute.err >&2 || true
+                failures=$((failures + 1)); echo "::endgroup::"; continue
+              fi
+              execution="$matches"
+            fi
+
+            # Read back what that specific execution did. The exit code and the
+            # recorded counts must agree before this app is called migrated.
+            status="$(gcloud run jobs executions describe "$execution" --region "$REGION" --format=json)"
+            succeeded="$(jq -r '.status.succeededCount // 0' <<< "$status")"
+            failed="$(jq -r '.status.failedCount // 0' <<< "$status")"
+
+            if [ "$execute_rc" -ne 0 ] || [ "$succeeded" -lt 1 ] || [ "$failed" -ne 0 ]; then
+              echo "Migration failed for ${app}." >&2
+              echo "  job=${job} execution=${execution}" >&2
+              echo "  exit=${execute_rc} succeeded=${succeeded} failed=${failed}" >&2
+              cat /tmp/execute.err >&2 || true
+              gcloud logging read \
+                "resource.type=cloud_run_job AND resource.labels.job_name=${job}" \
+                --limit 50 --format='value(textPayload)' || true
+              failures=$((failures + 1)); echo "::endgroup::"; continue
+            fi
+
+            echo "${app}: migrated (execution ${execution}, succeeded=${succeeded})"
+            echo "::endgroup::"
           done
 
-          # Final check after retries
-          if [ "$http_code" != "200" ] || [ -n "$unhealthy" ]; then
-            echo "❌ $app health check failed after 5 attempts"
-            echo "Final response: $body"
-            failed=1
+          if [ "$failures" -ne 0 ]; then
+            echo "${failures} database(s) failed to migrate. Not rolling any service." >&2
+            exit 1
           fi
-        done
 
-        if [ $failed -eq 1 ]; then
-          echo ""
-          echo "⚠️  Deployment completed but some applications are unhealthy"
-          echo "Check application logs and database connectivity"
-          exit 1
-        fi
+          echo "All four databases migrated."
 
-        echo ""
-        echo "✅ All applications are healthy!"
+  # ---------------------------------------------------------------------------
+  # Roll every Cloud Run service and the docs-build Job onto the images built above,
+  # then read back what is actually serving.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Release revisions
+    needs: [gate, bootstrap-registry, build, infra, migrate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
 
-    - name: Deployment summary
-      if: success()
-      run: |
-        echo "✅ Deployment completed successfully!"
-        echo ""
-        echo "📦 Step 1: Cluster & Artifact Registry created"
-        echo "🐳 Step 2: Docker images built and pushed"
-        echo "🚀 Step 3: Full infrastructure deployed"
-        echo "🏥 Step 4: All health checks passed"
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy service revisions
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          REGISTRY_URL: ${{ needs.bootstrap-registry.outputs.registry_url }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          SERVICES: ${{ needs.infra.outputs.services }}
+          DOCS_LAUNCHER_SERVICE: ${{ needs.infra.outputs.docs_launcher_service }}
+        run: |
+          set -uo pipefail
+
+          failures=0
+
+          # gcloud's `run` surface has shipped two response shapes over its life, the
+          # v1 Knative representation and the v2 one, and which you get varies by
+          # resource and CLI version. Read both rather than betting on one: guessing
+          # wrong yields an empty string, and an empty string compared against an
+          # expected image fails every release with a message about the wrong thing.
+          #
+          # Tries each jq expression in turn and fails if none of them yields a value.
+          pick() {
+            local json="$1"; shift
+            local expr value
+            for expr in "$@"; do
+              value="$(jq -r "(${expr}) // empty" <<< "$json" 2>/dev/null)"
+              if [ -n "$value" ]; then
+                printf '%s' "$value"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # Proves three things after the update: the service is Ready, all traffic is
+          # on the revision that just became ready, and that revision runs the exact
+          # image built from this commit.
+          #
+          # Ready is a real health assertion here rather than a liveness guess: the
+          # services carry a startup probe on /api/health, so a revision only reaches
+          # Ready after the container booted and answered that endpoint with a 2xx.
+          assert_serving() {
+            local service="$1" expected_image="$2"
+            local json ready latest traffic_entry traffic_rev rev_json serving_image
+
+            json="$(gcloud run services describe "$service" --region "$REGION" --format=json)" || return 1
+
+            ready="$(pick "$json" \
+              '.status.conditions[]? | select(.type == "Ready") | .status' \
+              '.conditions[]? | select(.type == "Ready") | .status')" || ready=""
+            if [ "$ready" != "True" ]; then
+              echo "  ${service}: Ready=${ready:-<none>}" >&2
+              jq -r '(.status.conditions // .conditions // [])[] | "    \(.type)=\(.status) \(.reason // "") \(.message // "")"' <<< "$json" >&2
+              return 1
+            fi
+
+            # v2 returns a fully qualified revision path, v1 a bare name.
+            if ! latest="$(pick "$json" '.status.latestReadyRevisionName' '.latestReadyRevision')"; then
+              echo "  ${service}: no ready revision reported; top level keys: $(jq -r 'keys | join(", ")' <<< "$json")" >&2
+              return 1
+            fi
+            latest="${latest##*/}"
+
+            # Assert the revision carrying all the traffic IS the one that just became
+            # ready, rather than that some entry mentions it. A split rollout leaves no
+            # entry at 100 and fails here.
+            #
+            # Three shapes to read. v1 puts observed traffic under status.traffic with a
+            # revisionName. v2 reports observed traffic in trafficStatuses and desired
+            # traffic in a top level traffic list, both keyed revision. Preferring the
+            # observed lists matters: a v2 desired entry of type LATEST names no revision
+            # at all, because "latest" is the target rather than a specific name.
+            traffic_entry="$(jq -c '
+              [(.status.traffic // .trafficStatuses // .traffic // [])[]
+               | select((.percent // 0) == 100)] | .[0] // empty' <<< "$json")"
+
+            if [ -z "$traffic_entry" ]; then
+              echo "  ${service}: no traffic target is carrying 100%" >&2
+              jq -r '(.status.traffic // .trafficStatuses // .traffic // [])[]
+                     | "    \((.revisionName // .revision // .type // "?")) \(.percent // 0)%"' <<< "$json" >&2
+              return 1
+            fi
+
+            traffic_rev="$(jq -r '(.revisionName // .revision // empty)' <<< "$traffic_entry")"
+            traffic_rev="${traffic_rev##*/}"
+
+            # A LATEST target names no revision because it means whichever revision is
+            # latest ready, which is precisely what this is asserting on. Resolve it
+            # rather than reading the absent name as a mismatch.
+            if [ -z "$traffic_rev" ] \
+               && jq -e '(.type // "") | test("LATEST")' >/dev/null 2>&1 <<< "$traffic_entry"; then
+              traffic_rev="$latest"
+            fi
+
+            if [ "$traffic_rev" != "$latest" ]; then
+              echo "  ${service}: 100% of traffic is on '${traffic_rev:-<none>}', expected the newly ready revision '${latest}'" >&2
+              jq -r '(.status.traffic // .trafficStatuses // .traffic // [])[]
+                     | "    \((.revisionName // .revision // .type // "?")) \(.percent // 0)%"' <<< "$json" >&2
+              return 1
+            fi
+
+            rev_json="$(gcloud run revisions describe "$latest" --region "$REGION" --format=json)" || return 1
+            if ! serving_image="$(pick "$rev_json" '.spec.containers[0].image' '.containers[0].image')"; then
+              echo "  ${service}: could not read the image of revision ${latest}; top level keys: $(jq -r 'keys | join(", ")' <<< "$rev_json")" >&2
+              return 1
+            fi
+
+            if [ "$serving_image" != "$expected_image" ]; then
+              echo "  ${service}: revision ${latest} runs '${serving_image}', expected '${expected_image}'" >&2
+              return 1
+            fi
+            case "$serving_image" in
+              *:latest)
+                echo "  ${service}: refusing a 'latest' tag; images must be pinned to a commit SHA" >&2
+                return 1
+                ;;
+            esac
+
+            echo "  ${service}: revision ${latest} serving 100% at ${serving_image}"
+          }
+
+          roll() {
+            local service="$1" image="$2"
+            echo "::group::${service}"
+            if ! gcloud run services update "$service" --region "$REGION" --image "$image" --quiet; then
+              echo "  ${service}: update to ${image} failed" >&2
+              failures=$((failures + 1)); echo "::endgroup::"; return
+            fi
+            assert_serving "$service" "$image" || failures=$((failures + 1))
+            echo "::endgroup::"
+          }
+
+          for app in crystalshards crystaldocs crystalgigs crystalbits; do
+            if ! service="$(jq -er --arg a "$app" '.[$a]' <<< "$SERVICES")"; then
+              echo "No Cloud Run service declared for '${app}' in the cloud_run_services output." >&2
+              failures=$((failures + 1)); continue
+            fi
+            roll "$service" "${REGISTRY_URL}/${app}:${SHA}"
+          done
+
+          # docs-launcher runs the crystalshards image under a second service name.
+          roll "$DOCS_LAUNCHER_SERVICE" "${REGISTRY_URL}/crystalshards:${SHA}"
+
+          if [ "$failures" -ne 0 ]; then
+            echo "${failures} service(s) did not reach the expected revision." >&2
+            exit 1
+          fi
+
+      - name: Update the docs-build Job image
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          REGISTRY_URL: ${{ needs.bootstrap-registry.outputs.registry_url }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          DOCS_BUILD_JOB: ${{ needs.infra.outputs.docs_build_job }}
+        run: |
+          set -euo pipefail
+
+          image="${REGISTRY_URL}/docs-build:${SHA}"
+
+          gcloud run jobs update "$DOCS_BUILD_JOB" --region "$REGION" --image "$image" --quiet
+
+          # Read it back. `jobs update` reporting success is not the same as the job
+          # template holding the image the next execution will actually run.
+          #
+          # The container sits at a different depth in each shape gcloud's `run`
+          # surface returns, so try the known ones in order and then fall back to
+          # finding the containers array wherever it lives. Guessing wrong yields an
+          # empty string, and an empty string compared against an expected image fails
+          # every release with a message about the wrong thing.
+          job_json="$(gcloud run jobs describe "$DOCS_BUILD_JOB" --region "$REGION" --format=json)"
+          configured="$(jq -r '
+            (.spec.template.spec.template.spec.containers[0].image
+             // .spec.template.template.containers[0].image
+             // .template.template.containers[0].image
+             // ([.. | objects | select(has("containers")) | .containers[0].image?]
+                 | map(select(. != null)) | first)
+             // empty)' <<< "$job_json")"
+
+          if [ -z "$configured" ]; then
+            echo "Could not read the container image of Job ${DOCS_BUILD_JOB}." >&2
+            echo "Top level keys: $(jq -r 'keys | join(", ")' <<< "$job_json")" >&2
+            exit 1
+          fi
+
+          if [ "$configured" != "$image" ]; then
+            echo "Job ${DOCS_BUILD_JOB} is configured with '${configured}', expected '${image}'." >&2
+            exit 1
+          fi
+          case "$configured" in
+            *:latest)
+              echo "Job ${DOCS_BUILD_JOB} is pinned to 'latest'; images must be pinned to a commit SHA." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "${DOCS_BUILD_JOB}: ${configured}"
+
+      - name: Assert the docs build timeout pairing
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          DOCS_LAUNCHER_SERVICE: ${{ needs.infra.outputs.docs_launcher_service }}
+        run: |
+          set -uo pipefail
+
+          # docs-launcher holds the Cloud Tasks request open for the whole build so it
+          # can record the outcome from an identity that has the database. If its Cloud
+          # Run request timeout is below the deadline the producers dispatch with,
+          # Cloud Run kills the request first, Cloud Tasks reads that as a failure, and
+          # the build is redelivered forever.
+          #
+          # Nothing else catches it. The producers' specs assert the task side only, so
+          # they still pass, and the smoke test hits /api/health, which answers in
+          # milliseconds and would pass at any timeout. The symptom is a green deploy
+          # and a documentation pipeline that never finishes a build.
+          #
+          # Both numbers are read from the deployed revision, not from source. An
+          # earlier version parsed a constant out of the producers and would have gone
+          # silently vacuous the moment that constant was refactored away, which is the
+          # same confident-zero failure this check exists to prevent, arriving from the
+          # one direction a source parse cannot see.
+          launcher_json="$(gcloud run services describe "$DOCS_LAUNCHER_SERVICE" \
+            --region "$REGION" --format=json)" || exit 1
+
+          # v1 reports an integer under spec.template.spec, v2 a duration string.
+          timeout_raw="$(jq -r '
+            (.spec.template.spec.timeoutSeconds
+             // .template.timeout
+             // empty) | tostring' <<< "$launcher_json")"
+          timeout_seconds="${timeout_raw%s}"
+
+          # Find each env entry wherever the container sits in the response shape.
+          env_value() {
+            jq -r --arg n "$1" '
+              [.. | objects | select(.name? == $n) | .value?]
+              | map(select(. != null)) | first // empty' <<< "$launcher_json"
+          }
+
+          deadline_seconds="$(env_value DOCS_BUILD_DEADLINE_SECONDS)"
+          sandbox_seconds="$(env_value DOCS_SANDBOX_TIMEOUT_SECONDS)"
+
+          if ! printf '%s' "$timeout_seconds" | grep -Eq '^[0-9]+$'; then
+            echo "Could not read a request timeout for ${DOCS_LAUNCHER_SERVICE}; got '${timeout_raw}'." >&2
+            echo "Top level keys: $(jq -r 'keys | join(", ")' <<< "$launcher_json")" >&2
+            exit 1
+          fi
+
+          # Absent is a real deployable state and it must fail rather than default to
+          # zero, which every timeout would clear. In production the producers raise on
+          # a missing deadline; this catches the same misconfiguration one step earlier,
+          # at deploy time rather than on the first documentation build.
+          if ! printf '%s' "$deadline_seconds" | grep -Eq '^[0-9]+$'; then
+            echo "${DOCS_LAUNCHER_SERVICE} carries no usable DOCS_BUILD_DEADLINE_SECONDS; got '${deadline_seconds}'." >&2
+            echo "The producers require it in production and will refuse to enqueue without it." >&2
+            exit 1
+          fi
+
+          # The sandbox timeout must be published rather than left to the app's own
+          # fallback. The fallback happens to be below the deadline today, so the
+          # ordering would hold by coincidence, and a coincidence is exactly what this
+          # assertion exists to replace with something structural.
+          if ! printf '%s' "$sandbox_seconds" | grep -Eq '^[0-9]+$'; then
+            echo "${DOCS_LAUNCHER_SERVICE} carries no usable DOCS_SANDBOX_TIMEOUT_SECONDS; got '${sandbox_seconds}'." >&2
+            echo "Terraform must publish it, derived from docs_build_timeout_seconds minus the margin," >&2
+            echo "so the ordering below is structural rather than inherited from an app default." >&2
+            exit 1
+          fi
+
+          # Positive control: every number printed, so a pass is visibly a comparison of
+          # real values rather than of silent zeros.
+          echo "  ${DOCS_LAUNCHER_SERVICE}: request timeout ${timeout_seconds}s"
+          echo "  ${DOCS_LAUNCHER_SERVICE}: DOCS_BUILD_DEADLINE_SECONDS ${deadline_seconds}s"
+          echo "  ${DOCS_LAUNCHER_SERVICE}: DOCS_SANDBOX_TIMEOUT_SECONDS ${sandbox_seconds}s"
+
+          # Equality for these two, not >=. Both come from the single terraform local
+          # docs_build_deadline_seconds, so they cannot legitimately differ. Under the
+          # older design, where the producers carried their own literal, >= was the
+          # right test because it encoded the safety property. Now any difference at all
+          # means the single-source derivation has broken, and a launcher timeout above
+          # the deadline is as much evidence of that as one below it.
+          if [ "$timeout_seconds" -ne "$deadline_seconds" ]; then
+            echo "${DOCS_LAUNCHER_SERVICE} request timeout is ${timeout_seconds}s but DOCS_BUILD_DEADLINE_SECONDS is ${deadline_seconds}s." >&2
+            echo "Both are set from docs_build_timeout_seconds in terraform, so a difference means that wiring is broken." >&2
+            if [ "$timeout_seconds" -lt "$deadline_seconds" ]; then
+              echo "This direction is the harmful one: Cloud Run kills the request before Cloud Tasks gives up," >&2
+              echo "so every documentation build is redelivered forever." >&2
+            fi
+            exit 1
+          fi
+
+          # Strictly less, and deliberately NOT equal to the other three. The sandbox
+          # has to give up before the launcher does, or the launcher is killed mid-wait
+          # and the only party holding a database credential never records the outcome.
+          # That is the orphaned build: it sits in `building` forever with nothing in
+          # any log to explain it. Anyone tempted to tidy these two nearly equal
+          # timeouts into one number would reintroduce exactly that.
+          if [ "$sandbox_seconds" -ge "$deadline_seconds" ]; then
+            echo "DOCS_SANDBOX_TIMEOUT_SECONDS is ${sandbox_seconds}s but the build ceiling is ${deadline_seconds}s." >&2
+            echo "The sandbox must give up strictly before the launcher, or a slow build orphans:" >&2
+            echo "the launcher is killed while waiting and never writes the outcome to the database." >&2
+            exit 1
+          fi
+
+          echo "Timeout ordering holds: sandbox ${sandbox_seconds}s < launcher ${timeout_seconds}s == deadline ${deadline_seconds}s."
+
+  # ---------------------------------------------------------------------------
+  # Smoke test the public hostnames.
+  #
+  # Google managed certificates stay PROVISIONING until DNS resolves to the load
+  # balancer, so on a first deploy an HTTPS check cannot succeed for a reason that is
+  # not a broken deploy. Rather than weakening the check, this reads live certificate
+  # state per host and asserts whatever is genuinely observable in that state:
+  #
+  #   ACTIVE                              full HTTPS assertion, fatal on failure
+  #   PROVISIONING / PROVISIONING_FAILED  assert the conditions issuance needs: public
+  #                                       DNS resolves to the load balancer and to
+  #                                       nothing else, and the load balancer answers
+  #   anything else                       fatal
+  #
+  # PROVISIONING_FAILED is in the retryable group deliberately: Google reports it
+  # transiently on certificates that go on to issue normally. The terminal states are
+  # PROVISIONING_FAILED_PERMANENTLY and FAILED_NOT_VISIBLE.
+  #
+  # Nothing is permanently relaxed. The branch is chosen from live certificate state,
+  # so every deploy after the certificates issue gets the full check automatically.
+  # And the proof that the applications serve does not live here: it lives in the
+  # release job, which only passes when every revision is Ready, and Ready means the
+  # startup probe got a 2xx from /api/health on that revision.
+  # ---------------------------------------------------------------------------
+  smoke:
+    name: Smoke test public hostnames
+    needs: [gate, infra, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Check every hostname
+        shell: bash
+        env:
+          LB_IP: ${{ needs.infra.outputs.load_balancer_ip }}
+          CERTS: ${{ needs.infra.outputs.managed_certificates }}
+          HOSTNAMES: ${{ needs.infra.outputs.public_hostnames }}
+        run: |
+          set -uo pipefail
+
+          failures=0
+          deferred=0
+
+          # --resolve pins the connection to the load balancer, so this tests the
+          # deploy rather than DNS propagation to this particular runner, while still
+          # sending the real hostname for SNI and Host.
+          check_apex_https() {
+            local host="$1" out code body
+            if ! out="$(curl --silent --show-error --max-time 20 \
+                          --resolve "${host}:443:${LB_IP}" \
+                          --write-out $'\n%{http_code}' \
+                          "https://${host}/api/health" 2>&1)"; then
+              echo "  ${host}: request failed: ${out}" >&2
+              return 1
+            fi
+
+            code="${out##*$'\n'}"
+            body="${out%$'\n'*}"
+
+            if [ "$code" != "200" ]; then
+              echo "  ${host}: expected HTTP 200, got ${code}" >&2
+              echo "  body: ${body}" >&2
+              return 1
+            fi
+            if ! jq -e '.status == "ok"' >/dev/null 2>&1 <<< "$body"; then
+              echo "  ${host}: health status is not \"ok\": ${body}" >&2
+              return 1
+            fi
+            if ! jq -e '.services.database == "healthy"' >/dev/null 2>&1 <<< "$body"; then
+              echo "  ${host}: services.database is not \"healthy\": ${body}" >&2
+              return 1
+            fi
+
+            echo "  ${host}: 200, status=ok, database=healthy"
+          }
+
+          # www exists to redirect to the apex, so 200 would be the wrong answer.
+          check_www_https() {
+            local host="$1" apex="${1#www.}" out code location
+            if ! out="$(curl --silent --show-error --max-time 20 \
+                          --resolve "${host}:443:${LB_IP}" \
+                          --output /dev/null \
+                          --write-out '%{http_code} %{redirect_url}' \
+                          "https://${host}/" 2>&1)"; then
+              echo "  ${host}: request failed: ${out}" >&2
+              return 1
+            fi
+
+            code="${out%% *}"
+            location="${out#* }"
+
+            if [ "$code" != "301" ]; then
+              echo "  ${host}: expected HTTP 301 to the apex, got ${code}" >&2
+              return 1
+            fi
+            case "$location" in
+              "https://${apex}/"*) ;;
+              *)
+                echo "  ${host}: redirects to '${location}', expected https://${apex}/" >&2
+                return 1
+                ;;
+            esac
+
+            echo "  ${host}: 301 -> ${location}"
+          }
+
+          # Managed certificate validation is DNS based. The record set must resolve to
+          # the load balancer AND to nothing else, because an extra address fails
+          # validation, so this asserts the exact set rather than mere membership.
+          check_dns() {
+            local host="$1" answers count
+            if ! answers="$(dig +short A "$host" @8.8.8.8 2>&1)"; then
+              echo "  ${host}: DNS lookup failed: ${answers}" >&2
+              return 1
+            fi
+            answers="$(printf '%s\n' "$answers" | grep -E '^[0-9]+(\.[0-9]+){3}$' || true)"
+            count="$(printf '%s' "$answers" | grep -c . || true)"
+
+            if [ "$count" != "1" ] || [ "$answers" != "$LB_IP" ]; then
+              echo "  ${host}: resolves to [${answers//$'\n'/, }], expected exactly ${LB_IP}" >&2
+              echo "  a managed certificate will not validate unless the name resolves to the load balancer and nothing else" >&2
+              return 1
+            fi
+            echo "  ${host}: DNS -> ${LB_IP}"
+          }
+
+          # Proves the load balancer frontend exists and routes this host. Not a
+          # certificate prerequisite: validation is DNS based and does not use port 80,
+          # so never diagnose a stuck certificate from this check.
+          check_http_frontend() {
+            local host="$1" out code location
+            if ! out="$(curl --silent --show-error --max-time 20 \
+                          --resolve "${host}:80:${LB_IP}" \
+                          --output /dev/null \
+                          --write-out '%{http_code} %{redirect_url}' \
+                          "http://${host}/api/health" 2>&1)"; then
+              echo "  ${host}: HTTP request to the load balancer failed: ${out}" >&2
+              return 1
+            fi
+
+            code="${out%% *}"
+            location="${out#* }"
+
+            if [ "$code" != "301" ]; then
+              echo "  ${host}: load balancer answered HTTP ${code} on port 80, expected a 301" >&2
+              return 1
+            fi
+            if [ "$location" != "https://${host}/api/health" ]; then
+              echo "  ${host}: port 80 redirected to '${location}', expected https://${host}/api/health" >&2
+              return 1
+            fi
+
+            echo "  ${host}: port 80 -> ${location}"
+          }
+
+          if ! printf '%s' "$LB_IP" | grep -Eq '^[0-9]+(\.[0-9]+){3}$'; then
+            echo "load_balancer_ip='${LB_IP}' is not an IPv4 address." >&2
+            exit 1
+          fi
+
+          host_count="$(jq -r 'length' <<< "$HOSTNAMES")"
+          if [ "$host_count" -lt 8 ]; then
+            echo "public_hostnames lists ${host_count} entries; expected the apex and www of all four domains." >&2
+            exit 1
+          fi
+
+          for host in $(jq -r '.[]' <<< "$HOSTNAMES"); do
+            echo "::group::${host}"
+
+            # A hostname with no certificate is a routing hole, not something to skip.
+            if ! cert="$(jq -er --arg h "$host" '.[$h]' <<< "$CERTS")"; then
+              echo "  ${host}: no managed certificate declared for this hostname" >&2
+              failures=$((failures + 1)); echo "::endgroup::"; continue
+            fi
+
+            # Read the status into a variable and require a recognised value. If a 403,
+            # an expired credential or an API blip could land us in the provisioning
+            # branch, then the weaker checks are exactly what would run on a bad day.
+            if ! status="$(gcloud compute ssl-certificates describe "$cert" --global \
+                             --format='value(managed.status)' 2>&1)"; then
+              echo "  ${host}: could not read certificate '${cert}': ${status}" >&2
+              failures=$((failures + 1)); echo "::endgroup::"; continue
+            fi
+            if [ -z "$status" ]; then
+              echo "  ${host}: certificate '${cert}' reported an empty status" >&2
+              failures=$((failures + 1)); echo "::endgroup::"; continue
+            fi
+
+            case "$status" in
+              ACTIVE)
+                case "$host" in
+                  www.*) check_www_https "$host" || failures=$((failures + 1)) ;;
+                  *)     check_apex_https "$host" || failures=$((failures + 1)) ;;
+                esac
+                ;;
+
+              PROVISIONING|PROVISIONING_FAILED)
+                echo "  ${host}: certificate ${cert} is ${status}; HTTPS cannot succeed yet."
+                echo "  Asserting the conditions the certificate needs in order to issue."
+                host_failed=0
+                check_dns "$host" || host_failed=1
+                check_http_frontend "$host" || host_failed=1
+                if [ "$host_failed" -ne 0 ]; then
+                  failures=$((failures + 1))
+                else
+                  deferred=$((deferred + 1))
+                fi
+                ;;
+
+              PROVISIONING_FAILED_PERMANENTLY|FAILED_NOT_VISIBLE)
+                echo "  ${host}: certificate ${cert} is ${status}, which is terminal." >&2
+                echo "  Check that ${host} resolves to ${LB_IP} and to nothing else, and that the certificate is attached to the target HTTPS proxy." >&2
+                gcloud compute ssl-certificates describe "$cert" --global \
+                  --format='yaml(name,managed)' >&2 || true
+                failures=$((failures + 1))
+                ;;
+
+              *)
+                echo "  ${host}: certificate ${cert} reported an unrecognised status '${status}'." >&2
+                failures=$((failures + 1))
+                ;;
+            esac
+
+            echo "::endgroup::"
+          done
+
+          echo
+          if [ "$failures" -ne 0 ]; then
+            echo "${failures} hostname(s) failed." >&2
+            exit 1
+          fi
+
+          if [ "$deferred" -ne 0 ]; then
+            # `set -u` is on, and this is the one place that reads a variable the
+            # runner provides rather than this workflow. Default it so the step cannot
+            # die on an unbound variable after every assertion has already passed.
+            summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
+            {
+              echo "### Smoke test"
+              echo
+              echo "${deferred} of ${host_count} hostnames still have a certificate awaiting issuance."
+              echo "For those, public DNS resolves to the load balancer and to nothing else, and the"
+              echo "load balancer answers for the host, which are the conditions issuance needs."
+              echo
+              echo "The applications themselves were verified in the release job: every revision is"
+              echo "Ready, which means the Cloud Run startup probe got a 2xx from /api/health."
+              echo
+              echo "Re-run this workflow once the certificates report ACTIVE to get the full HTTPS"
+              echo "assertion on those hostnames."
+            } >> "$summary"
+          fi
+
+          echo "${host_count} hostname(s) checked, ${deferred} awaiting certificate issuance, 0 failures."

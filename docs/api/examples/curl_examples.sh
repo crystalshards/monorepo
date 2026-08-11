@@ -186,19 +186,6 @@ echo '    \"tags\": [\"backend\", \"api\", \"microservices\"]'
 echo '  }"'
 echo
 
-# ===== MONITORING AND METRICS =====
-
-section "Prometheus Metrics"
-echo "GET $API_BASE_URL/metrics"
-echo "GET $DOCS_API_URL/metrics"
-echo "GET $GIGS_API_URL/metrics"
-echo
-echo -e "${GREEN}Example commands:${NC}"
-echo 'curl -s "$API_BASE_URL/metrics" | grep crystalshards_'
-echo 'curl -s "$DOCS_API_URL/metrics" | grep crystaldocs_'
-echo 'curl -s "$GIGS_API_URL/metrics" | grep crystalgigs_'
-echo
-
 # ===== WEBHOOK EXAMPLES =====
 
 section "GitHub Webhook (Repository Updates)"

@@ -193,9 +193,6 @@ cd apps/crystalbits && lucky dev
 curl http://localhost:3000/health
 curl http://localhost:3001/health
 curl http://localhost:3002/health
-
-# Prometheus metrics
-curl http://localhost:3000/metrics
 ```
 
 ## 🔧 Error Handling
@@ -223,21 +220,6 @@ Common HTTP status codes:
 - `500` - Internal Server Error
 
 ## 📈 Monitoring
-
-### Prometheus Metrics
-
-All services expose Prometheus metrics at `/metrics`:
-
-```
-# HTTP request metrics
-crystalshards_http_requests_total{method="GET",status="200"} 1234
-crystalshards_http_request_duration_seconds_bucket{le="0.1"} 856
-
-# Business metrics
-crystalshards_search_duration_seconds_sum 45.2
-crystalshards_shard_submissions_total 156
-crystalgigs_payments_completed_total 23
-```
 
 ### Health Monitoring
 

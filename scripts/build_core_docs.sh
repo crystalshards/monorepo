@@ -28,10 +28,10 @@ readonly PACKAGE="crystal"
 
 VERSION="${1:-$(crystal --version | head -1 | awk '{print $2}')}"
 
-: "${MINIO_ENDPOINT:?set MINIO_ENDPOINT (make docs.core passes it)}"
-: "${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY, this script will not guess credentials}"
-: "${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY, this script will not guess credentials}"
-DOCS_BUCKET="${MINIO_DOCS_BUCKET:-crystal-docs}"
+: "${STORAGE_ENDPOINT:?set STORAGE_ENDPOINT (the Makefile passes it)}"
+: "${STORAGE_ACCESS_KEY:?set STORAGE_ACCESS_KEY, this script will not guess credentials}"
+: "${STORAGE_SECRET_KEY:?set STORAGE_SECRET_KEY, this script will not guess credentials}"
+DOCS_BUCKET="${DOCS_BUCKET:-crystal-docs}"
 
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
@@ -91,7 +91,7 @@ then
 fi
 
 docker run --rm --network host -v "$workdir:/in:ro" --entrypoint sh minio/mc:latest -c \
-  "mc alias set local ${MINIO_ENDPOINT} ${MINIO_ACCESS_KEY} ${MINIO_SECRET_KEY} >/dev/null && \
+  "mc alias set local ${STORAGE_ENDPOINT} ${STORAGE_ACCESS_KEY} ${STORAGE_SECRET_KEY} >/dev/null && \
    mc mb --ignore-existing local/${DOCS_BUCKET} >/dev/null && \
    mc cp --quiet /in/docs.json local/${DOCS_BUCKET}/${PACKAGE}/${VERSION}/docs.json >/dev/null"
 

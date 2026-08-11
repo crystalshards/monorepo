@@ -1,26 +1,27 @@
-require "carbon_sendgrid_adapter"
+require "../src/emails/carbon_resend_adapter"
 
+# This app sends mail: CrystalBits is a newsletter, so delivery is the product.
+# It still is not a reason to refuse to serve the site.
+#
+# Without RESEND_API_KEY, production gets `Carbon::ResendAdapter::Unavailable`:
+# the site boots and serves normally, and any attempt to send raises naming the
+# variable. Mail is a feature, so the feature fails closed and the process does
+# not. Adding the key is the whole switch; no code changes with it.
+#
+# What is deliberately not offered is a way to make a send look like it worked.
+# The scaffold this replaced told the operator to set the mail key to the
+# string 'unused' to get past a boot check, and that suggestion is removed
+# rather than reworded. A sentinel credential is indistinguishable from a real
+# one to everything downstream, so the app reports healthy, accepts subscribers
+# and sends nothing. For a newsletter that failure is invisible from the inside
+# and total from the outside. The same objection rules out falling back to
+# `Carbon::DevAdapter` here: it returns success for a message it never sent.
 BaseEmail.configure do |settings|
   if LuckyEnv.production?
-    # If you don't need to send emails, set the adapter to DevAdapter instead:
-    #
-    #   settings.adapter = Carbon::DevAdapter.new
-    #
-    # If you do need emails, get a key from SendGrid and set an ENV variable
-    send_grid_key = send_grid_key_from_env
-    settings.adapter = Carbon::SendGridAdapter.new(api_key: send_grid_key)
+    settings.adapter = Carbon::ResendAdapter.from_env("the CrystalBits newsletter")
   elsif LuckyEnv.development?
     settings.adapter = Carbon::DevAdapter.new(print_emails: true)
   else
     settings.adapter = Carbon::DevAdapter.new
   end
-end
-
-private def send_grid_key_from_env
-  ENV["SEND_GRID_KEY"]? || raise_missing_key_message
-end
-
-private def raise_missing_key_message
-  puts "Missing SEND_GRID_KEY. Set the SEND_GRID_KEY env variable to 'unused' if not sending emails, or set the SEND_GRID_KEY ENV var.".colorize.red
-  exit(1)
 end

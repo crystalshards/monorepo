@@ -1,15 +1,15 @@
-# Counts enqueues instead of reaching Redis.
+# Counts enqueues instead of commissioning real builds.
 #
 # The point of every build-request example is how many builds were
-# commissioned, so the queue has to be observable. Reaching a real Redis would
-# also make the suite depend on a broker being up to prove a database
-# constraint, which it does not.
+# commissioned, so the queue has to be observable. Reaching a real Cloud Tasks
+# queue would also make the suite depend on a Google project being reachable
+# to prove a database constraint, which it does not.
 class RecordingBuildQueue < CrystalDocs::DocsBuildQueue
   record Enqueued, package_name : String, version : String
 
   getter enqueued = [] of Enqueued
 
-  # Simulates a broker that cannot be reached, so the "queue was never told"
+  # Simulates a queue that cannot be reached, so the "queue was never told"
   # path is exercised rather than assumed.
   property? available : Bool = true
 
@@ -35,11 +35,11 @@ end
 # Every example gets a fresh recorder, whether or not it asked for one.
 #
 # Without this, any example that renders an unbuilt version through the real
-# action reaches the real JoobQ producer and pushes a job onto the Redis queue
-# the running stack consumes. That is how `test-package 1.0.0` ended up on the
-# live docs queue during a spec run. A suite must not be able to commission
-# real builds, so the default is a recorder and reaching Redis takes a
-# deliberate override inside an example.
+# action reaches the real producer and commissions a build. That is how
+# `test-package 1.0.0` ended up on the live docs queue during a spec run. A
+# suite must not be able to commission real builds, so the default is a
+# recorder and reaching the real queue takes a deliberate override inside an
+# example.
 #
 # before_each rather than an after_each reset, deliberately. Installing at the
 # start of every example guarantees the state an example begins in, which is

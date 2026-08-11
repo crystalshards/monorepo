@@ -59,10 +59,7 @@ paths:
                     properties:
                       database:
                         type: string
-                        example: connected
-                      redis:
-                        type: string
-                        example: connected
+                        example: healthy
         '503':
           description: Service is unhealthy
           content:

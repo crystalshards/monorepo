@@ -8,38 +8,53 @@ Go to Settings → Secrets and variables → Actions and add:
 
 ### Required Secrets
 
-- `GKE_PROJECT` - Your Google Cloud Project ID
-- `GKE_CLUSTER_NAME` - Name of your GKE cluster (e.g., `crystalshards-cluster`)
-- `GKE_ZONE` - GKE cluster zone (e.g., `us-central1-a`)
-- `GKE_SA_KEY` - Service account JSON key with GKE deployment permissions
-- `STRIPE_SECRET_KEY` - Stripe secret key for CrystalGigs
-- `DOCKERHUB_USERNAME` - Docker Hub username (for pushing images)
-- `DOCKERHUB_TOKEN` - Docker Hub access token
+Six, and the workflows read no others.
+
+Two authenticate CI to Google Cloud:
+
+- `GCP_SA_KEY` - Service account JSON key CI authenticates with
+- `GCP_PROJECT_ID` - The Google Cloud project to deploy into
+
+Four are the third party application credentials. The deploy workflow's
+`Add a version to every required secret` step reads them and adds a Secret Manager
+version from each, so these are the only place an operator enters a value:
+
+| GitHub secret | What it unblocks |
+| --- | --- |
+| `CRYSTALGIGS_RESEND_KEY` | CrystalGigs mail, which delivers job applications |
+| `CRYSTALGIGS_STRIPE_SECRET_KEY` | CrystalGigs payments, server side |
+| `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY` | CrystalGigs payments, browser side |
+| `CRYSTALBITS_RESEND_KEY` | CrystalBits mail, which sends the newsletter |
+
+Terraform creates the Secret Manager containers those four populate, but never a
+version for any of them. No third party credential is a Terraform variable and
+none is written into Terraform state.
+
+CrystalGigs and CrystalBits will not start until theirs have a version, and the
+populate step fails closed rather than deploying without them. CrystalShards,
+CrystalDocs and docs-launcher hold no third party secret and serve on a clean
+apply with none of the four set.
+[`.github/SETUP.md`](.github/SETUP.md) has the container ids, how to mint the
+Google Cloud key, and how to add a version by hand.
 
 ## 2. Service Account Permissions
 
-The GKE service account needs these roles:
+The CI identity deploys the services and runs Terraform, so it needs permission over
+everything Terraform manages, not only Cloud Run and Artifact Registry:
 
-- `roles/container.developer` - Deploy to GKE
+- `roles/run.admin`
+- `roles/artifactregistry.writer`
+- `roles/cloudsql.client`
+- `roles/compute.loadBalancerAdmin`
+- `roles/dns.admin`
+- `roles/secretmanager.admin`
+- `roles/iam.serviceAccountUser`
+- `roles/storage.admin`
+- `roles/serviceusage.serviceUsageAdmin`
 
-Create with:
-
-```bash
-gcloud iam service-accounts create github-actions \
-    --description="GitHub Actions CI/CD" \
-    --display-name="GitHub Actions"
-
-gcloud projects add-iam-policy-binding PROJECT_ID \
-    --member="serviceAccount:github-actions@PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/container.developer"
-
-gcloud projects add-iam-policy-binding PROJECT_ID \
-    --member="serviceAccount:github-actions@PROJECT_ID.iam.gserviceaccount.com" \
-    --role="roles/storage.admin"
-
-gcloud iam service-accounts keys create key.json \
-    --iam-account=github-actions@PROJECT_ID.iam.gserviceaccount.com
-```
+[`.github/SETUP.md`](.github/SETUP.md) holds the commands that create this
+identity, bind the roles, and configure Artifact Registry. Follow it there rather
+than duplicating the setup here.
 
 ## 3. Branch Protection Rules
 
@@ -89,12 +104,17 @@ Settings → Actions → General:
 - Workflow permissions: Read and write permissions
 - ✅ Allow GitHub Actions to create and approve pull requests
 
-## 7. Container Registry
+## 7. Container Images
 
-The CI/CD will push to:
+CI pushes to Artifact Registry:
 
-- GitHub Container Registry: `ghcr.io/crystalshards/*`
-- Ensure packages are set to public or configure pull secrets
+- Repository `docker-images` in `us-central1`
+- Image path: `us-central1-docker.pkg.dev/<project>/docker-images/<image>:<sha>`
+- Tag: the full 40 character commit SHA
+- Five images: `crystalshards`, `crystaldocs`, `crystalgigs`, `crystalbits`, `docs-build`
+
+No `latest` tag is pushed or referenced. That is deliberate rather than an omission:
+it means nothing can resolve to a tag the pipeline did not produce.
 
 ## 8. Deployment Triggers
 
@@ -118,4 +138,4 @@ GitHub Actions will send metrics to:
 
 - Deployment success/failure → Slack
 - Application errors → Sentry
-- Performance metrics → Prometheus (in-cluster)
+- Performance metrics → Cloud Monitoring, published by Cloud Run

@@ -19,10 +19,12 @@
 
 set -uo pipefail
 
-MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
-MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-minioadmin}"
-MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-minioadmin}"
-DOCS_BUCKET="${MINIO_DOCS_BUCKET:-crystal-docs}"
+# Local object storage, reached with the same backend-neutral names the apps
+# use. This script is a development tool and never runs against production.
+STORAGE_ENDPOINT="${STORAGE_ENDPOINT:-http://localhost:9000}"
+STORAGE_ACCESS_KEY="${STORAGE_ACCESS_KEY:-minioadmin}"
+STORAGE_SECRET_KEY="${STORAGE_SECRET_KEY:-minioadmin}"
+DOCS_BUCKET="${DOCS_BUCKET:-crystal-docs}"
 SANDBOX_IMAGE="${DOCS_SANDBOX_IMAGE:-crystallang/crystal:1.21.0-alpine}"
 MC_IMAGE="${MC_IMAGE:-minio/mc:latest}"
 
@@ -123,7 +125,7 @@ upload_docs() {
   local docs_json="$1" name="$2" version="$3"
   docker run --rm --network host \
     -v "$docs_json:/upload/docs.json:ro" --entrypoint sh "$MC_IMAGE" -c \
-    "mc alias set local '$MINIO_ENDPOINT' '$MINIO_ACCESS_KEY' '$MINIO_SECRET_KEY' >/dev/null && \
+    "mc alias set local '$STORAGE_ENDPOINT' '$STORAGE_ACCESS_KEY' '$STORAGE_SECRET_KEY' >/dev/null && \
      mc cp /upload/docs.json 'local/$DOCS_BUCKET/$name/$version/docs.json'"
 }
 

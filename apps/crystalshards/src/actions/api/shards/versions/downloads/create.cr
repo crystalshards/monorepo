@@ -46,7 +46,7 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
         SaveShard.update!(shard, total_downloads: shard.total_downloads + 1)
 
         # Return presigned URL for actual download
-        # This allows MinIO to serve the file directly without going through our app
+        # This lets the object store serve the file without proxying it
         begin
           storage = CrystalShards::StorageService.new
           download_url = storage.package_download_url(storage_key(shard), version.version)
@@ -59,7 +59,7 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
             message:        "Download tracked successfully",
           })
         rescue ex
-          # In test environments, MinIO may not be available
+          # In test environments the object store may not be available
           # Return success anyway since download tracking succeeded
           Log.warn { "Storage not available, skipping download URL generation: #{ex.message}" }
           json({

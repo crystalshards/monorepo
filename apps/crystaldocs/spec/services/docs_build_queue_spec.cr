@@ -1,73 +1,250 @@
 require "../spec_helper"
 
-# The docs build queue crosses an app boundary, and it crosses it untyped:
-# JoobQ writes a job as a bare JSON object with no type tag onto a Redis list,
-# and crystalshards pops it into a typed Queue(BuildDocsWorker). Nothing in
-# either compiler run checks that those two structs agree.
+# The docs build queue crosses a service boundary, and it crosses it untyped:
+# this app serialises a task body that Cloud Tasks stores as opaque bytes and
+# hands to a completely separate deployment. Nothing in either compiler run
+# checks that the two sides agree on a field name.
 #
-# So the wire format is the contract, and this is the guard on it. If someone
-# renames a field here, or crystalshards renames one there, these examples are
-# the only thing between that and jobs that vanish into a parse error at
-# three in the morning.
-describe CrystalDocs::DocsBuildJob do
-  job = -> { CrystalDocs::DocsBuildJob.new(shard_name: "kemal", version: "1.6.0") }
+# So the wire format is the contract, and these examples are the guard on it.
+# If someone renames a field here, or the launcher renames one there, this is
+# the only thing between that and builds that vanish into a 400 at three in
+# the morning.
+#
+# Every example here is offline. Building the task and sending it are separate
+# on purpose: a contract that can only be checked by dispatching a real task
+# to Google is a contract nobody checks.
+describe CrystalDocs::DocsBuildTask do
+  it "carries package, version and build id, spelled as the launcher reads them" do
+    parsed = JSON.parse(CrystalDocs::DocsBuildTask.new("kemal", "1.6.0", "build-7").to_json)
 
-  it "goes to the docs queue, which is the list crystalshards pops" do
-    job.call.queue.should eq("docs")
-    CrystalDocs::DocsBuildQueue::QUEUE.should eq("docs")
-  end
-
-  # BuildDocsWorker's initialize is `(@shard_name : String, @version : String)`,
-  # and JSON::Serializable serialises ivars by name. These two keys are the
-  # entire payload as far as the builder is concerned.
-  it "carries shard_name and version, spelled exactly as the consumer's ivars" do
-    parsed = JSON.parse(job.call.to_json)
-
-    parsed["shard_name"].as_s.should eq("kemal")
+    parsed["package_name"].as_s.should eq("kemal")
     parsed["version"].as_s.should eq("1.6.0")
+    parsed["build_id"].as_s.should eq("build-7")
+  end
+end
+
+describe CrystalDocs::CloudTasksDocsBuildQueue do
+  task = CrystalDocs::DocsBuildTask.new("kemal", "1.6.0", "build-7")
+
+  body = -> do
+    JSON.parse(
+      CrystalDocs::CloudTasksDocsBuildQueue.task_json(
+        "https://docs-launcher.example.run.app",
+        "docs-tasks@example.iam.gserviceaccount.com",
+        task
+      )
+    )["task"]["httpRequest"]
   end
 
-  it "names the package shard_name, because that is the consumer's field" do
-    keys = JSON.parse(job.call.to_json).as_h.keys
-
-    keys.should contain("shard_name")
-    keys.should_not contain("package_name")
+  it "targets the launcher's build route with POST" do
+    body.call["httpMethod"].as_s.should eq("POST")
+    body.call["url"].as_s.should eq("https://docs-launcher.example.run.app/internal/docs/build")
   end
 
-  # The envelope comes from JoobQ's own mixin rather than being hand written,
-  # which is the point: status serialises lowercase, and a hand rolled payload
-  # would reasonably have guessed "Enqueued" and produced something the
-  # consumer cannot parse.
-  it "carries the JoobQ envelope the consumer expects to find" do
-    parsed = JSON.parse(job.call.to_json).as_h
+  # Cloud Tasks has no queue level dispatch deadline for an HTTP target, so
+  # this has to be set per task or it silently defaults to 600s. The launcher
+  # holds the request open for the whole build, so at 600s a slow shard is
+  # killed mid compile and redelivered, forever, and the symptom is a build
+  # that never finishes rather than an error anyone sees. Asserted because a
+  # missing field here is invisible until a shard takes eleven minutes.
+  it "gives the launcher the whole build to answer in" do
+    parsed = JSON.parse(
+      CrystalDocs::CloudTasksDocsBuildQueue.task_json(
+        "https://docs-launcher.example.run.app",
+        "docs-tasks@example.iam.gserviceaccount.com",
+        task
+      )
+    )
 
-    %w[jid queue retries max_retries expires status error].each do |field|
-      parsed.has_key?(field).should be_true
+    parsed["task"]["dispatchDeadline"].as_s.should eq("1800s")
+  end
+
+  # Proves the deadline is read from the deployment rather than baked in.
+  # task_json is called WITHOUT the deadline argument, so it goes through
+  # CloudTasksConfig.deadline_seconds and the env var, which is the path
+  # production uses. Passing it explicitly would prove nothing: the example
+  # would still pass if the env var were ignored entirely.
+  #
+  # 1200 rather than 3600 because Cloud Tasks caps an HTTP target's dispatch
+  # deadline at 1800s, so 3600 would assert a payload the queue rejects.
+  it "reads the deadline the deployment configured rather than a baked-in one" do
+    with_cloud_tasks_env(deadline: "1200") do
+      parsed = JSON.parse(
+        CrystalDocs::CloudTasksDocsBuildQueue.task_json(
+          "https://docs-launcher.example.run.app",
+          "docs-tasks@example.iam.gserviceaccount.com",
+          task
+        )
+      )
+
+      parsed["task"]["dispatchDeadline"].as_s.should eq("1200s")
     end
   end
 
-  it "serialises status in the form JoobQ itself parses" do
-    JSON.parse(job.call.to_json)["status"].as_s.should eq("enqueued")
+  # Out of range is refused where the message can name the variable. Cloud
+  # Tasks would otherwise reject the CreateTask call, which enqueue catches
+  # and logs as an unreachable queue, so every build would silently fail to be
+  # commissioned with nothing pointing at the real cause.
+  describe "deadline validation" do
+    it "refuses a deadline above the Cloud Tasks ceiling" do
+      with_cloud_tasks_env(deadline: "3600") do
+        expect_raises(CrystalDocs::CloudTasksConfig::InvalidDeadline, /between 15 and 1800/) do
+          CrystalDocs::CloudTasksConfig.deadline_seconds
+        end
+      end
+    end
+
+    it "refuses a non-numeric deadline rather than silently defaulting" do
+      with_cloud_tasks_env(deadline: "half an hour") do
+        expect_raises(CrystalDocs::CloudTasksConfig::InvalidDeadline) do
+          CrystalDocs::CloudTasksConfig.deadline_seconds
+        end
+      end
+    end
+
+    # The development fallback is what keeps local dev and the suite working
+    # with no cloud configuration at all.
+    it "uses the development fallback when unset outside production" do
+      with_cloud_tasks_env(deadline: nil) do
+        CrystalDocs::CloudTasksConfig.deadline_seconds.should eq(1800)
+      end
+    end
   end
 
-  it "gives every job a distinct id" do
-    job.call.jid.should_not eq(job.call.jid)
+  # A trailing slash on the service URL would otherwise produce a double slash,
+  # which Cloud Run does not route to the same action.
+  it "joins the route cleanly when the launcher url has a trailing slash" do
+    parsed = JSON.parse(
+      CrystalDocs::CloudTasksDocsBuildQueue.task_json(
+        "https://docs-launcher.example.run.app/",
+        "docs-tasks@example.iam.gserviceaccount.com",
+        task
+      )
+    )
+
+    parsed["task"]["httpRequest"]["url"].as_s
+      .should eq("https://docs-launcher.example.run.app/internal/docs/build")
   end
 
-  # A crystaldocs process must never run a docs build: it would clone a
-  # repository and compile third party code inside the web app.
-  it "refuses to perform work in this app" do
-    expect_raises(Exception, /performed by crystalshards/) do
-      job.call.perform
+  # Cloud Tasks carries an HTTP body as bytes, so it arrives base64 encoded.
+  # Asserting on the decoded value rather than the encoded blob is the point:
+  # the launcher parses the decoded bytes.
+  it "carries the build request as its body" do
+    decoded = JSON.parse(Base64.decode_string(body.call["body"].as_s))
+
+    decoded["package_name"].as_s.should eq("kemal")
+    decoded["version"].as_s.should eq("1.6.0")
+    decoded["build_id"].as_s.should eq("build-7")
+  end
+
+  it "declares the body as json so the launcher parses it" do
+    body.call["headers"]["Content-Type"].as_s.should eq("application/json")
+  end
+
+  # Not optional. docs-launcher grants run.invoker to exactly one service
+  # account, so a task without a token is a 403 on every single dispatch, and
+  # the symptom is builds that never start rather than an error anyone sees.
+  it "signs the task as the invoker the launcher accepts" do
+    body.call["oidcToken"]["serviceAccountEmail"].as_s
+      .should eq("docs-tasks@example.iam.gserviceaccount.com")
+  end
+
+  # The launcher verifies this audience. A token minted for a different
+  # audience is a valid Google token for the wrong service and must not open
+  # this door.
+  it "mints the token for the launcher's own audience" do
+    body.call["oidcToken"]["audience"].as_s
+      .should eq("https://docs-launcher.example.run.app")
+  end
+
+  describe "#enqueue" do
+    it "sends one task to the configured queue and returns the build id" do
+      sent = [] of {String, String}
+      original = CrystalDocs::CloudTasksDocsBuildQueue.transport
+
+      CrystalDocs::CloudTasksDocsBuildQueue.transport = ->(queue_path : String, task_json : String) {
+        sent << {queue_path, task_json}
+        nil
+      }
+
+      begin
+        with_cloud_tasks_env do
+          build_id = CrystalDocs::CloudTasksDocsBuildQueue.new.enqueue("kemal", "1.6.0")
+
+          sent.size.should eq(1)
+          sent.first[0].should eq("projects/test-project/locations/us-central1/queues/docs-builds")
+
+          decoded = JSON.parse(
+            Base64.decode_string(
+              JSON.parse(sent.first[1])["task"]["httpRequest"]["body"].as_s
+            )
+          )
+
+          # The id returned is the id recorded against the request row, and the
+          # id the launcher logs. If these ever diverge, a stuck build cannot
+          # be traced from a docs page to an execution.
+          decoded["build_id"].as_s.should eq(build_id)
+          decoded["package_name"].as_s.should eq("kemal")
+        end
+      ensure
+        CrystalDocs::CloudTasksDocsBuildQueue.transport = original
+      end
+    end
+
+    # A docs page must render even when the queue is unreachable. Returning nil
+    # leaves the row pending with no build id, which is visible in the data.
+    it "returns nil rather than raising when the queue cannot be reached" do
+      original = CrystalDocs::CloudTasksDocsBuildQueue.transport
+
+      CrystalDocs::CloudTasksDocsBuildQueue.transport = ->(_q : String, _t : String) {
+        raise "Cloud Tasks is unreachable"
+      }
+
+      begin
+        with_cloud_tasks_env do
+          CrystalDocs::CloudTasksDocsBuildQueue.new.enqueue("kemal", "1.6.0").should be_nil
+        end
+      ensure
+        CrystalDocs::CloudTasksDocsBuildQueue.transport = original
+      end
+    end
+
+    # Missing configuration must not be papered over with a default. A wrong
+    # queue silently drops every build.
+    it "refuses to enqueue when the launcher url is unset" do
+      original = CrystalDocs::CloudTasksDocsBuildQueue.transport
+      sent = 0
+
+      CrystalDocs::CloudTasksDocsBuildQueue.transport = ->(_q : String, _t : String) {
+        sent += 1
+        nil
+      }
+
+      begin
+        with_cloud_tasks_env(launcher_url: nil) do
+          CrystalDocs::CloudTasksDocsBuildQueue.new.enqueue("kemal", "1.6.0").should be_nil
+        end
+
+        sent.should eq(0)
+      ensure
+        CrystalDocs::CloudTasksDocsBuildQueue.transport = original
+      end
     end
   end
 end
 
+describe CrystalDocs::InProcessDocsBuildQueue do
+  # Development and test must not need a broker or a Google project.
+  it "returns a build id without reaching anything" do
+    CrystalDocs::InProcessDocsBuildQueue.new.enqueue("kemal", "1.6.0").should_not be_nil
+  end
+end
+
 describe CrystalDocs::DocsBuildQueue do
-  it "builds the real JoobQ backed queue by default" do
+  it "builds the in-process queue outside production" do
     CrystalDocs::DocsBuildQueue.override = nil
 
-    CrystalDocs::DocsBuildQueue.build.should be_a(CrystalDocs::JoobQDocsBuildQueue)
+    CrystalDocs::DocsBuildQueue.build.should be_a(CrystalDocs::InProcessDocsBuildQueue)
   end
 
   it "uses the override when one is installed" do

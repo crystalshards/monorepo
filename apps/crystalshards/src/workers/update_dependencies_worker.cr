@@ -1,8 +1,15 @@
 require "./base_worker"
 
 struct UpdateDependenciesWorker < BaseJob
+  # Resolving dependencies parses the shard.yml already fetched during
+  # indexing and writes rows. It executes no code from the shard, so it runs
+  # where it was asked for rather than being handed to a queue.
+  def self.enqueue(shard_name : String, version : String) : Nil
+    CrystalShards::JobQueue.current.update_dependencies(shard_name, version)
+  end
+
   # @shard_name carries the canonical slug for anything crystalshards
-  # enqueues; the field name is the queue's wire format and does not change.
+  # enqueues; the field name is the wire format and does not change.
   def initialize(@shard_name : String, @version : String)
     @queue = "deps"
   end

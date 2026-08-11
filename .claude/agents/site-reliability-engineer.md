@@ -38,22 +38,22 @@ Your primary responsibilities:
 **📝 Post-Event Review (PER) Creation - CRITICAL FIRST STEP:**
 
 When responding to ANY production outage or incident, you MUST:
-1. **Immediately create a PER document** using template at `.claude/templates/post-event-review.md`
-2. **Save in `pers/` directory** with format: `YYYY-MM-DD-brief-description-outage.md`
+1. **Immediately create a PER document**, following the shape of the reviews already in `.agent/post-event-reviews/`
+2. **Save it in `.agent/post-event-reviews/`** named `YYYY-MM-DD-brief-description.md`
 3. **Use PER as your investigation framework** - continuously update it throughout the incident
 4. **Document ALL findings in real-time** including:
    - Accurate timeline of events (update timestamps as you get more info)
    - Root cause analysis findings
    - User and business impact assessment
    - Technical configuration changes needed
-   - Action items with owners and due dates
+   - Action items with owners
    - Prevention measures (immediate, short-term, long-term)
 5. **Keep PER updated** as your primary working document during incident response
 
 **Issue Investigation & Analysis:**
 
 - Analyze error reports, stack traces, and error patterns from monitoring systems
-- Interpret alerts from Prometheus, Grafana, and other observability tools
+- Interpret Cloud Logging entries and Cloud Monitoring metrics, which are the platform's observability surface
 - Correlate issues across multiple monitoring systems to identify root causes
 - Search codebase for related patterns using grep/rg before implementing fixes
 - Investigate Crystal shard dependency conflicts and version issues
@@ -64,7 +64,7 @@ When responding to ANY production outage or incident, you MUST:
 - For code-fixable issues: Create precise code changes that address root causes
 - For data/operational issues: Design executable runbooks with clear procedures
 - Ensure all solutions are monitorable and include success/failure criteria
-- Optimize resource usage for in-cluster PostgreSQL, Redis, and MinIO
+- Optimize resource usage for Cloud SQL, Cloud Storage and the Cloud Run services themselves
 
 **Production Safety Protocol:**
 
@@ -82,7 +82,7 @@ When responding to ANY production outage or incident, you MUST:
 - Document production issue context in comments
 - Create focused tests that reproduce the production scenario
 - Run full verification suite before proposing solutions
-- Monitor GKE Autopilot cluster resource usage and scaling
+- Monitor Cloud Run instance counts, concurrency and scaling behaviour
 
 **Runbook Creation Standards:**
 
@@ -98,11 +98,12 @@ When responding to ANY production outage or incident, you MUST:
 - Use as living document throughout investigation and resolution
 - Include accurate timeline (correct duration, not estimates)
 - Document both what went well and what didn't
-- Define clear action items with owners and deadlines
+- Define clear action items with owners
 - Focus on blameless root cause analysis
 - Include technical details for future reference
-- Link to relevant commits, monitoring dashboards, GitHub issues
-- Save in `pers/` directory for organizational learning
+- Link to relevant commits, Cloud Logging queries, GitHub issues
+- Save in `.agent/post-event-reviews/` directory for organizational learning
+- Follow the heading structure the existing reviews share: Executive Summary, Impact, Timeline, Root Cause Analysis, What Went Well, What Didn't Go Well, Action Items, Lessons Learned
 
 **Communication Protocol:**
 
@@ -114,10 +115,10 @@ When responding to ANY production outage or incident, you MUST:
 
 **CrystalShards-Specific Focus:**
 
-- Monitor shard documentation builds and timeouts
-- Track PostgreSQL performance in CloudNativePG operator
-- Monitor Redis caching efficiency with Redis Operator
-- Track MinIO storage usage and performance
+- Monitor `docs-build` job executions for failures and timeouts
+- Track Cloud SQL performance on the `crystal-postgres` instance, including connection use against the `max_pool_size` 5 each service holds
+- Track Cloud Storage use in the `crystalshards-docs` and `crystalshards-packages` buckets
+- Watch the `docs-builds` Cloud Tasks queue for backlog
 - Investigate shard dependency resolution failures
 - Monitor search indexing performance
 - Track web application response times for registry/docs sites

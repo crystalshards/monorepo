@@ -400,28 +400,26 @@ Let's follow a typical workflow:
 All platforms share:
 
 **Common Infrastructure:**
-- GKE Autopilot (Kubernetes)
-- CloudNativePG (PostgreSQL)
-- Redis Operator (caching/queues)
-- MinIO (object storage)
-- Envoy Gateway (ingress)
-- Prometheus + Grafana (monitoring)
-- Loki + Promtail (logging)
+- Cloud Run services that scale to zero when idle
+- Cloud SQL for PostgreSQL
+- Cloud Storage for documentation artifacts and shard packages
+- Cloud Tasks for background work
+- Secret Manager for credentials
+- One global external Application Load Balancer, with Cloud DNS holding the zones
+- Cloud Logging and Cloud Monitoring
 
 **Technology Stack:**
 - **Language**: Crystal
 - **Framework**: Lucky (web framework)
 - **Database**: PostgreSQL
-- **Cache**: Redis
-- **Storage**: MinIO (S3-compatible)
+- **Storage**: Cloud Storage
 - **Search**: PostgreSQL full-text (with potential Meilisearch upgrade)
 
 **Deployment:**
-- Infrastructure as Code (Terraform)
-- GitOps workflow
+- Infrastructure as Code (Terraform), applied in CI
 - Automated CI/CD
-- Zero-downtime deployments
-- Automatic scaling
+- Container images in Artifact Registry
+- Automatic scaling, down to zero when idle
 
 ### Data Flow
 
@@ -432,7 +430,7 @@ All platforms share:
             │
             ▼
 ┌────────────────────────────────────────────┐
-│ Web Application (Lucky)                    │
+│ Web Application (Lucky on Cloud Run)       │
 │ - Route handling                           │
 │ - Business logic                           │
 │ - Authentication                           │
@@ -440,7 +438,7 @@ All platforms share:
             │
             ▼
 ┌────────────────────────────────────────────┐
-│ Database (PostgreSQL)                      │
+│ Database (Cloud SQL PostgreSQL)            │
 │ - Relational data                          │
 │ - Full-text search                         │
 │ - Transactions                             │
@@ -448,15 +446,7 @@ All platforms share:
             │
             ▼
 ┌────────────────────────────────────────────┐
-│ Cache (Redis)                              │
-│ - Session storage                          │
-│ - Rate limiting                            │
-│ - Background jobs                          │
-└───────────┬────────────────────────────────┘
-            │
-            ▼
-┌────────────────────────────────────────────┐
-│ Storage (MinIO)                            │
+│ Storage (Cloud Storage)                    │
 │ - Documentation files                      │
 │ - Shard packages                           │
 │ - Static assets                            │
@@ -473,15 +463,14 @@ All platforms share:
 
 **Data Protection:**
 - HTTPS everywhere (TLS 1.3)
-- Encrypted at rest (PostgreSQL, MinIO)
+- Encrypted at rest (Cloud SQL, Cloud Storage)
 - Encrypted in transit
 - Regular security audits
 
 **Isolation:**
-- Namespace separation
-- Network policies
-- Pod security policies
-- Sandboxed documentation builds
+- Sandboxed documentation builds: the build job runs untrusted shard code under a service account that holds no permissions
+- The build job reads its input and writes its output through signed URLs, so it never holds a credential
+- Each application has its own database on the shared PostgreSQL instance
 
 ## Getting the Most Out of the Ecosystem
 
@@ -575,7 +564,7 @@ All platforms follow the Crystal community Code of Conduct:
 
 **Abuse/Violations:**
 - abuse@crystalshards.org
-- Quick response (<24 hours)
+- Quick response
 - Confidential handling
 - Fair investigation
 

@@ -1,30 +1,41 @@
-require "../../config/minio"
-
 module CrystalShards
   # The slice of object storage that documentation publishing depends on.
   # BuildDocsWorker talks to this rather than to StorageService directly, so a
-  # spec can substitute a fake without a MinIO endpoint.
+  # spec can substitute a fake with no object store running.
   module DocsStorage
     abstract def upload_docs_json(shard_name : String, version : String, docs_json_path : String) : String
   end
 
   # The slice of object storage a sandboxed build depends on. Source goes in
   # and documentation comes back out through build-scoped scratch keys, which
-  # is what lets the build pod stay unable to reach anything else.
+  # is what lets the build stay unable to reach anything else.
+  #
+  # `scratch_signed_url` is the whole mechanism, not a convenience. The build
+  # runs untrusted third-party shard code and therefore holds no credentials:
+  # it reads its source from a signed GET and writes its output to a signed
+  # PUT, both minted here, both scoped to one key the launcher chose. The build
+  # cannot pick its own key, because the key is covered by the signature.
   module ScratchStorage
     abstract def upload_scratch(key : String, content : String)
     abstract def download_scratch(key : String) : String
     abstract def delete_scratch_prefix(prefix : String)
+    abstract def scratch_signed_url(key : String, method : String, content_type : String? = nil) : String
   end
 
-  # Service for interacting with MinIO object storage
-  # Handles package and documentation storage
+  # Package and documentation storage, over the `CrystalStorage` object store
+  # interface: Google Cloud Storage in production, the local store in
+  # development. Nothing here knows which.
   class StorageService
     include DocsStorage
     include ScratchStorage
 
-    # Test seam. When set, `build` returns this proc's result instead of a real
-    # MinIO-backed service. Always nil in production.
+    # How long a build has to use a URL it was handed. Long enough for a slow
+    # `crystal docs` on a large shard, short enough that a leaked URL is not a
+    # standing grant.
+    SCRATCH_URL_TTL = 30.minutes
+
+    # Test seams. When set, `build` returns this proc's result instead of a
+    # real store-backed service. Always nil in production.
     class_property builder : Proc(DocsStorage)? = nil
     class_property scratch_builder : Proc(ScratchStorage)? = nil
 
@@ -46,160 +57,82 @@ module CrystalShards
       end
     end
 
-    def initialize
-      @client = MinIOConfig.client
+    def initialize(
+      @packages : CrystalStorage::ObjectStore = CrystalStorage.packages,
+      @docs : CrystalStorage::ObjectStore = CrystalStorage.docs,
+    )
     end
 
-    # Upload a package file to MinIO
-    # Returns the object key (path in MinIO)
-    def upload_package(shard_name : String, version : String, file_path : String) : String
-      key = package_key(shard_name, version)
-
-      File.open(file_path, "r") do |file|
-        @client.put_object(
-          MinIOConfig.settings.packages_bucket,
-          key,
-          file.gets_to_end,
-          {
-            "Content-Type"    => "application/gzip",
-            "X-Shard-Name"    => shard_name,
-            "X-Shard-Version" => version,
-          }
-        )
-      end
-
-      key
-    end
-
-    # Upload a package from String content (for multipart uploads)
-    # Returns the object key (path in MinIO)
+    # Upload a published package tarball. Returns the object key.
     def upload_package_from_io(shard_name : String, version : String, content : String) : String
-      key = package_key(shard_name, version)
-
-      @client.put_object(
-        MinIOConfig.settings.packages_bucket,
-        key,
-        content,
-        {
-          "Content-Type"    => "application/gzip",
-          "X-Shard-Name"    => shard_name,
-          "X-Shard-Version" => version,
-        }
-      )
-
+      key = CrystalStorage::Keys.package(shard_name, version)
+      @packages.put(key, content, "application/gzip")
       key
     end
 
-    # Download a package file from MinIO
-    # Returns the file contents as a String
-    def download_package(shard_name : String, version : String) : String
-      key = package_key(shard_name, version)
-      response = @client.get_object(MinIOConfig.settings.packages_bucket, key)
-      response.body
-    end
-
-    # Check if a package exists in MinIO
-    def package_exists?(shard_name : String, version : String) : Bool
-      key = package_key(shard_name, version)
-      begin
-        @client.head_object(MinIOConfig.settings.packages_bucket, key)
-        true
-      rescue ex : Awscr::S3::Exception
-        false
-      end
+    # A URL a browser can follow to download a package.
+    #
+    # It has to be a signed URL rather than a public object path: the buckets
+    # enforce uniform bucket level access with public access prevention, so
+    # there is no such thing as a publicly readable object to link to.
+    def package_download_url(shard_name : String, version : String, expires_in : Time::Span = 1.hour) : String
+      @packages.signed_url(
+        CrystalStorage::Keys.package(shard_name, version),
+        method: "GET",
+        expires_in: expires_in
+      )
     end
 
     # Upload the generated documentation for a shard version. There is
     # exactly one artifact per version, the `crystal docs --format=json`
-    # document, stored at <name>/<version>/docs.json. No generated HTML is
-    # ever stored: we render documentation ourselves, and shard-authored
-    # markup served from our origin would be stored XSS.
+    # document. No generated HTML is ever stored: we render documentation
+    # ourselves, and shard-authored markup served from our origin would be
+    # stored XSS.
     # Returns the object key.
     def upload_docs_json(shard_name : String, version : String, docs_json_path : String) : String
-      key = docs_json_key(shard_name, version)
-
-      File.open(docs_json_path, "r") do |file|
-        @client.put_object(
-          MinIOConfig.settings.docs_bucket,
-          key,
-          file.gets_to_end,
-          {
-            "Content-Type"    => "application/json",
-            "X-Shard-Name"    => shard_name,
-            "X-Shard-Version" => version,
-          }
-        )
-      end
-
+      key = CrystalStorage::Keys.docs_json(shard_name, version)
+      @docs.put(key, File.read(docs_json_path), "application/json")
       key
     end
 
-    # Download the generated docs.json for a shard version.
-    def download_docs_json(shard_name : String, version : String) : String
-      key = docs_json_key(shard_name, version)
-      response = @client.get_object(MinIOConfig.settings.docs_bucket, key)
-      response.body
-    end
-
-    # Check if documentation exists for a shard version
-    def docs_json_exists?(shard_name : String, version : String) : Bool
-      key = docs_json_key(shard_name, version)
-      begin
-        @client.head_object(MinIOConfig.settings.docs_bucket, key)
-        true
-      rescue ex : Awscr::S3::Exception
-        false
-      end
-    end
-
     # Scratch space used to hand source into a sandboxed build and take
-    # documentation back out. Keys are build-scoped and deleted when the build
-    # finishes, so nothing here is durable.
+    # documentation back out. Keys are build-scoped, so nothing here is
+    # durable.
     def upload_scratch(key : String, content : String)
-      @client.put_object(
-        MinIOConfig.settings.docs_bucket,
-        key,
-        content,
-        {"Content-Type" => "application/gzip"}
-      )
+      @docs.put(key, content, "application/gzip")
     end
 
     def download_scratch(key : String) : String
-      @client.get_object(MinIOConfig.settings.docs_bucket, key).body
-    end
-
-    def delete_scratch_prefix(prefix : String)
-      @client.list_objects(MinIOConfig.settings.docs_bucket, prefix: prefix).each do |resp|
-        resp.contents.each do |object|
-          @client.delete_object(MinIOConfig.settings.docs_bucket, object.key)
-        end
-      end
-    end
-
-    # Generate presigned URL for package download
-    # Expires in 1 hour by default
-    def package_download_url(shard_name : String, version : String, expires_in : Time::Span = 1.hour) : String
-      key = package_key(shard_name, version)
-
-      options = Awscr::S3::Presigned::Url::Options.new(
-        aws_access_key: MinIOConfig.settings.access_key,
-        aws_secret_key: MinIOConfig.settings.secret_key,
-        region: MinIOConfig.settings.region,
-        object: key,
-        bucket: MinIOConfig.settings.packages_bucket
+      @docs.get_string(key) || raise CrystalStorage::Unavailable.new(
+        "find", key, "the build produced no object at this key"
       )
-
-      url = Awscr::S3::Presigned::Url.new(options)
-      url.for(:get)
     end
 
-    private def package_key(shard_name : String, version : String) : String
-      "#{shard_name}/#{version}/#{shard_name}-#{version}.tar.gz"
+    # Best effort, and deliberately so. The launcher identity holds
+    # objectViewer and objectCreator on the docs bucket and nothing that grants
+    # storage.objects.delete, because the only predefined role carrying delete
+    # is objectAdmin, which would also let it erase published documentation.
+    # So this 403s in production and that is the intended posture, not a
+    # missing grant. Real cleanup is a bucket lifecycle rule on the
+    # build-scratch prefix, which also collects scratch from an execution that
+    # died before any ensure block could run. Failing a completed build over a
+    # failed tidy-up would be the wrong trade.
+    def delete_scratch_prefix(prefix : String)
+      @docs.delete_prefix(prefix)
+    rescue ex : CrystalStorage::Unavailable
+      Log.info { "Scratch cleanup skipped for #{prefix}: #{ex.message}. The bucket lifecycle rule collects it." }
     end
 
-    # The storage layout is fixed: exactly one artifact per package version.
-    private def docs_json_key(shard_name : String, version : String) : String
-      "#{shard_name}/#{version}/docs.json"
+    # Mint the URL a credentialless build uses for exactly one object.
+    # `content_type` is covered by the signature, so the build must send that
+    # header verbatim or the store rejects the request.
+    def scratch_signed_url(key : String, method : String, content_type : String? = nil) : String
+      @docs.signed_url(
+        key,
+        method: method,
+        expires_in: SCRATCH_URL_TTL,
+        content_type: content_type
+      )
     end
   end
 end

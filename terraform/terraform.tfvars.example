@@ -1,15 +1,53 @@
-# Example Terraform variables
-# Copy this file to terraform.tfvars and fill in your values
+# Copy to terraform.tfvars for a local plan, or set these as TF_VAR_<name> in CI.
+#
+# NON SECRET VALUES ONLY, and that is now the whole file rather than a caution.
+# A values file takes precedence over TF_VAR_ environment variables, so anything
+# written here silently outranks what CI passes. This file used to list seven
+# secret variables with placeholder values, and its committed sibling
+# terraform.tfvars had them pinned to the literal "unused", which meant the real
+# keys CI supplied never reached Secret Manager and every app booted with mail
+# and payments disabled under a green pipeline.
+#
+# There are no secret variables left to get wrong. Terraform generates the
+# credentials it can generate, and for the ones it cannot it creates an empty
+# Secret Manager container that an operator populates directly, so no third
+# party credential passes through terraform, CI, or the state file.
 
-project_id = "your-gcp-project-id"
+project_id = "crystalshards-org"
 region     = "us-central1"
 
-# Cluster configuration
-cluster_name     = "crystalshards-cluster"
-node_count       = 1
-machine_type     = "e2-standard-4"
-disk_size_gb     = 50
+# Git commit SHA of the images to create Cloud Run resources at. Required, with
+# no default, and never "latest": CI pushes only SHA tags. Normally passed as
+# -var="image_tag=<sha>" rather than written here.
+image_tag = "abc1234"
 
-# Cost optimization options
-enable_autopilot = true   # Use GKE Autopilot for better cost management
-preemptible      = true   # Use preemptible nodes for additional savings
+# mail_enabled_apps is the one other variable, and CI owns it. It is a list of
+# app slugs, never a key value, naming the senders whose Resend secret actually
+# has a version. Leave it out here: the default is [] and the deploy passes the
+# real list.
+#
+# Do not add a Resend or Stripe entry below. Those variables do not exist and
+# terraform will reject them as undeclared.
+#
+# Two secrets must be populated out of band before crystalgigs.com will start,
+# because config/payments.cr exits at boot in production without them:
+#
+#   gcloud secrets versions add crystalgigs-stripe-secret-key      --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add crystalgigs-stripe-publishable-key --data-file=- --project=crystalshards-org
+#
+# The two mail secrets are NOT start up requirements. All four services serve
+# without them; crystalgigs and crystalbits simply raise on an actual send
+# attempt, naming RESEND_API_KEY, so nothing reports a send that did not happen:
+#
+#   gcloud secrets versions add crystalgigs-resend-key             --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add crystalbits-resend-key             --data-file=- --project=crystalshards-org
+#
+# Terraform creates all four containers, so there is no `gcloud secrets create`
+# step, and the mail containers exist even while empty so a key has somewhere to
+# land. Adding CRYSTALGIGS_RESEND_KEY or CRYSTALBITS_RESEND_KEY to the
+# repository secrets is the whole switch: the next deploy populates the version,
+# passes the slug in mail_enabled_apps, and the env var and its IAM binding
+# appear together with no terraform edit.
+#
+# Use real keys. An empty version fails exactly like a missing one, and there is
+# no "off" value: the apps that do not send mail never ask for a key at all.

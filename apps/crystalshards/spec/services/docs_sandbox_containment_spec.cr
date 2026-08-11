@@ -59,8 +59,8 @@ describe "documentation sandbox containment" do
     File.write(File.join(source, "shard.yml"), "name: hostile\nversion: 0.1.0\n")
     File.write(File.join(source, "src", "hostile.cr"), hostile_source(host_secret_path))
 
-    # A credential in this process's environment, exactly as the worker holds
-    # MINIO_SECRET_KEY. The build must not be able to see it.
+    # A credential in this process's environment, exactly as the launcher
+    # holds STORAGE_SECRET_KEY. The build must not be able to see it.
     ENV["CANARY_CREDENTIAL"] = "canary-must-not-escape"
 
     begin

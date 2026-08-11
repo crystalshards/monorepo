@@ -24,30 +24,33 @@ make setup
 make dev
 ```
 
+Local development runs entirely on docker-compose: four Lucky apps on ports 3000 to 3003, PostgreSQL in a container, object storage in a container, and an in-process job queue. No Google Cloud credentials are needed.
+
 ## Services
 
 - **Registry**: http://localhost:3000
-- **Docs**: http://localhost:3001  
+- **Docs**: http://localhost:3001
 - **Gigs**: http://localhost:3002
+- **Bits**: http://localhost:3003
 - **MailHog**: http://localhost:8025
-- **MinIO**: http://localhost:9001
+- **Object storage console**: http://localhost:9001 (MinIO, local development only; production uses Cloud Storage)
 
 ## Architecture
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Registry      │    │      Docs       │    │      Gigs       │
-│    :3000        │    │     :3001       │    │     :3002       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         └───────────────────────┼───────────────────────┘
-                                 │
-         ┌─────────────────┬─────┴─────┬─────────────────┐
-         │                 │           │                 │
-   ┌─────────┐       ┌──────────┐  ┌────────┐      ┌──────────┐
-   │PostgreSQL│       │  Redis   │  │ MinIO  │      │ MailHog  │
-   │  :5432  │       │  :6379   │  │ :9000  │      │  :1025   │
-   └─────────┘       └──────────┘  └────────┘      └──────────┘
+┌───────────┐ ┌───────────┐ ┌───────────┐ ┌───────────┐
+│ Registry  │ │   Docs    │ │   Gigs    │ │   Bits    │
+│   :3000   │ │   :3001   │ │   :3002   │ │   :3003   │
+└───────────┘ └───────────┘ └───────────┘ └───────────┘
+      │             │             │             │
+      └─────────────┴──────┬──────┴─────────────┘
+                           │
+          ┌────────────────┼────────────────┐
+          │                │                │
+   ┌────────────┐   ┌────────────┐   ┌────────────┐
+   │ PostgreSQL │   │Object Store│   │  MailHog   │
+   │   :5432    │   │   :9000    │   │   :1025    │
+   └────────────┘   └────────────┘   └────────────┘
 ```
 
 ## Development Commands
@@ -75,30 +78,32 @@ make db-console
 
 ## Background Jobs
 
-The worker processes background jobs including:
+Job classes live in `apps/crystalshards/src/workers/`:
 
-- Documentation generation
-- Shard indexing  
-- Search index updates
-- Email notifications
-- Health checks
+- Documentation builds
+- Shard discovery
+- Shard indexing
+- Dependency updates
+
+Locally the queue runs in process, so `make dev` is all you need. In production a documentation build is enqueued on the Cloud Tasks queue `docs-builds`, which calls the `docs-launcher` service, which starts a `docs-build` Cloud Run Job execution.
 
 ## Testing
 
-Each app has its own test suite:
+Run every suite with `make test`, or one app directly:
 
 ```bash
-cd apps/crystalshards && crystal spec
-cd apps/crystaldocs && crystal spec
-cd apps/crystalgigs && crystal spec
-cd apps/crystalbits && crystal spec
+cd apps/crystalshards
+export PKG_CONFIG_PATH=/opt/homebrew/opt/openssl@3/lib/pkgconfig:$PKG_CONFIG_PATH
+DATABASE_URL="postgresql://postgres:password@localhost:5432/crystalshards_test" crystal spec
 ```
+
+Swap `crystalshards` for `crystaldocs`, `crystalgigs` or `crystalbits`.
 
 ## Deployment
 
-All applications are containerized and ready for Kubernetes deployment.
+Every application is containerized and runs on Cloud Run in the `crystalshards-org` project, region `us-central1`. Images live in Artifact Registry at `us-central1-docker.pkg.dev/crystalshards-org/docker-images/<app>:<sha>`.
 
-See `terraform/` directory for infrastructure setup.
+Deploys and `terraform apply` run in CI, never from a workstation. The `terraform/` directory holds the infrastructure definition; locally, limit yourself to `terraform fmt`, `terraform init -backend=false`, `terraform validate` and `terraform plan`.
 
 ## Contributing
 

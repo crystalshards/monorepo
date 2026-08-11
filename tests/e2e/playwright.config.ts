@@ -70,8 +70,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       env: {
         NODE_ENV: 'test',
-        DATABASE_URL: 'postgres://postgres:password@localhost/crystalshards_test',
-        REDIS_URL: 'redis://localhost:6379/1'
+        DATABASE_URL: 'postgres://postgres:password@localhost/crystalshards_test'
       }
     },
     {
@@ -80,8 +79,7 @@ export default defineConfig({
       reuseExistingServer: !process.env.CI,
       env: {
         NODE_ENV: 'test',
-        DATABASE_URL: 'postgres://postgres:password@localhost/crystaldocs_test',
-        REDIS_URL: 'redis://localhost:6379/2'
+        DATABASE_URL: 'postgres://postgres:password@localhost/crystaldocs_test'
       }
     },
     {
@@ -91,7 +89,6 @@ export default defineConfig({
       env: {
         NODE_ENV: 'test',
         DATABASE_URL: 'postgres://postgres:password@localhost/crystalgigs_test',
-        REDIS_URL: 'redis://localhost:6379/3',
         STRIPE_SECRET_KEY: 'sk_test_dummy',
         STRIPE_PUBLISHABLE_KEY: 'pk_test_dummy'
       }

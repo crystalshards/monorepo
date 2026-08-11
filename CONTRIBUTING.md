@@ -31,11 +31,8 @@ Before you begin, ensure you have the following installed:
 
 - **Crystal Language**: >= 1.17.1 ([installation guide](https://crystal-lang.org/install/))
 - **Lucky CLI**: Latest version ([installation guide](https://luckyframework.org/guides/getting-started/installing))
-- **PostgreSQL**: 14+ ([installation guide](https://www.postgresql.org/download/))
-- **Redis**: 6+ ([installation guide](https://redis.io/download))
-- **Docker**: For containerized development ([installation guide](https://docs.docker.com/get-docker/))
-- **kubectl**: For Kubernetes interaction ([installation guide](https://kubernetes.io/docs/tasks/tools/))
-- **Terraform**: >= 1.5.0 ([installation guide](https://developer.hashicorp.com/terraform/downloads))
+- **Docker** and **Docker Compose**: For the local service dependencies defined in `docker-compose.yml` ([installation guide](https://docs.docker.com/get-docker/))
+- **Terraform**: >= 1.5.0, only if you are changing infrastructure ([installation guide](https://developer.hashicorp.com/terraform/downloads))
 - **Git**: Version control ([installation guide](https://git-scm.com/downloads))
 - **GitHub Account**: For pull requests and issue tracking
 
@@ -43,6 +40,7 @@ Optional but recommended:
 
 - **mise**: Tool version manager (see `.mise.toml`)
 - **gh**: GitHub CLI for easier issue/PR management
+- **psql**: PostgreSQL client, for the database console commands in this guide
 
 ### Setting Up Development Environment
 
@@ -59,56 +57,53 @@ git remote add upstream https://github.com/crystalshards/monorepo.git
 
 #### 2. Install Dependencies
 
+Run these from the repository root. Each step uses a subshell so your shell stays at the root for the next one.
+
 ```bash
-# Install Crystal dependencies for all applications
-cd apps/crystalshards
-shards install
-
-cd ../crystaldocs
-shards install
-
-cd ../crystalgigs
-shards install
-
-cd ../crystalbits
-shards install
+for app in crystalshards crystaldocs crystalgigs crystalbits; do
+  (cd apps/$app && shards install)
+done
 ```
 
-#### 3. Set Up Databases
+#### 3. Start Local Services and Set Up Databases
 
-Each application has its own PostgreSQL database:
+Bring up the local dependencies, then create each application's database. The Compose Postgres uses user `postgres` with password `password`, and the credentials an app falls back to when `DATABASE_URL` is unset do not match it, so set `DATABASE_URL` for the app you are working in:
 
 ```bash
-# CrystalShards
-cd apps/crystalshards
-lucky db.create
-lucky db.migrate
-lucky db.seed
+# Start Postgres and object storage, waiting until both report healthy
+docker compose up -d --wait postgres minio
 
-# CrystalDocs
-cd ../crystaldocs
-lucky db.create
-lucky db.migrate
+# Create and migrate the development and test database of every application
+for app in crystalshards crystaldocs crystalgigs crystalbits; do
+  for env in development test; do
+    (
+      cd apps/$app
+      export DATABASE_URL="postgresql://postgres:password@localhost:5432/${app}_${env}"
+      lucky db.create
+      lucky db.migrate
+    )
+  done
+done
 
-# CrystalGigs
-cd ../crystalgigs
-lucky db.create
-lucky db.migrate
-
-# CrystalBits
-cd ../crystalbits
-lucky db.create
-lucky db.migrate
+# Sample data for the registry
+(
+  cd apps/crystalshards
+  export DATABASE_URL="postgresql://postgres:password@localhost:5432/crystalshards_development"
+  lucky db.seed
+)
 ```
 
 #### 4. Configure Environment Variables
 
-Copy the example environment file and configure your local settings:
+Each application loads `.env` from its own directory when you run it from there, so give every app its own copy. From the repository root:
 
 ```bash
-cp .env.example .env
-# Edit .env with your local database URLs and secrets
+for app in crystalshards crystaldocs crystalgigs crystalbits; do
+  cp .env.example apps/$app/.env
+done
 ```
+
+Then edit each `apps/<app>/.env`, pointing `DATABASE_URL` at that application's own database and filling in the local secrets.
 
 Required environment variables per application:
 
@@ -117,16 +112,21 @@ Required environment variables per application:
 LUCKY_ENV=development
 PORT=3000  # or 3001, 3002, 3003 for other apps
 SECRET_KEY_BASE=generate_with_lucky_gen.secret_key
-DATABASE_URL=postgresql://postgres@localhost/app_development
+DATABASE_URL=postgresql://postgres:password@localhost:5432/<app>_development
 
-# CrystalShards only (for background workers)
-REDIS_URL=redis://localhost:6379
+# Object storage. Locally these point at the object store container docker
+# compose runs. No Google Cloud credentials are needed to develop or to run
+# the specs; production uses Google Cloud Storage with the service's own
+# identity and ignores STORAGE_* entirely.
+STORAGE_ENDPOINT=http://localhost:9000
+STORAGE_ACCESS_KEY=minioadmin
+STORAGE_SECRET_KEY=minioadmin
 
-# MinIO (for package/documentation storage)
-MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=minioadmin
-MINIO_USE_SSL=false
+# Bucket names. CrystalShards writes documentation into DOCS_BUCKET and
+# CrystalDocs reads it back, so both apps must agree. In production neither
+# has a default and a missing one stops the service at boot.
+DOCS_BUCKET=crystal-docs
+PACKAGES_BUCKET=packages
 
 # CrystalGigs only (for Stripe payments)
 STRIPE_PUBLISHABLE_KEY=pk_test_...
@@ -135,29 +135,26 @@ STRIPE_SECRET_KEY=sk_test_...
 
 #### 5. Run Tests
 
-Verify your setup is correct by running the test suite:
+Verify your setup is correct by running the test suite. Point `DATABASE_URL` at the `_test` database of the application you are testing:
 
 ```bash
-# Run all tests for a specific application
-cd apps/crystalshards
-crystal spec
+export DATABASE_URL="postgresql://postgres:password@localhost:5432/crystalshards_test"
 
-# Run specific test file
-crystal spec spec/models/shard_spec.cr
+# Every spec for one application
+(cd apps/crystalshards && crystal spec)
 
-# Run all tests with coverage
-crystal spec --coverage
+# A single spec file
+(cd apps/crystalshards && crystal spec spec/models/crawl_state_spec.cr)
+
+# With coverage
+(cd apps/crystalshards && crystal spec --coverage)
 ```
 
 #### 6. Start Development Server
 
 ```bash
-# CrystalShards (main registry)
-cd apps/crystalshards
-lucky watch  # Starts server at http://localhost:3000
-
-# Start background workers (separate terminal)
-crystal src/worker.cr
+# CrystalShards (main registry), served at http://localhost:3000
+(cd apps/crystalshards && lucky watch)
 ```
 
 For other applications, use the same `lucky watch` command from their respective directories.
@@ -175,28 +172,21 @@ monorepo/
 │   │   │   ├── models/           # Database models (Avram)
 │   │   │   ├── operations/       # Business logic (Avram operations)
 │   │   │   ├── queries/          # Database queries (Avram queries)
-│   │   │   ├── workers/          # Background jobs (JoobQ)
+│   │   │   ├── workers/          # Background jobs
 │   │   │   ├── pages/            # HTML pages (Lucky HTML)
 │   │   │   └── components/       # Reusable UI components
 │   │   ├── spec/                 # Tests
 │   │   ├── db/migrations/        # Database migrations
-│   │   ├── terraform/            # App-specific K8s resources
 │   │   └── shard.yml             # Crystal dependencies
 │   ├── crystaldocs/              # Documentation hosting
 │   ├── crystalgigs/              # Job board
 │   └── crystalbits/              # Blog platform
 ├── terraform/                    # Infrastructure as Code
-│   └── modules/                  # Terraform modules
-│       ├── networking/           # VPC, subnets, NAT
-│       ├── cluster/              # GKE Autopilot cluster
-│       ├── operators/            # Infrastructure operators
-│       ├── ingress/              # Gateway API + external-dns
-│       └── applications/         # Orchestrates app deployments
 ├── .github/                      # GitHub configuration
 │   └── workflows/                # CI/CD pipelines
 ├── docs/                         # Documentation
-│   ├── runbooks/                 # Operational runbooks
-│   ├── LOGGING.md                # Log aggregation guide
+│   ├── user-guides/              # End user guides
+│   ├── api/                      # OpenAPI specification
 │   └── README.md                 # Documentation index
 ├── PROMPT.md                     # Project overview
 ├── CLAUDE.md                     # Agent development guidelines
@@ -206,14 +196,14 @@ monorepo/
 ### Technology Stack
 
 - **Framework**: [Lucky](https://luckyframework.org/) - Type-safe, fast Crystal web framework
-- **Database**: [PostgreSQL](https://www.postgresql.org/) via [CloudNativePG](https://cloudnative-pg.io/) operator
-- **Cache/Queue**: [Redis](https://redis.io/) with [JoobQ](https://github.com/azutoolkit/joobq) for background jobs
-- **Storage**: [MinIO](https://min.io/) for packages and documentation (S3-compatible)
-- **Ingress**: [Envoy Gateway](https://gateway.envoyproxy.io/) with [Kubernetes Gateway API](https://gateway-api.sigs.k8s.io/)
-- **Platform**: [GKE Autopilot](https://cloud.google.com/kubernetes-engine/docs/concepts/autopilot-overview)
+- **Compute**: [Cloud Run](https://cloud.google.com/run/docs) - one service per application, scaling to zero
+- **Database**: [Cloud SQL for PostgreSQL](https://cloud.google.com/sql/docs/postgres) - a single instance with one database per application
+- **Storage**: [Cloud Storage](https://cloud.google.com/storage/docs) for packages and built documentation
+- **Queue**: [Cloud Tasks](https://cloud.google.com/tasks/docs) for documentation build requests
+- **Edge**: one global external [Application Load Balancer](https://cloud.google.com/load-balancing/docs/https) with Google-managed certificates
+- **Secrets**: [Secret Manager](https://cloud.google.com/secret-manager/docs), referenced by Cloud Run as environment variables
 - **IaC**: [Terraform](https://www.terraform.io/) (one resource per file convention)
-- **Monitoring**: [Prometheus](https://prometheus.io/) + [Grafana](https://grafana.com/)
-- **Logging**: [Loki](https://grafana.com/oss/loki/) + [Promtail](https://grafana.com/docs/loki/latest/send-data/promtail/)
+- **Observability**: [Cloud Logging](https://cloud.google.com/logging/docs) and [Cloud Monitoring](https://cloud.google.com/monitoring/docs)
 
 ## Development Workflow
 
@@ -268,7 +258,7 @@ feat(crystalshards): add search autocomplete functionality
 
 fix(api): handle null values in shard metadata response
 
-docs(runbooks): add PostgreSQL recovery procedures
+docs(crystalshards): document the shard indexing flow
 
 test(workers): add specs for BuildDocsWorker error handling
 
@@ -452,17 +442,12 @@ Follow Terraform best practices:
 **One resource per file**:
 
 ```hcl
-# resource.kubernetes_deployment.crystalshards.tf
-resource "kubernetes_deployment" "crystalshards" {
-  metadata {
-    name      = "crystalshards"
-    namespace = kubernetes_namespace.crystalshards.metadata[0].name
-  }
+# resource.google_storage_bucket.docs.tf
+resource "google_storage_bucket" "docs" {
+  name     = "crystalshards-docs"
+  location = var.region
 
-  spec {
-    replicas = 3
-    # ...
-  }
+  uniform_bucket_level_access = true
 }
 ```
 
@@ -470,8 +455,8 @@ resource "kubernetes_deployment" "crystalshards" {
 
 ```hcl
 # variables.tf
-variable "cluster_region" {
-  description = "GCP region for GKE cluster"
+variable "region" {
+  description = "GCP region for all regional resources"
   type        = string
   default     = "us-central1"
 }
@@ -549,10 +534,10 @@ end
 crystal spec
 
 # Run specific test file
-crystal spec spec/models/shard_spec.cr
+crystal spec spec/models/crawl_state_spec.cr
 
 # Run specific test by line number
-crystal spec spec/models/shard_spec.cr:42
+crystal spec spec/models/crawl_state_spec.cr:7
 
 # Run with coverage report
 crystal spec --coverage
@@ -657,7 +642,7 @@ We welcome contributions in many areas:
 - Background worker workflows
 - Deployment procedures
 
-**Runbooks**:
+**Operations**:
 
 - Incident response procedures
 - Monitoring and alerting guides
@@ -685,9 +670,9 @@ We welcome contributions in many areas:
 
 **Monitoring & Observability**:
 
-- New Grafana dashboards
-- Alert rule improvements
-- Log aggregation enhancements
+- Cloud Monitoring alert policies
+- Structured logging improvements
+- Log-based metrics
 - Distributed tracing
 - Performance profiling
 
@@ -888,8 +873,8 @@ Use draft PRs for:
 
 ### What to Expect
 
-- **Initial response**: Within 48 hours
-- **Full review**: Within 1 week
+- **Initial response**: A maintainer acknowledges the PR and flags anything blocking
+- **Full review**: A maintainer reviews once CI is green
 - **Feedback**: Constructive, specific, actionable
 - **Approval**: When all feedback addressed and CI passes
 - **Merge**: By maintainers after approval
@@ -960,16 +945,6 @@ lucky db.rollback
 
 # Create new migration
 lucky gen.migration AddPublishedAtToShards
-```
-
-**Background Workers**:
-
-```bash
-# Run workers in development
-crystal src/worker.cr
-
-# Watch worker logs
-tail -f logs/worker.log
 ```
 
 ### Common Issues
@@ -1067,24 +1042,23 @@ crystal spec --color
 crystal spec --order random
 
 # Run specific describe block
-crystal spec spec/models/shard_spec.cr -e "Shard#published?"
+crystal spec spec/models/crawl_state_spec.cr -e "only calls a sweep trustworthy"
 ```
 
-**Kubernetes** (for infrastructure work):
+**Cloud Run** (for infrastructure work, requires access to the GCP project):
 
 ```bash
-# Get pod status
-kubectl get pods -n crystalshards
+# Inspect a deployed service
+gcloud run services describe crystalshards --region us-central1
 
-# View logs
-kubectl logs -f deployment/crystalshards-api -n crystalshards
+# Read recent logs for a service
+gcloud run services logs read crystalshards --region us-central1
 
-# Execute command in pod
-kubectl exec -it deployment/crystalshards-api -n crystalshards -- sh
-
-# Port forward for local testing
-kubectl port-forward svc/crystalshards 3000:80 -n crystalshards
+# List executions of the documentation build job
+gcloud run jobs executions list --job docs-build --region us-central1
 ```
+
+Ad-hoc log queries and metrics live in Cloud Logging and Cloud Monitoring in the `crystalshards-org` project.
 
 ## Getting Help
 

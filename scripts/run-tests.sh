@@ -32,12 +32,12 @@ if [ "$CI" = "true" ]; then
     print_status "Running in CI environment"
     # Use environment variables for database connections
     DATABASE_URL_PREFIX=${DATABASE_URL_PREFIX:-"postgresql://postgres:postgres@localhost:5432"}
-    REDIS_URL=${REDIS_URL:-"redis://localhost:6379"}
+
 else
     print_status "Running in local environment"
     # Use local defaults
     DATABASE_URL_PREFIX="postgresql://postgres:password@localhost:5432"
-    REDIS_URL="redis://localhost:6379"
+
 fi
 
 # Test configuration
@@ -92,7 +92,7 @@ print_status "Running Crystal unit and integration tests..."
 
 test_results=()
 
-for app in shards-registry shards-docs gigs worker; do
+for app in shards-registry shards-docs gigs; do
     if [ -d "apps/$app/spec" ]; then
         print_status "Running tests for $app..."
         cd "apps/$app"
@@ -101,19 +101,12 @@ for app in shards-registry shards-docs gigs worker; do
         case $app in
             "shards-registry")
                 export DATABASE_URL="$DATABASE_URL_REGISTRY"
-                export REDIS_URL="$REDIS_URL/0"
                 ;;
             "shards-docs")
                 export DATABASE_URL="$DATABASE_URL_DOCS"
-                export REDIS_URL="$REDIS_URL/1"
                 ;;
             "gigs")
                 export DATABASE_URL="$DATABASE_URL_GIGS"
-                export REDIS_URL="$REDIS_URL/2"
-                ;;
-            "worker")
-                export DATABASE_URL="$DATABASE_URL_REGISTRY"
-                export REDIS_URL="$REDIS_URL/3"
                 ;;
         esac
         

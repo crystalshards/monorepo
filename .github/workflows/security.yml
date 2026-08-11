@@ -56,7 +56,6 @@ jobs:
         output_format: sarif
         output_file_path: checkov-terraform.sarif
         soft_fail: true
-        skip_check: CKV_K8S_43  # Image digest: We use parameterized tags for CI/CD
 
     - name: Upload Checkov Terraform scan results
       uses: github/codeql-action/upload-sarif@v3
@@ -64,24 +63,6 @@ jobs:
       with:
         sarif_file: checkov-terraform.sarif
         category: terraform
-
-    - name: Run Checkov against Kubernetes manifests
-      uses: bridgecrewio/checkov-action@master
-      with:
-        directory: terraform/
-        framework: kubernetes
-        output_format: sarif
-        output_file_path: checkov-k8s.sarif
-        soft_fail: true
-        skip_check: CKV_K8S_43  # Image digest: We use parameterized tags for CI/CD
-      continue-on-error: true
-
-    - name: Upload Checkov Kubernetes scan results
-      uses: github/codeql-action/upload-sarif@v3
-      if: always() && hashFiles('checkov-k8s.sarif') != ''
-      with:
-        sarif_file: checkov-k8s.sarif
-        category: kubernetes
 
   # Secret scanning
   secret-scan:

@@ -7,57 +7,57 @@ class Db::Seed::SampleData < LuckyTask::Task
   PACKAGES = [
     {
       name: "kemal", version: "1.6.0", released_at: 20.months.ago,
-      description:    "Lightning Fast, Super Simple web framework for Crystal.",
+      description: "Lightning Fast, Super Simple web framework for Crystal.",
       repository_url: "https://github.com/kemalcr/kemal",
     },
     {
       name: "amber", version: "1.5.0", released_at: 12.months.ago,
-      description:    "A Crystal web framework that makes building applications fast, simple, and enjoyable.",
+      description: "A Crystal web framework that makes building applications fast, simple, and enjoyable.",
       repository_url: "https://github.com/amberframework/amber",
     },
     {
       name: "lucky", version: "1.5.0", released_at: 6.months.ago,
-      description:    "A full-featured Crystal web framework that catches bugs for you, runs incredibly fast, and helps you write code that lasts.",
+      description: "A full-featured Crystal web framework that catches bugs for you, runs incredibly fast, and helps you write code that lasts.",
       repository_url: "https://github.com/luckyframework/lucky",
     },
     {
       name: "granite", version: "0.23.4", released_at: 24.months.ago,
-      description:    "ORM for Crystal. Inspired by ActiveRecord and Ecto.",
+      description: "ORM for Crystal. Inspired by ActiveRecord and Ecto.",
       repository_url: "https://github.com/amberframework/granite",
     },
     {
       name: "jennifer", version: "0.13.0", released_at: 24.months.ago,
-      description:    "Active Record pattern implementation for Crystal with flexible query chainable builder and migration system.",
+      description: "Active Record pattern implementation for Crystal with flexible query chainable builder and migration system.",
       repository_url: "https://github.com/imdrasil/jennifer.cr",
     },
     {
       name: "ameba", version: "1.6.4", released_at: 15.months.ago,
-      description:    "A static code analysis tool for Crystal.",
+      description: "A static code analysis tool for Crystal.",
       repository_url: "https://github.com/crystal-ameba/ameba",
     },
     {
       name: "spectator", version: "0.12.4", released_at: 14.months.ago,
-      description:    "Feature-rich spec testing framework for Crystal inspired by RSpec.",
+      description: "Feature-rich spec testing framework for Crystal inspired by RSpec.",
       repository_url: "https://github.com/icy-arctic-fox/spectator",
     },
     {
       name: "crystal-pg", version: "0.30.0", released_at: 10.months.ago,
-      description:    "PostgreSQL driver for Crystal.",
+      description: "PostgreSQL driver for Crystal.",
       repository_url: "https://github.com/will/crystal-pg",
     },
     {
       name: "crystal-redis", version: "2.9.1", released_at: 26.months.ago,
-      description:    "Full featured Redis client for Crystal.",
+      description: "Full featured Redis client for Crystal.",
       repository_url: "https://github.com/stefanwille/crystal-redis",
     },
     {
       name: "jwt", version: "1.7.2", released_at: 16.months.ago,
-      description:    "JSON Web Token implementation in Crystal.",
+      description: "JSON Web Token implementation in Crystal.",
       repository_url: "https://github.com/crystal-community/jwt",
     },
     {
       name: "spec-kemal", version: "1.3.0", released_at: 18.months.ago,
-      description:    "Easy testing for Kemal applications.",
+      description: "Easy testing for Kemal applications.",
       repository_url: "https://github.com/kemalcr/spec-kemal",
     },
   ]
@@ -74,7 +74,7 @@ class Db::Seed::SampleData < LuckyTask::Task
       puts ""
       puts "WARNING: object storage was unreachable for #{@storage_warnings} version listing(s);"
       puts "         those versions are seeded as pending with zero counts."
-      puts "         Start MinIO (make services) and re-run to reflect reality."
+      puts "         Start local services (make services) and re-run to reflect reality."
     end
 
     unless @found_docs
@@ -156,27 +156,18 @@ class Db::Seed::SampleData < LuckyTask::Task
     success
   end
 
-  # Lists <package>/<version>/ in the docs bucket: whether the store answered,
-  # whether docs.json is among the objects, and its real byte size.
-  # `available: false` means MinIO could not be reached, which says
+  # Reads <package>/<version>/docs.json from the docs bucket: whether the
+  # store answered, whether the artifact is there, and its real byte size.
+  # `available: false` means the store could not be reached, which says
   # nothing about whether the documentation exists.
   private def storage_listing(package_name : String, version : String) : NamedTuple(available: Bool, json_exists: Bool, bytes: Int64)
-    prefix = "#{package_name}/#{version}/"
-    bytes = 0_i64
-    json_exists = false
+    key = "#{package_name}/#{version}/docs.json"
 
-    client = CrystalDocs::MinIOConfig.client
-    client.list_objects(CrystalDocs::MinIOConfig.settings.docs_bucket, prefix: prefix).each do |page|
-      page.contents.each do |object|
-        if object.key == "#{prefix}docs.json"
-          json_exists = true
-          bytes = object.size
-        end
-      end
+    begin
+      content = CrystalStorage.docs.get(key)
+      {available: true, json_exists: !content.nil?, bytes: content ? content.size.to_i64 : 0_i64}
+    rescue CrystalStorage::Unavailable
+      {available: false, json_exists: false, bytes: 0_i64}
     end
-
-    {available: true, json_exists: json_exists, bytes: bytes}
-  rescue Awscr::S3::Exception | IO::Error
-    {available: false, json_exists: false, bytes: 0_i64}
   end
 end

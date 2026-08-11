@@ -1,0 +1,248 @@
+variable "project_id" {
+  description = "The GCP project ID"
+  type        = string
+}
+
+variable "region" {
+  description = "Region every service and Job runs in"
+  type        = string
+}
+
+variable "image_repository" {
+  description = "Artifact Registry path images are tagged against, without a trailing slash, e.g. us-central1-docker.pkg.dev/<project>/docker-images"
+  type        = string
+}
+
+variable "image_tag" {
+  description = <<-DESC
+    Image tag every service and Job is created at. Always a commit SHA, never
+    "latest": CI pushes only SHA tags, and a floating tag makes the plan unable
+    to answer what is actually serving.
+
+    Terraform sets this at create time and then stops fighting for it. Every
+    service and Job carries lifecycle.ignore_changes on the image so CI can roll
+    subsequent revisions with `gcloud run services update`.
+  DESC
+  type        = string
+}
+
+variable "docs_launcher_image_name" {
+  description = <<-DESC
+    Image name within the repository for the docs-launcher service.
+
+    It is "crystalshards", not "docs-launcher". There is no apps/docs-launcher
+    and CI builds no such image: the launcher is the registry image deployed a
+    second time under a second service name, because the trusted half of a
+    documentation build already lives in that codebase. Defaulting this to
+    "docs-launcher" would fail the first apply on an image that does not exist.
+  DESC
+  type        = string
+  default     = "crystalshards"
+}
+
+variable "docs_build_image_name" {
+  description = "Image name within the repository for the docs-build Job. This is the image that runs untrusted third party shard code"
+  type        = string
+  default     = "docs-build"
+}
+
+variable "cloud_sql_connection_name" {
+  description = "Instance connection name, mounted as the /cloudsql/<connection_name> socket volume"
+  type        = string
+}
+
+variable "database_url_secret_ids" {
+  description = "Map of app slug to the Secret Manager secret_id holding that database's connection string"
+  type        = map(string)
+}
+
+variable "mail_enabled_apps" {
+  description = <<-DESC
+    App slugs whose Resend secret CI has actually populated with a version.
+    RESEND_API_KEY is attached to a revision only for these, because a revision
+    referencing a versionless secret never reaches Ready.
+
+    Names only, never a key value. Intersected with local.mail_senders, so a slug
+    outside crystalgigs/crystalbits is dropped rather than wired. Empty is the
+    normal case until the keys exist: all four services serve, and the two
+    senders raise on an actual send attempt naming RESEND_API_KEY.
+  DESC
+  type        = set(string)
+  default     = []
+}
+
+variable "docs_bucket_name" {
+  description = "Built documentation bucket"
+  type        = string
+}
+
+variable "packages_bucket_name" {
+  description = "Package artifact bucket"
+  type        = string
+}
+
+variable "docs_build_queue_name" {
+  description = "Short name of the Cloud Tasks queue documentation builds are enqueued on"
+  type        = string
+}
+
+variable "docs_build_queue_location" {
+  description = "Location of the Cloud Tasks queue"
+  type        = string
+}
+
+variable "docs_build_concurrency" {
+  description = <<-DESC
+    The global documentation build concurrency cap, taken from the queue module
+    rather than restated. docs-launcher's max_instances is pinned to it, so the
+    dispatcher can never be asked to hold more builds open than the queue is
+    willing to have in flight, and the Job's own parallelism is 1.
+  DESC
+  type        = number
+}
+
+variable "docs_build_timeout_seconds" {
+  description = <<-DESC
+    Ceiling on a single documentation build, and the single number four things
+    derive from. docs-launcher holds the Cloud Tasks request open for the whole
+    execution so it can record the outcome from an identity that has the
+    database, so the launcher's request timeout, the docs-build Job's timeout
+    and the per-task Cloud Tasks dispatchDeadline set by each producer all have
+    to agree. The sandbox timeout is derived from this too, but deliberately
+    NOT equal to it: see docs_build_launcher_margin_seconds.
+
+    Changing this here is sufficient, and that is deliberate. This value becomes
+    local.docs_build_deadline_seconds, which sets both timeouts directly and is
+    also published to crystalshards, crystaldocs and docs-launcher as
+    DOCS_BUILD_DEADLINE_SECONDS. The two producers read that env var rather than
+    carrying a literal, so there is no second number to keep in step and no way
+    to move one without the other.
+
+    It is wired that way because the drift is undetectable. Nothing in the
+    pipeline can see a mismatch: /api/health answers in milliseconds so every
+    readiness probe and deploy gate stays green, and the app side specs can only
+    observe the task half. The only symptom of a dispatch deadline shorter than
+    the build is documentation that never appears, while Cloud Tasks abandons
+    and redelivers a build that is still running.
+  DESC
+  type        = number
+  default     = 1800
+
+  # Upper bound: 1800 is not a preference, it is the ceiling. Cloud Tasks
+  # accepts a dispatchDeadline for an HTTP target only in [15s, 1800s], and this
+  # value is published to the producers as DOCS_BUILD_DEADLINE_SECONDS. Raise it
+  # to 3600 and two of the three consumers accept it happily: the launcher's
+  # Cloud Run timeout and the Job's timeout both allow it. The third does not,
+  # so every CreateTask call is rejected, and because the enqueue path rescues
+  # and logs, that surfaces as "queue unreachable" while documentation is simply
+  # never commissioned.
+  #
+  # Lower bound: 900 rather than the 15 Cloud Tasks would tolerate, because
+  # docs_build_launcher_margin_seconds is subtracted from this to produce the
+  # sandbox timeout, and that subtraction has to stay comfortably positive. The
+  # two bounds are checked independently on purpose. A single cross-variable
+  # condition would be more direct but needs Terraform 1.9 for a validation to
+  # reference another variable, and this configuration declares >= 1.7, so it
+  # would be a check that only runs where someone happens to be newer.
+  #
+  # The apps validate the same bounds at boot. These refuse at plan time, which
+  # is the cheaper place to find out.
+  validation {
+    condition     = var.docs_build_timeout_seconds >= 900 && var.docs_build_timeout_seconds <= 1800
+    error_message = "docs_build_timeout_seconds must be between 900 and 1800. It is published to the documentation build producers as DOCS_BUILD_DEADLINE_SECONDS, and Cloud Tasks rejects a dispatchDeadline outside [15s, 1800s] for an HTTP target; the 900 floor keeps docs_build_timeout_seconds minus docs_build_launcher_margin_seconds positive."
+  }
+}
+
+variable "docs_build_launcher_margin_seconds" {
+  description = <<-DESC
+    How much longer docs-launcher lives than the sandbox it is waiting on.
+
+    The sandbox timeout is docs_build_timeout_seconds minus this, so it is
+    strictly smaller than the launcher's request timeout and the dispatch
+    deadline. That inequality is the point and it must not be tidied into
+    equality. docs-launcher holds the Cloud Tasks request open for the whole
+    build and is the ONLY party in the chain holding a database credential, so
+    it has to outlive the sandbox in order to write the outcome. If the sandbox
+    is allowed to run right up to the launcher's own deadline, the launcher is
+    killed mid wait and records nothing: the row stays in building forever, no
+    failed_at is ever written so the retry floor has nothing to measure from,
+    nothing reconsiders it, and no log line says why. A build orphaned that way
+    is invisible rather than noisy, which is why it earns a variable and a
+    comment rather than a subtraction someone can smooth away.
+
+    The margin is not padding. It covers the work the launcher does outside the
+    sandbox wait: clone, checkout, `shards install --skip-postinstall`, then
+    downloading the artifact, validating it parses, publishing it and writing
+    status. `shards install` on a dependency heavy shard is the slow one.
+  DESC
+  type        = number
+  default     = 300
+
+  validation {
+    condition     = var.docs_build_launcher_margin_seconds >= 300 && var.docs_build_launcher_margin_seconds <= 600
+    error_message = "docs_build_launcher_margin_seconds must be between 300 and 600. Below 300 the launcher may be killed before it can record the build outcome, which orphans the build silently; above 600 it would exceed what the 900 floor on docs_build_timeout_seconds can absorb."
+  }
+}
+
+variable "job_ads_url" {
+  description = <<-DESC
+    Where the job ad strip reads promotable jobs from. CrystalShards, CrystalDocs
+    and CrystalBits all refuse to boot in production without it, by design.
+
+    No default, because any default would hardcode the CrystalGigs hostname a
+    third time. The caller builds it from app_domains["crystalgigs"], so the
+    strip cannot end up pointed at a host the edge does not serve.
+  DESC
+  type        = string
+}
+
+variable "app_domains" {
+  description = <<-DESC
+    Map of app slug to the public origin it serves on. Lucky calls
+    ENV.fetch("APP_DOMAIN") at boot in production and raises without it.
+
+    Required, with no default, on purpose. These same four hostnames drive the
+    managed certificates, the load balancer host rules and the DNS records, and
+    a default here would be a second copy of them that nothing compares against
+    the first. The failure that prevents is the quiet one: terraform validates,
+    the plan is clean, the services boot, and the only symptom is an app
+    generating absolute URLs and callbacks for a hostname the load balancer does
+    not serve. The single source is local.sites in terraform/locals.sites.tf.
+  DESC
+  type        = map(string)
+}
+
+variable "docs_launcher_app_domain" {
+  description = <<-DESC
+    APP_DOMAIN for docs-launcher. It serves no public origin of its own and the
+    value only feeds Lucky's route helper, so the caller passes the registry
+    origin it belongs to. No default, for the same reason as app_domains: a
+    hostname written here is a copy nothing reconciles.
+  DESC
+  type        = string
+}
+
+variable "request_concurrency" {
+  description = "Concurrent requests per instance. Held below Cloud Run's default of 80 because each instance backs them with a connection pool of five"
+  type        = number
+  default     = 40
+}
+
+variable "request_timeout_seconds" {
+  description = "Request timeout for the four public services. A page that has not answered in a minute is not going to"
+  type        = number
+  default     = 60
+}
+
+variable "health_path" {
+  description = "Startup probe path. The apps mount health at /api/health, not /health, and a probe on the wrong path burns its whole failure budget on Lucky 404s and then fails the deploy looking like a broken app"
+  type        = string
+  default     = "/api/health"
+}
+
+variable "container_port" {
+  description = "Port the container listens on. Cloud Run derives the injected PORT from this and config/server.cr binds to it"
+  type        = number
+  default     = 8080
+}
+

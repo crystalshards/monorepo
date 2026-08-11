@@ -55,12 +55,8 @@ describe "stored raw documentation files" do
         response.body.should_not contain(marker)
       end
     ensure
-      client = CrystalDocs::MinIOConfig.client
       planted.each_value do |file_path|
-        begin
-          client.delete_object(CrystalDocs::MinIOConfig.settings.docs_bucket, "raw-guard/1.0.0/#{file_path}")
-        rescue
-        end
+        storage.delete_doc_file("raw-guard", "1.0.0", file_path)
       end
     end
   end
