@@ -258,12 +258,187 @@ jobs:
           echo "${IMAGE_REF} -> ${digest}"
 
   # ---------------------------------------------------------------------------
-  # Apply the Cloud Run stack. Runs after the images exist so terraform creates every
-  # service and job at a real SHA image rather than a placeholder.
+  # Populate Secret Manager versions.
+  #
+  # Terraform creates these secrets as empty containers and never writes their
+  # values, so no third party credential is ever a terraform variable and none is
+  # ever written to the state bucket. That leaves CI to supply the versions, and the
+  # ordering is unforgiving: a Cloud Run revision referencing a secret with zero
+  # versions does not start, so this must complete before the stack is applied.
+  #
+  # Hence the narrowly targeted apply below. It creates the secret containers and
+  # nothing else, specifically not the Cloud Run services, which the full apply in
+  # the next job creates once the values are in place.
+  #
+  # Four values, not one per service. crystalgigs and crystalbits exit at boot
+  # without their keys and so are genuinely gated on them; crystalshards and
+  # crystaldocs deliberately no longer require a mail key, and docs-launcher runs
+  # the crystalshards image so it inherits that. The list below is grounded in what
+  # the app code actually demands rather than in what the stack happens to wire.
+  # ---------------------------------------------------------------------------
+  secrets:
+    name: Populate Secret Manager versions
+    needs: [gate, bootstrap-registry]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Create the secret containers
+        working-directory: ./terraform
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: ${{ env.GCP_REGION }}
+          IMAGE_TAG: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+          terraform init
+          terraform apply -auto-approve \
+            -target=module.services.google_secret_manager_secret.sendgrid_key \
+            -target=module.services.google_secret_manager_secret.stripe_secret_key \
+            -target=module.services.google_secret_manager_secret.stripe_publishable_key \
+            -var="project_id=${PROJECT_ID}" \
+            -var="region=${REGION}" \
+            -var="image_tag=${IMAGE_TAG}"
+
+      - name: Add a version to every required secret
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          CRYSTALGIGS_SENDGRID_KEY: ${{ secrets.CRYSTALGIGS_SENDGRID_KEY }}
+          CRYSTALBITS_SENDGRID_KEY: ${{ secrets.CRYSTALBITS_SENDGRID_KEY }}
+          CRYSTALGIGS_STRIPE_SECRET_KEY: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
+          CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+        run: |
+          set -uo pipefail
+
+          failures=0
+
+          # $1 Secret Manager secret_id, $2 the GitHub secret name holding the value.
+          # The value is read out of the environment by name, so it is never an
+          # argument and never reaches a process listing.
+          populate() {
+            local secret_id="$1" var_name="$2"
+            local value="${!2-}" current had_version access_err readback
+
+            if [ -z "$value" ]; then
+              echo "  ${secret_id}: GitHub secret ${var_name} is not set." >&2
+              echo "    The service that consumes it exits at boot without it, so the revision" >&2
+              echo "    will not start. Set it in repository secrets. Do not substitute a" >&2
+              echo "    placeholder." >&2
+              failures=$((failures + 1)); return
+            fi
+
+            # The old scaffold told operators to set the key to the literal string
+            # "unused", which is how a tracked tfvars ended up pinning four real
+            # credentials to it. Refuse the whole family by name.
+            case "$value" in
+              unused|UNUSED|changeme|CHANGEME|placeholder|PLACEHOLDER|TODO|todo|test|xxx)
+                echo "  ${secret_id}: ${var_name} holds the placeholder '${value}'." >&2
+                echo "    A placeholder here ships a green pipeline with the capability silently dead." >&2
+                failures=$((failures + 1)); return
+                ;;
+            esac
+
+            # Treat only a genuine absence as absent. Reading every non-zero exit as
+            # "no version yet" would turn a 403 into a spurious new version.
+            if current="$(gcloud secrets versions access latest \
+                            --secret="$secret_id" --project="$PROJECT_ID" 2>/tmp/access.err)"; then
+              had_version=1
+            else
+              access_err="$(cat /tmp/access.err)"
+              case "$access_err" in
+                *NOT_FOUND*|*"has no versions"*|*"was not found"*)
+                  had_version=0; current="" ;;
+                *)
+                  echo "  ${secret_id}: cannot read current version: ${access_err}" >&2
+                  failures=$((failures + 1)); return
+                  ;;
+              esac
+            fi
+
+            if [ "$had_version" -eq 1 ] && [ "$current" = "$value" ]; then
+              echo "  ${secret_id}: already current"
+              return
+            fi
+
+            # printf rather than echo: a trailing newline inside an API key is a 401
+            # that presents as a wrong key.
+            if ! printf '%s' "$value" | gcloud secrets versions add "$secret_id" \
+                   --project="$PROJECT_ID" --data-file=- >/dev/null; then
+              echo "  ${secret_id}: failed to add a version" >&2
+              failures=$((failures + 1)); return
+            fi
+
+            # Read it back. An accepted write is not the same as the value a revision
+            # will resolve, and this is the last chance to catch it before one boots.
+            if ! readback="$(gcloud secrets versions access latest \
+                               --secret="$secret_id" --project="$PROJECT_ID" 2>&1)"; then
+              echo "  ${secret_id}: wrote a version but cannot read it back: ${readback}" >&2
+              failures=$((failures + 1)); return
+            fi
+            if [ "$readback" != "$value" ]; then
+              echo "  ${secret_id}: read back a value that does not match what was written" >&2
+              failures=$((failures + 1)); return
+            fi
+
+            echo "  ${secret_id}: new version added"
+          }
+
+          # The four third party credentials this system genuinely consumes, grounded
+          # in the app code rather than in the terraform wiring:
+          #
+          #   crystalgigs  config/email.cr and config/payments.cr both exit(1) at boot
+          #                without their key. It delivers job applications by mail and
+          #                takes payment, so both are real start up dependencies.
+          #   crystalbits  config/email.cr exits(1) at boot. It sends the newsletter.
+          #
+          # crystalshards and crystaldocs deliberately no longer require one: a
+          # registry and a docs site should not refuse to serve a page because a mail
+          # credential is absent. docs-launcher runs the crystalshards image, so it
+          # inherits that. None of those three is listed here, and none should be.
+          populate crystalgigs-sendgrid-key           CRYSTALGIGS_SENDGRID_KEY
+          populate crystalbits-sendgrid-key           CRYSTALBITS_SENDGRID_KEY
+          populate crystalgigs-stripe-secret-key      CRYSTALGIGS_STRIPE_SECRET_KEY
+          populate crystalgigs-stripe-publishable-key CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY
+
+          if [ "$failures" -ne 0 ]; then
+            echo "${failures} secret(s) could not be populated. Not applying the stack: a revision referencing an empty secret will not start." >&2
+            exit 1
+          fi
+
+          echo "All four required credentials hold a current version."
+
+  # ---------------------------------------------------------------------------
+  # Apply the Cloud Run stack.
+  #
+  # After build, so terraform creates every service and job at a real SHA image
+  # rather than a placeholder. After secrets, because this apply is what creates the
+  # revisions, and a revision referencing a secret with zero versions never reaches
+  # Ready. Populating afterwards would be too late: the revision is already dead.
   # ---------------------------------------------------------------------------
   infra:
     name: Apply Cloud Run stack
-    needs: [gate, build]
+    needs: [gate, build, secrets]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -904,6 +1079,10 @@ jobs:
           fi
 
           if [ "$deferred" -ne 0 ]; then
+            # `set -u` is on, and this is the one place that reads a variable the
+            # runner provides rather than this workflow. Default it so the step cannot
+            # die on an unbound variable after every assertion has already passed.
+            summary="${GITHUB_STEP_SUMMARY:-/dev/null}"
             {
               echo "### Smoke test"
               echo
@@ -916,7 +1095,7 @@ jobs:
               echo
               echo "Re-run this workflow once the certificates report ACTIVE to get the full HTTPS"
               echo "assertion on those hostnames."
-            } >> "$GITHUB_STEP_SUMMARY"
+            } >> "$summary"
           fi
 
           echo "${host_count} hostname(s) checked, ${deferred} awaiting certificate issuance, 0 failures."

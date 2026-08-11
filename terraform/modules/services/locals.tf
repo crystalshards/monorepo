@@ -7,6 +7,18 @@ locals {
   # a mail.
   lucky_services = setunion(local.apps, toset(["docs-launcher"]))
 
+  # The services that actually send mail, and therefore the only ones that get a
+  # SEND_GRID_KEY or a secret to hold it.
+  #
+  # crystalshards, crystaldocs and docs-launcher are absent because they send
+  # nothing: config/email.cr in those apps selects a non-sending adapter and asks
+  # for no credential. They used to hard-exit at boot without SEND_GRID_KEY,
+  # which meant a package registry refusing to serve a page over a mail key it
+  # never used, and it is what made the sentinel string "unused" look necessary.
+  # With the app fixed, the right answer here is not a placeholder value but no
+  # secret at all.
+  mail_senders = toset(["crystalgigs", "crystalbits"])
+
 
   # Image references. Terraform sets a real, already pushed SHA at create time
   # and then stops caring: every service and Job below carries
@@ -82,7 +94,6 @@ locals {
       secret_env = {
         DATABASE_URL    = var.database_url_secret_ids["crystalshards"]
         SECRET_KEY_BASE = google_secret_manager_secret.secret_key_base["crystalshards"].secret_id
-        SEND_GRID_KEY   = google_secret_manager_secret.sendgrid_key["crystalshards"].secret_id
         # The registry records documentation build state in the crystaldocs
         # database, so this service legitimately holds two connections. It
         # connects as the crystaldocs role rather than its own, which keeps
@@ -104,7 +115,6 @@ locals {
       secret_env = {
         DATABASE_URL    = var.database_url_secret_ids["crystaldocs"]
         SECRET_KEY_BASE = google_secret_manager_secret.secret_key_base["crystaldocs"].secret_id
-        SEND_GRID_KEY   = google_secret_manager_secret.sendgrid_key["crystaldocs"].secret_id
         # Mirror image of the pairing above: the docs site reads the registry.
         REGISTRY_DATABASE_URL = var.database_url_secret_ids["crystalshards"]
       }
@@ -217,7 +227,6 @@ locals {
     DATABASE_URL      = var.database_url_secret_ids["crystalshards"]
     DOCS_DATABASE_URL = var.database_url_secret_ids["crystaldocs"]
     SECRET_KEY_BASE   = google_secret_manager_secret.secret_key_base["docs-launcher"].secret_id
-    SEND_GRID_KEY     = google_secret_manager_secret.sendgrid_key["docs-launcher"].secret_id
   }
 
   # Flattened (identity, secret) pairs for the accessor bindings. Keyed on both

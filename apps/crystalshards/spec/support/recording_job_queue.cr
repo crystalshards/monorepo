@@ -38,6 +38,23 @@ class RecordingJobQueue < CrystalShards::JobQueue
   end
 end
 
+# Records docs build requests instead of commissioning them.
+#
+# The inline queue hands documentation builds to `DocsBuildQueue.build`, which
+# outside production is the in-process queue and merely logs. That is already
+# harmless, but it is not observable, so an example that wants to assert a
+# build was requested has nothing to look at.
+class RecordingDocsBuildQueue < CrystalShards::DocsBuildQueue
+  record Requested, shard_name : String, version : String
+
+  getter requested = [] of Requested
+
+  def enqueue(shard_name : String, version : String) : String?
+    @requested << Requested.new(shard_name, version)
+    "build-#{@requested.size}"
+  end
+end
+
 # Every example gets a fresh recorder, whether or not it asked for one.
 #
 # before_each rather than an after_each reset, deliberately: installing at the
@@ -47,7 +64,10 @@ end
 # stray dispatch escape.
 #
 # An example that wants the real behaviour nils the override itself, and the
-# next example gets a recorder again regardless.
+# next example gets a recorder again regardless. Both overrides are reset here
+# for that reason: an example that nils `DocsBuildQueue.override` to assert on
+# the default wiring must not leave it nil for everything after it.
 Spec.before_each do
   RecordingJobQueue.install
+  CrystalShards::DocsBuildQueue.override = RecordingDocsBuildQueue.new
 end

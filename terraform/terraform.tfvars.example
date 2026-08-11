@@ -1,23 +1,38 @@
-# Copy to terraform.tfvars, or supply these as TF_VAR_<name> environment
-# variables in CI. Do not commit a filled in terraform.tfvars: a values file
-# takes precedence over TF_VAR_ environment variables, so a checked in
-# placeholder silently overrides the real secret CI passes.
+# Copy to terraform.tfvars for a local plan, or set these as TF_VAR_<name> in CI.
+#
+# NON SECRET VALUES ONLY, and that is now the whole file rather than a caution.
+# A values file takes precedence over TF_VAR_ environment variables, so anything
+# written here silently outranks what CI passes. This file used to list seven
+# secret variables with placeholder values, and its committed sibling
+# terraform.tfvars had them pinned to the literal "unused", which meant the real
+# keys CI supplied never reached Secret Manager and every app booted with mail
+# and payments disabled under a green pipeline.
+#
+# There are no secret variables left to get wrong. Terraform generates the
+# credentials it can generate, and for the ones it cannot it creates an empty
+# Secret Manager container that an operator populates directly, so no third
+# party credential passes through terraform, CI, or the state file.
 
 project_id = "crystalshards-org"
 region     = "us-central1"
 
-# Git commit SHA of the images to create Cloud Run resources at. Required, and
-# never "latest": CI pushes only SHA tags.
+# Git commit SHA of the images to create Cloud Run resources at. Required, with
+# no default, and never "latest": CI pushes only SHA tags. Normally passed as
+# -var="image_tag=<sha>" rather than written here.
 image_tag = "abc1234"
 
-# Outbound email. Every service calls exit(1) at boot in production without its
-# key. "unused" is the app's documented value for running with email off.
-crystalshards_sendgrid_key = "your-sendgrid-api-key"
-crystaldocs_sendgrid_key   = "your-sendgrid-api-key"
-crystalgigs_sendgrid_key   = "your-sendgrid-api-key"
-crystalbits_sendgrid_key   = "your-sendgrid-api-key"
-docs_launcher_sendgrid_key = "unused"
-
-# CrystalGigs payments
-crystalgigs_stripe_secret_key      = "your-stripe-secret-key"
-crystalgigs_stripe_publishable_key = "your-stripe-publishable-key"
+# THAT IS EVERY VARIABLE. Do not add a SendGrid or Stripe entry below; those
+# variables no longer exist and terraform will reject them as undeclared.
+#
+# Four secrets must be populated out of band before crystalgigs.com and
+# crystalbits.org will start. The other services need nothing:
+#
+#   gcloud secrets versions add crystalgigs-sendgrid-key           --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add crystalgigs-stripe-secret-key      --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add crystalgigs-stripe-publishable-key --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add crystalbits-sendgrid-key           --data-file=- --project=crystalshards-org
+#
+# Terraform creates the containers, so there is no `gcloud secrets create` step.
+# Use real keys. An empty version fails at boot exactly like a missing one, and
+# there is no "off" value: the apps that send mail deleted their opt-out, and
+# the apps that do not send no longer ask for a key at all.

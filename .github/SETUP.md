@@ -144,8 +144,8 @@ identity needs no further grant on the repository.
 Do not add a second source for a variable that already has one. Terraform
 auto-loads `terraform.tfvars`, and an auto-loaded values file outranks `TF_VAR_`,
 so exporting `TF_VAR_project_id` alongside the tracked file changes nothing while
-the run still reports success. That precedence is how a values file pinning
-credentials to `"unused"` once overrode what CI passed.
+the run still reports success. That precedence is what let a tracked values file
+pinning credentials to a placeholder silently override what CI passed.
 
 No third-party credential is a Terraform variable. The SendGrid and Stripe keys
 reach the services through Secret Manager instead, so nothing sensitive is written
@@ -165,37 +165,39 @@ gcloud run jobs list --region us-central1
 
 ## Populate the Application Secrets
 
-Terraform creates these seven as empty Secret Manager containers, so there is no
+Terraform creates these four as empty Secret Manager containers, so there is no
 `gcloud secrets create` step. Each one needs a version added by hand:
 
-- `crystalshards-sendgrid-key`
-- `crystaldocs-sendgrid-key`
 - `crystalgigs-sendgrid-key`
-- `crystalbits-sendgrid-key`
-- `docs-launcher-sendgrid-key`
 - `crystalgigs-stripe-secret-key`
 - `crystalgigs-stripe-publishable-key`
+- `crystalbits-sendgrid-key`
 
 ```bash
 gcloud secrets versions add <secret-id> --data-file=- --project=crystalshards-org
 ```
 
-On a clean apply no site serves until all seven have a version. A Cloud Run
-revision that references a secret with zero versions fails to start. It does not
-start degraded, and it does not start with an empty string.
+A Cloud Run revision that references a secret with zero versions fails to start.
+It does not start degraded, and it does not start with an empty string.
 
-All five services are blocked, not only the one taking payments. Every Lucky
-service reads `SEND_GRID_KEY`, and `config/email.cr` calls `exit(1)` at boot in
-production without it, so `crystalshards`, `crystaldocs`, `crystalbits` and
-`docs-launcher` each wait on their own SendGrid secret, and `crystalgigs` waits on
-all three of its SendGrid, Stripe secret and Stripe publishable keys. The four
-migrate Jobs are unaffected, holding only the `DATABASE_URL` Terraform generates,
-and `docs-build` is unaffected because it holds no secret at all.
+Two of the four domains therefore come up on a clean apply with no third party
+credentials at all, and two stay dark until their keys are added:
 
-To run a service without outbound mail, set that service's SendGrid secret to the
-literal string `unused`, the value `config/email.cr` names in its own error
-message. That is an operator decision recorded in Secret Manager, which is not the
-same thing as a fake value committed to a tracked file. Stripe has no equivalent:
+| Service | On a clean apply |
+| --- | --- |
+| `crystalshards` | Serves. Holds no third party secret. |
+| `crystaldocs` | Serves. Holds no third party secret. |
+| `docs-launcher` | Serves. Holds no third party secret. |
+| `crystalbits` | Will not start until `crystalbits-sendgrid-key` has a version. |
+| `crystalgigs` | Will not start until all three of its secrets have a version. |
+
+The four `*-migrate` Jobs are unaffected, holding only the `DATABASE_URL`
+Terraform generates, and `docs-build` is unaffected because it holds no secret
+at all.
+
+Only CrystalGigs and CrystalBits send mail, so only they require a SendGrid key,
+and each fails closed naming the variable rather than starting without it. There
+is no opt out value: a service that does not send mail has no secret to set.
 CrystalGigs needs real Stripe keys or it does not serve.
 
 ## Security Considerations

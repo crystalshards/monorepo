@@ -659,11 +659,17 @@ jobs:
           # The assertion reads this, not the text above. Grep on plan text is
           # how a guard passes while the thing it guards against happens.
           #
-          # This file DOES contain sensitive values in cleartext: the plan JSON
-          # carries every SendGrid and Stripe key headed for Secret Manager, and
-          # flags them in a parallel `after_sensitive` structure rather than
-          # masking them. It is consumed in-job and never uploaded. The evidence
-          # artifact gets a redacted derivative instead.
+          # This file still carries secret material in cleartext, and not the
+          # third party keys: those left terraform entirely when the seven
+          # variables were deleted, and only the empty Secret Manager containers
+          # remain. What survives is the material terraform GENERATES, which it
+          # must know by definition: module.services.random_password
+          # .secret_key_base and module.database.random_password.apps, the
+          # latter embedded in the database_url secret version. Plan JSON prints
+          # those in `after` and merely flags them in a parallel
+          # `after_sensitive` structure rather than masking them. So this file
+          # is consumed in-job and never uploaded; the evidence artifact gets
+          # the redacted derivative the assertion writes.
           terraform show -json -no-color tfplan.binary > tfplan.json
 
           if [ ! -s tfplan.json ]; then

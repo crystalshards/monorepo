@@ -91,9 +91,22 @@ variable "docs_build_timeout_seconds" {
     Ceiling on a single documentation build. docs-launcher holds the Cloud Tasks
     request open for the duration of the execution so it can record the outcome
     from an identity that has the database, which means the launcher's request
-    timeout, the Job's timeout and the queue's dispatch deadline all have to sit
-    at or above this. The app side default (DOCS_SANDBOX_TIMEOUT_SECONDS) is 900,
-    so this leaves headroom rather than racing it.
+    timeout, the Job's timeout and the Cloud Tasks dispatch deadline all have to
+    sit at or above this. The app side sandbox timeout
+    (DOCS_SANDBOX_TIMEOUT_SECONDS) defaults to 900, so this leaves headroom
+    rather than racing it.
+
+    CHANGING THIS ALONE IS NOT ENOUGH. The Cloud Tasks dispatch deadline is a
+    per task field with no queue level equivalent for an HTTP target, so it is
+    set in application code, not here:
+
+      apps/crystaldocs/src/services/docs_build_queue.cr
+      apps/crystalshards/src/services/docs_build_queue.cr
+
+    Both carry DISPATCH_DEADLINE_SECONDS = 1800 and must move with this value.
+    Lower it here and leave them alone and nothing breaks visibly; the mismatch
+    only appears the first time a shard takes longer than the smaller of the
+    two, at which point Cloud Tasks kills a build mid flight and retries it.
   DESC
   type        = number
   default     = 1800

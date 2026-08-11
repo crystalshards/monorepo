@@ -20,13 +20,14 @@
 # "unused" and silently outranked the real values CI passed, producing a green
 # pipeline with mail and payments dead.
 #
-# One key per service rather than one shared key, so revoking a compromised key
-# takes one site down instead of all of them. An operator who does not want a
-# given service sending mail sets this to the app's own documented value for
-# that, the literal string "unused", which is a decision recorded in Secret
-# Manager rather than a default hidden in code.
+# One key per sending service rather than one shared key, so revoking a
+# compromised key takes one site down instead of both.
+#
+# Only crystalgigs and crystalbits appear here. There is no opt out and no
+# "off" value: a service that sends mail needs a real key and fails closed
+# naming it, and a service that does not send mail has no secret at all.
 resource "google_secret_manager_secret" "sendgrid_key" {
-  for_each = local.lucky_services
+  for_each = local.mail_senders
 
   project   = var.project_id
   secret_id = "${each.key}-sendgrid-key"

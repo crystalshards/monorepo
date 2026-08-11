@@ -9,18 +9,18 @@ Go to Settings → Secrets and variables → Actions and add:
 ### Required Secrets
 
 - `GCP_SA_KEY` - Service account JSON key CI authenticates with
-- `GCP_PROJECT_ID` - Target project, passed to Terraform as `TF_VAR_project_id`
-- `CRYSTALSHARDS_SENDGRID_KEY`
-- `CRYSTALDOCS_SENDGRID_KEY`
-- `CRYSTALGIGS_SENDGRID_KEY`
-- `CRYSTALBITS_SENDGRID_KEY`
-- `DOCS_LAUNCHER_SENDGRID_KEY`
-- `CRYSTALGIGS_STRIPE_SECRET_KEY`
-- `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY`
+- `GCP_PROJECT_ID` - The Google Cloud project to deploy into
 
-Those nine are the complete set. The pipeline reads no other repository secret.
-[`.github/SETUP.md`](.github/SETUP.md) explains what each one is for and how to mint
-the Google Cloud key.
+Those two are what the Terraform deploy path requires. The deploy workflow may
+consume others for steps outside Terraform.
+
+The SendGrid and Stripe keys are not repository secrets. Terraform never sees them,
+so nothing sensitive is written into Terraform state. They live in Secret Manager
+and an operator adds each version by hand.
+[`.github/SETUP.md`](.github/SETUP.md) has that step, how to mint the Google Cloud
+key, and the boundary it creates: CrystalShards and CrystalDocs serve on a clean
+apply with no third party credentials, while CrystalGigs and CrystalBits will not
+start until their Secret Manager secrets have a version.
 
 ## 2. Service Account Permissions
 

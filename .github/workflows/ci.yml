@@ -79,8 +79,16 @@ jobs:
       - name: Build ${{ matrix.app }}
         working-directory: ./apps/${{ matrix.app }}
         run: |
+          set -euo pipefail
           echo "Building ${{ matrix.app }}..."
           crystal build --no-codegen src/${{ matrix.app }}.cr
+
+          # The migration entrypoint is a second binary that the ${{ matrix.app }}-migrate
+          # Cloud Run Job runs, and nothing else compiles it. Without this, a broken
+          # migrator ships green and is only discovered when a deploy tries to migrate.
+          echo "Building the migration entrypoint..."
+          crystal build --no-codegen src/migrate.cr
+
           echo "Build successful!"
 
       - name: Run specs
@@ -99,8 +107,25 @@ jobs:
       - name: Format check
         working-directory: ./apps/${{ matrix.app }}
         run: |
-          echo "Checking Crystal formatting for ${{ matrix.app }}..."
-          crystal tool format --check src/
+          set -euo pipefail
+
+          # Every tree that gets hand edited, not just src/. Checking src/ alone let
+          # unformatted config/ and spec/ files through, and a check that covers a
+          # subset is indistinguishable from one that covers everything until it is not.
+          targets=()
+          for t in src spec config db tasks tasks.cr; do
+            [ -e "$t" ] && targets+=("$t")
+          done
+
+          # Positive control: an empty target list would make the check pass by
+          # scanning nothing, which is exactly the failure being fixed here.
+          if [ "${#targets[@]}" -eq 0 ]; then
+            echo "No Crystal source trees found in apps/${{ matrix.app }}." >&2
+            exit 1
+          fi
+
+          echo "Checking Crystal formatting for ${{ matrix.app }}: ${targets[*]}"
+          crystal tool format --check "${targets[@]}"
 
   # Security scanning
   security:
