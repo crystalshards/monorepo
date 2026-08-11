@@ -118,6 +118,10 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_SA_KEY }}
 
+      # Needed by the API-enable step below; this job previously used terraform only.
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -137,6 +141,25 @@ jobs:
           IMAGE_TAG: ${{ needs.gate.outputs.sha }}
         run: |
           set -euo pipefail
+
+          # Enable the APIs the rest of the deploy cannot function without, before
+          # terraform touches anything. Idempotent, and cheap insurance against a
+          # failure that already happened once: destroying the legacy GKE-era
+          # `google_project_service.artifact_registry_api`, which carried
+          # disable_dependent_services, switched artifactregistry OFF mid-apply,
+          # and every Cloud Run service then failed with
+          #   Error 403: Artifact Registry API has not been used in project ...
+          # Google also warns that a freshly enabled API takes a few minutes to
+          # propagate, so enabling here rather than in the same apply that
+          # consumes it removes the race as well as the disable.
+          gcloud services enable \
+            artifactregistry.googleapis.com \
+            run.googleapis.com \
+            sqladmin.googleapis.com \
+            secretmanager.googleapis.com \
+            cloudtasks.googleapis.com \
+            compute.googleapis.com \
+            --project "$PROJECT_ID"
           terraform init
           terraform apply -auto-approve \
             -target=module.registry \
