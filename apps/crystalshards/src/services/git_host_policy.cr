@@ -57,8 +57,35 @@ class GitHostPolicy
 
   # Returns the parsed URI when the URL is safe to fetch, raises otherwise.
   def self.validate_fetch_url!(url : String) : URI
-    normalized = normalize_url(url)
-    uri = parse_uri(normalized)
+    admit!(normalize_url(url), url, ALLOWED_HOSTS, "a supported git host", resolve_dns: true)
+  end
+
+  # The same gate, for the API endpoints the crawlers talk to rather than the
+  # repository hosts they store.
+  #
+  # A separate entry point with a caller-supplied allowlist, because the two
+  # answer different questions about different hostnames. bitbucket.org serves
+  # repositories and api.bitbucket.org serves the API; folding the second into
+  # ALLOWED_HOSTS would also make "https://api.bitbucket.org/..." an acceptable
+  # repository_url, which it is not. What they share, and what this keeps in one
+  # place, is the scheme, credential, IP-literal, DNS and public-address
+  # checking: a second implementation of those is a second thing to get wrong.
+  #
+  # `resolve_dns` is false for the per-request check on a hot path, where the
+  # endpoint was already resolved and range-checked when the crawler was built
+  # and the question is only whether this URL still names it.
+  def self.validate_api_url!(url : String, allowed_hosts : Array(String), resolve_dns : Bool = true) : URI
+    admit!(url, url, allowed_hosts, "an API endpoint this registry talks to", resolve_dns: resolve_dns)
+  end
+
+  private def self.admit!(
+    candidate : String,
+    url : String,
+    allowed_hosts : Array(String),
+    description : String,
+    resolve_dns : Bool,
+  ) : URI
+    uri = parse_uri(candidate)
 
     scheme = uri.scheme.try(&.downcase)
     unless scheme == "http" || scheme == "https"
@@ -85,9 +112,11 @@ class GitHostPolicy
       raise UnsafeUrlError.new("#{url.inspect} rejected: bare IP addresses are not accepted as repository hosts")
     end
 
-    unless ALLOWED_HOSTS.includes?(host)
-      raise UnsafeUrlError.new("#{url.inspect} rejected: #{host} is not a supported git host (#{ALLOWED_HOSTS.join(", ")})")
+    unless allowed_hosts.includes?(host)
+      raise UnsafeUrlError.new("#{url.inspect} rejected: #{host} is not #{description} (#{allowed_hosts.join(", ")})")
     end
+
+    return uri unless resolve_dns
 
     addresses = resolve(host, url)
     if addresses.empty?

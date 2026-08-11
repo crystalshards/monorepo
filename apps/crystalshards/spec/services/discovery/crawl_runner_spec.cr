@@ -28,31 +28,56 @@ describe Discovery::CrawlRunner do
   describe "what discovery covers" do
     it "names the hosts it crawls and the ones it does not, with the reason" do
       # The claim being defended is "the indexer finds all shards on all git
-      # hosts". It finds them on three, and this is where that boundary is
-      # written down rather than inferred from which files happen to exist.
-      Discovery::CrawlRunner::HOSTS.should eq(["github.com", "gitlab.com", "codeberg.org"])
+      # hosts". This is where that boundary is written down rather than inferred
+      # from which files happen to exist.
+      Discovery::CrawlRunner::HOSTS.should eq(["github.com", "gitlab.com", "codeberg.org", "bitbucket.org"])
 
       summary = Discovery::CrawlRunner.coverage_summary
       summary.should contain("github.com")
       summary.should contain("gitlab.com")
       summary.should contain("codeberg.org")
 
-      # Bitbucket is a real gap: it has an API and no crawler yet.
-      Discovery::CrawlRunner::SUBMISSION_ONLY["bitbucket.org"].should contain("no crawler is built yet")
-
       # These are not gaps. There is no global index of every git, Mercurial or
       # Fossil repository, so there is nothing a crawler could enumerate.
       ["generic git", "mercurial", "fossil"].each do |protocol|
         Discovery::CrawlRunner::SUBMISSION_ONLY[protocol].should contain("protocol, not a host")
       end
+
+      # Bitbucket is no longer a gap, and is also not a host the registry can
+      # claim to have seen.
+      Discovery::CrawlRunner::SUBMISSION_ONLY.has_key?("bitbucket.org").should be_false
+    end
+
+    it "says plainly that bitbucket is crawled and still never complete" do
+      summary = Discovery::CrawlRunner.coverage_summary
+
+      # The property this whole subsystem is defending: a partial view is never
+      # presented as a complete one. Listing bitbucket.org among "crawled hosts"
+      # and stopping there would do exactly that.
+      summary.should contain("Crawled but never complete:")
+      summary.should contain("bitbucket.org")
+      summary.should contain("410 Gone")
+      summary.should contain("CHANGE-2770")
+      summary.should contain("no global enumeration")
+      summary.should_not contain("Crawled hosts: github.com, gitlab.com, codeberg.org, bitbucket.org")
+    end
+
+    it "counts the registered workspaces, so the reason cannot read as coverage" do
+      Discovery::CrawlRunner.coverage_summary.should contain("none registered")
+
+      SaveBitbucketWorkspace.create!(slug: "acme")
+
+      summary = Discovery::CrawlRunner.coverage_summary
+      summary.should contain("1 enabled")
+      summary.should contain("only by being submitted")
     end
 
     it "refuses a host it does not crawl instead of pretending to sweep it" do
-      report = Discovery::CrawlRunner.run("bitbucket.org")
+      report = Discovery::CrawlRunner.run("git.invalid.test")
 
       report.status.should eq(CrawlState::Status::FAILED)
       report.stop_reason.should eq(CrawlState::StopReason::UNSUPPORTED_HOST)
-      CrawlStateQuery.new.for_host("bitbucket.org").not_nil!.trustworthy?.should be_false
+      CrawlStateQuery.new.for_host("git.invalid.test").not_nil!.trustworthy?.should be_false
     end
   end
 
@@ -115,6 +140,26 @@ describe Discovery::CrawlRunner do
         expect_raises(Discovery::MissingTokenError, /GITLAB_TOKEN/) do
           Discovery::Credentials.token_for("gitlab.com")
         end
+      end
+    end
+
+    it "needs both halves of the bitbucket credential, not just the secret" do
+      # The app password alone authenticates as nobody: Basic needs the account
+      # it belongs to. Treating the secret as sufficient starts a sweep that
+      # 401s on its first request and reports a host with no shards on it.
+      with_tokens({"BITBUCKET_APP_PASSWORD" => "secret"}) do
+        Discovery::Credentials.configured?("bitbucket.org").should be_false
+      end
+
+      with_tokens({"BITBUCKET_APP_PASSWORD" => "secret", "BITBUCKET_USERNAME" => "account"}) do
+        Discovery::Credentials.configured?("bitbucket.org").should be_true
+        Discovery::Credentials.username_for?("bitbucket.org").should eq("account")
+      end
+
+      without_tokens do
+        message = Discovery::Credentials.missing_message("bitbucket.org")
+        message.should contain("BITBUCKET_USERNAME")
+        message.should contain("BITBUCKET_APP_PASSWORD")
       end
     end
   end
@@ -311,6 +356,105 @@ describe Discovery::CrawlRunner do
 
       # A missing token is not something to retry until the queue gives up.
       swept.should eq([{"github.com", true, 3}])
+    end
+  end
+
+  describe "sweeping bitbucket" do
+    it "writes the workspace cursor to the host's row and resumes from it next run" do
+      with_tokens({"BITBUCKET_USERNAME" => "account", "BITBUCKET_APP_PASSWORD" => "secret"}) do
+        SaveBitbucketWorkspace.create!(slug: "acme")
+        SaveBitbucketWorkspace.create!(slug: "beta")
+
+        FakeHost.run do |fake|
+          fake.on(/\/repositories\/[^\/?]+\?/) do |target, _attempt|
+            slug = target.match(/\/repositories\/([^\/?]+)\?/).try(&.[1]) || ""
+            FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories([{"#{slug}/router", ""}]))
+          end
+          fake.on(/\/src\/master\/shard\.yml/) do |target, _|
+            FakeHost::Response.new(body: Discovery::Fixtures.shard_yml(target.split('/')[3]))
+          end
+
+          first = Discovery::CrawlRunner.run("bitbucket.org", base_url: fake.base_url, max_pages: 1)
+
+          first.status.should eq(CrawlState::Status::PARTIAL)
+          first.stop_reason.should eq(CrawlState::StopReason::INTERRUPTED)
+          # The cursor names a workspace and a page, which is what a position in
+          # a walk over several workspaces has to carry.
+          CrawlStateQuery.new.for_host("bitbucket.org").not_nil!.cursor.should eq("beta:1")
+
+          fake.requests.clear
+          Discovery::CrawlRunner.run("bitbucket.org", base_url: fake.base_url, max_pages: 1)
+
+          # Resumed at beta rather than starting the walk over at acme.
+          fake.requests.find(&.includes?("/repositories/")).not_nil!.should contain("/repositories/beta")
+        end
+      end
+    end
+
+    it "never records the host as trustworthy, however well the sweep went" do
+      with_tokens({"BITBUCKET_USERNAME" => "account", "BITBUCKET_APP_PASSWORD" => "secret"}) do
+        SaveBitbucketWorkspace.create!(slug: "acme")
+
+        FakeHost.run do |fake|
+          fake.on(/\/repositories\/acme\?/) do
+            FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories([{"acme/router", "a router"}]))
+          end
+          fake.on(/\/src\/master\/shard\.yml/) do
+            FakeHost::Response.new(body: Discovery::Fixtures.shard_yml("router"))
+          end
+
+          Discovery::CrawlRunner.run("bitbucket.org", base_url: fake.base_url)
+
+          state = CrawlStateQuery.new.for_host("bitbucket.org").not_nil!
+          state.discovered_count.should eq(1)
+          state.status.should eq(CrawlState::Status::PARTIAL)
+          state.stop_reason.should eq(CrawlState::StopReason::COMPLETED_WORKSPACE_SCOPED)
+          # Every workspace it was told about was swept end to end, and that is
+          # still not a view of bitbucket.org.
+          state.trustworthy?.should be_false
+        end
+      end
+    end
+
+    it "records which workspace refused, on the workspace rather than the host" do
+      with_tokens({"BITBUCKET_USERNAME" => "account", "BITBUCKET_APP_PASSWORD" => "secret"}) do
+        SaveBitbucketWorkspace.create!(slug: "acme")
+        SaveBitbucketWorkspace.create!(slug: "beta")
+
+        FakeHost.run do |fake|
+          fake.on(/\/repositories\/acme\?/) do
+            FakeHost::Response.new(status: 403, body: %({"type":"error","error":{"message":"Access denied"}}))
+          end
+          fake.on(/\/repositories\/beta\?/) do
+            FakeHost::Response.new(body: Discovery::Fixtures.bitbucket_repositories([{"beta/parser", ""}]))
+          end
+          fake.on(/\/src\/master\/shard\.yml/) do
+            FakeHost::Response.new(body: Discovery::Fixtures.shard_yml("parser"))
+          end
+
+          Discovery::CrawlRunner.run("bitbucket.org", base_url: fake.base_url)
+
+          # The host has one error column, so a second failing workspace would
+          # overwrite the first. The reason belongs where the workspace is
+          # managed.
+          BitbucketWorkspaceQuery.new.for_slug("acme").not_nil!.last_error.to_s.should contain("403")
+          answered = BitbucketWorkspaceQuery.new.for_slug("beta").not_nil!
+          answered.last_error.should be_nil
+          answered.last_seen_at.should_not be_nil
+        end
+      end
+    end
+
+    it "refuses to sweep when no workspace is registered instead of reporting an empty host" do
+      with_tokens({"BITBUCKET_USERNAME" => "account", "BITBUCKET_APP_PASSWORD" => "secret"}) do
+        FakeHost.run do |fake|
+          report = Discovery::CrawlRunner.run("bitbucket.org", base_url: fake.base_url)
+
+          report.discovered.should eq(0)
+          report.stop_reason.should eq(CrawlState::StopReason::NO_WORKSPACES_REGISTERED)
+          CrawlStateQuery.new.for_host("bitbucket.org").not_nil!.trustworthy?.should be_false
+        end
+      end
     end
   end
 end

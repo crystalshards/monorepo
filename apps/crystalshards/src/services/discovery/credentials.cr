@@ -14,9 +14,20 @@ module Discovery
   # like a host with almost no Crystal on it rather than like a missing token.
   module Credentials
     TOKEN_ENV = {
-      "github.com"   => "GITHUB_TOKEN",
-      "gitlab.com"   => "GITLAB_TOKEN",
-      "codeberg.org" => "CODEBERG_TOKEN",
+      "github.com"    => "GITHUB_TOKEN",
+      "gitlab.com"    => "GITLAB_TOKEN",
+      "codeberg.org"  => "CODEBERG_TOKEN",
+      "bitbucket.org" => "BITBUCKET_APP_PASSWORD",
+    }
+
+    # Bitbucket is the one host whose credential is a pair. Its API takes an app
+    # password over HTTP Basic, and Basic needs the account it belongs to, so
+    # the secret alone is not enough to authenticate. The variable names are the
+    # ones BitbucketProvider already reads, because a second spelling for the
+    # same credential is how an operator ends up with a working fetch and a
+    # refusing crawl.
+    USERNAME_ENV = {
+      "bitbucket.org" => "BITBUCKET_USERNAME",
     }
 
     # Test seam. When set, lookups read this table of environment variable name
@@ -53,8 +64,26 @@ module Discovery
       token_for?(host) || raise MissingTokenError.new(missing_message(host))
     end
 
+    # The account an app password belongs to, for the one host that needs it.
+    def self.username_for?(host : String) : String?
+      variable = USERNAME_ENV[host]?
+      return nil unless variable
+
+      if table = @@source
+        table[variable]?.presence
+      else
+        ENV[variable]?.presence
+      end
+    end
+
+    # Configured means the host can actually authenticate, which for a host with
+    # a credential pair means both halves. Treating the app password alone as
+    # configured would start a sweep that 401s on its first request.
     def self.configured?(host : String) : Bool
-      !token_for?(host).nil?
+      return false if token_for?(host).nil?
+      return true unless USERNAME_ENV.has_key?(host)
+
+      !username_for?(host).nil?
     end
 
     def self.env_var_for(host : String) : String?
@@ -62,13 +91,18 @@ module Discovery
     end
 
     def self.missing_message(host : String) : String
-      if variable = TOKEN_ENV[host]?
-        "Refusing to crawl #{host} without a token: set #{variable} to a token with public read scope. " \
-        "An unauthenticated sweep of #{host} cannot complete (#{unauthenticated_limit(host)}), so it would " \
-        "leave the registry looking like #{host} has almost no shards on it."
-      else
-        "#{host} is not a host this registry knows how to crawl"
-      end
+      variable = TOKEN_ENV[host]?
+      return "#{host} is not a host this registry knows how to crawl" unless variable
+
+      needed = if account = USERNAME_ENV[host]?
+                 "set #{account} and #{variable} to an account and app password with public read scope"
+               else
+                 "set #{variable} to a token with public read scope"
+               end
+
+      "Refusing to crawl #{host} without a token: #{needed}. " \
+      "An unauthenticated sweep of #{host} cannot complete (#{unauthenticated_limit(host)}), so it would " \
+      "leave the registry looking like #{host} has almost no shards on it."
     end
 
     private def self.unauthenticated_limit(host : String) : String
@@ -79,6 +113,10 @@ module Discovery
         "unauthenticated API requests are throttled to 500 per period and blob search returns 401"
       when "codeberg.org"
         "unauthenticated requests share a 2000 per 10 minutes baseline with every other anonymous caller"
+      when "bitbucket.org"
+        "anonymous callers get 60 requests an hour, measured live as " \
+        "x-ratelimit-limit: 60, 60;w=3600, and many workspaces answer an anonymous " \
+        "enumeration with 403 whether or not they hold shards"
       else
         "unauthenticated requests are rate limited"
       end
