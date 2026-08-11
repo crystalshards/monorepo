@@ -53,17 +53,19 @@ class Footer < Lucky::BaseComponent
           end
           ul do
             li do
-              a href: "https://crystalshards.org", target: "_blank" do
+              # rel=noopener goes with every target=_blank: without it the
+              # opened page can reach back through window.opener.
+              a href: "https://crystalshards.org", target: "_blank", rel: "noopener" do
                 text "CrystalShards"
               end
             end
             li do
-              a href: "https://crystaldocs.org", target: "_blank" do
+              a href: "https://crystaldocs.org", target: "_blank", rel: "noopener" do
                 text "CrystalDocs"
               end
             end
             li do
-              a href: "https://crystal-lang.org", target: "_blank" do
+              a href: "https://crystal-lang.org", target: "_blank", rel: "noopener" do
                 text "Crystal Language"
               end
             end

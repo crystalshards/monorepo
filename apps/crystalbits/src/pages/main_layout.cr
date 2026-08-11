@@ -19,6 +19,10 @@ abstract class MainLayout
         tag "main", class: "container", id: "main" do
           content
         end
+        # After the content, before the footer. An ad never precedes what the
+        # reader came for, and it renders nothing at all when CrystalGigs has
+        # nothing to say, so this line adds no markup on a bad day.
+        mount JobAd
         mount Footer
       end
     end

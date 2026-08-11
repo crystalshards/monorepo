@@ -9,15 +9,15 @@ resource "kubernetes_job" "crystaldocs_db_init" {
     }
   }
 
-  wait_for_completion = false  # Don't block Terraform - let job run in background
+  wait_for_completion = false # Don't block Terraform - let job run in background
   timeouts {
-    create = "5m"   # Reduced timeout for job creation (not completion)
+    create = "5m" # Reduced timeout for job creation (not completion)
     update = "5m"
   }
 
   spec {
-    backoff_limit = 3
-    ttl_seconds_after_finished = 600  # Clean up after 10 minutes
+    backoff_limit              = 3
+    ttl_seconds_after_finished = 600 # Clean up after 10 minutes
 
     template {
       metadata {
@@ -48,7 +48,7 @@ resource "kubernetes_job" "crystaldocs_db_init" {
             allow_privilege_escalation = false
             read_only_root_filesystem  = true
             run_as_non_root            = true
-            run_as_user                = 70  # postgres user in alpine
+            run_as_user                = 70 # postgres user in alpine
             capabilities {
               drop = ["ALL"]
             }

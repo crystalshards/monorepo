@@ -100,19 +100,18 @@ class Docs::TypePage < MainLayout
     end
   end
 
-  # `summary` arrives already rendered to HTML by the compiler, while `doc` is
-  # the raw doc comment in Markdown. They need different treatment, and both
-  # are shard-authored, so both are sanitised.
+  # The compiler's `summary` is the first sentence of `doc`, already rendered
+  # to HTML, and `doc` is the whole comment in raw Markdown. Rendering both
+  # printed the opening sentence twice on almost every type, so the full
+  # comment wins and the summary is only used when there is nothing else.
   private def render_documentation
-    if summary = type.summary.presence
-      div class: "docs-summary" do
-        raw CrystalDocs::DocHtml.sanitize(summary)
-      end
-    end
-
     if body = type.doc.presence
       div class: "docs-doc" do
         raw CrystalDocs::DocHtml.markdown(body)
+      end
+    elsif summary = type.summary.presence
+      div class: "docs-summary" do
+        raw CrystalDocs::DocHtml.sanitize(summary)
       end
     end
   end
@@ -131,7 +130,8 @@ class Docs::TypePage < MainLayout
           div class: "docs-member-signature" do
             text constant.name
             if value = constant.value.presence
-              text " = #{value}"
+              text " = "
+              render_linked_types(value)
             end
           end
 

@@ -30,7 +30,7 @@
 
   /* ---- edges ----------------------------------------------------------- */
   --edge:         #d8dfe0;   /* decorative hairline */
-  --edge-strong:  #98a7aa;   /* 3.02:1 on --surface, for control boundaries */
+  --edge-strong:  #7b8e92;   /* 3.43:1 on --surface, 3.02:1 on --surface-sunk */
 
   /* ---- accent, sampled from the pyrite specimen ------------------------ */
   --accent:       #7a5312;   /* 6.83:1 on --surface */
@@ -81,7 +81,7 @@
     --ink-faint:    #83989a;   /* 5.94:1 on --surface */
 
     --edge:         #222e30;
-    --edge-strong:  #4a5c5e;   /* 3.06:1 on --surface */
+    --edge-strong:  #5b6e70;   /* 3.38:1 on --surface, 3.10:1 on --surface-sunk */
 
     --accent:       #e0aa4e;   /* 8.66:1 on --surface */
     --accent-deep:  #b08a3e;   /* 5.43:1 with --on-accent */
@@ -206,13 +206,13 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   font: 700 1.3rem/1 var(--cond); letter-spacing: 0.005em;
   color: var(--ink);
 }
-/* The mark is a drawn bevelled square, the cube face of a pyrite crystal,
-   not an emoji. */
+/* The mark is a drawn hexagonal section, not an emoji. Geometry is shared by
+   all four apps; only the accent colour changes between them. */
 .logo::before {
   content: "";
-  width: 1.45rem; height: 1.45rem;
+  width: 1.32rem; height: 1.55rem;
   background: var(--accent);
-  clip-path: polygon(28% 0, 72% 0, 100% 28%, 100% 72%, 72% 100%, 28% 100%, 0 72%, 0 28%);
+  clip-path: polygon(50% 0, 100% 27%, 100% 73%, 50% 100%, 0 73%, 0 27%);
 }
 
 .navbar-menu { display: flex; flex-wrap: wrap; align-items: center; gap: 1.4rem; margin-left: auto; }

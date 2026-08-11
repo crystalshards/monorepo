@@ -11,12 +11,10 @@ class Shards::Index < BrowserAction
     shards_query = ShardQuery.new
       .preload_shard_versions
 
-    # Apply search filter
+    # Search matches name, description and identity, so two shards sharing a
+    # name both appear, each with its own host and its own URL.
     if search_query = query
-      shards_query = shards_query.where do |q|
-        q.name.ilike("%#{search_query}%")
-          .or(&.description.ilike("%#{search_query}%"))
-      end
+      shards_query = shards_query.search(search_query)
     end
 
     # Apply license filter

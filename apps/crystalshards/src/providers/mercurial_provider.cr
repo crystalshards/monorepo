@@ -29,23 +29,21 @@ class MercurialProvider < BaseProvider
   end
 
   def clone_repository(target_dir : String) : Bool
-    cmd = "hg clone #{repository_url} #{target_dir}"
-    output = `#{cmd} 2>&1`
+    url = GitHostPolicy.normalize_url(repository_url)
+    GitHostPolicy.validate_fetch_url!(url)
 
-    $?.success?
+    run_process("hg", ["clone", "--", url, target_dir])
+  rescue ex : GitHostPolicy::UnsafeUrlError
+    Log.warn { "Refusing to clone #{repository_url.inspect}: #{ex.message}" }
+    false
   end
 
   def checkout_version(repo_dir : String, version : String) : Bool
-    cmd = "cd #{repo_dir} && hg update -r #{version}"
-    output = `#{cmd} 2>&1`
+    return false unless safe_ref?(version)
 
-    if $?.success?
-      true
-    else
-      cmd = "cd #{repo_dir} && hg update -r tag(#{version})"
-      output = `#{cmd} 2>&1`
-      $?.success?
-    end
+    return true if run_process("hg", ["update", "-r", version], chdir: repo_dir)
+
+    run_process("hg", ["update", "-r", "tag(#{version})"], chdir: repo_dir)
   end
 
   def supports_api? : Bool

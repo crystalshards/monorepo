@@ -52,15 +52,12 @@ class Components::DocSidebar < Lucky::BaseComponent
           a "Overview", href: "/docs/#{doc.package_name}/#{doc_version.version}", class: link_class("index.html")
         end
 
-        # The generated documentation served as itself, rather than embedded
-        # in this page. Linking the stored index rather than guessing at an
-        # inner filename keeps this correct whatever shape a build produced:
-        # the document's own links take over from there.
-        li do
-          a "Full documentation",
-            href: "/docs/#{doc.package_name}/#{doc_version.version}/index.html",
-            class: "sidebar-link"
-        end
+        # There is no longer a "full documentation" link here. It pointed at
+        # /<package>/<version>/index.html, which was a stored file served raw.
+        # That route is gone: we render documentation ourselves from docs.json
+        # so shard-authored HTML never executes on this origin, and the
+        # overview above IS the full documentation now. The type tree in the
+        # docs sidebar is how a reader gets into the API.
 
         if repository_url = doc.repository_url
           li do

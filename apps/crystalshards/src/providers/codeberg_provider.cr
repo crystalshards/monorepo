@@ -56,23 +56,11 @@ class CodebergProvider < BaseProvider
   end
 
   def clone_repository(target_dir : String) : Bool
-    cmd = "git clone --depth 1 #{repository_url} #{target_dir}"
-    output = `#{cmd} 2>&1`
-
-    $?.success?
+    clone_git_repository(target_dir)
   end
 
   def checkout_version(repo_dir : String, version : String) : Bool
-    cmd = "cd #{repo_dir} && git fetch --depth 1 origin tag #{version} && git checkout #{version}"
-    output = `#{cmd} 2>&1`
-
-    if $?.success?
-      true
-    else
-      cmd = "cd #{repo_dir} && git fetch --depth 1 origin #{version} && git checkout #{version}"
-      output = `#{cmd} 2>&1`
-      $?.success?
-    end
+    checkout_git_version(repo_dir, version)
   end
 
   def extract_repo_path : String?

@@ -22,6 +22,11 @@ struct IndexShardWorker < BaseJob
     nil
   }
 
+  # @shard_name is the wire field name the queue already carries, so it stays.
+  # Its VALUE is the canonical slug ("github.com/kemalcr/kemal") for everything
+  # crystalshards enqueues: two shards named "router" on different hosts would
+  # otherwise be one indistinguishable job. Follow-ups are chained with the
+  # same key, so the identity travels the whole pipeline.
   def initialize(@shard_name : String, @version : String)
     @queue = "index"
   end
@@ -29,9 +34,9 @@ struct IndexShardWorker < BaseJob
   def perform
     log_info "Indexing shard: #{@shard_name}@#{@version}"
 
-    shard = ShardQuery.new.name(@shard_name).first?
+    shard = ShardQuery.new.resolve(@shard_name)
     unless shard
-      log_error "Shard not found: #{@shard_name}"
+      log_error "No single shard in the registry answers to #{@shard_name}; nothing indexed"
       return
     end
 
@@ -47,9 +52,14 @@ struct IndexShardWorker < BaseJob
 
     fetch_and_parse_shard_yml(shard, shard_version)
 
+    # Follow-ups are keyed on the identity we just resolved, never on whatever
+    # string arrived. A job that came in under a bare name still chains as
+    # "github.com/owner/repo", so the rest of the pipeline cannot land on a
+    # different shard of the same name.
     dispatch = @@dispatcher
-    dispatch.call(Followup::UpdateDependencies, @shard_name, @version)
-    dispatch.call(Followup::BuildDocs, @shard_name, @version)
+    followup_key = shard.canonical_slug || @shard_name
+    dispatch.call(Followup::UpdateDependencies, followup_key, @version)
+    dispatch.call(Followup::BuildDocs, followup_key, @version)
 
     log_info "Successfully indexed #{@shard_name}@#{@version}"
   rescue ex : Exception

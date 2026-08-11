@@ -32,24 +32,35 @@ describe ProviderFactory do
       provider.should be_a(CodebergProvider)
     end
 
-    it "creates GenericGitProvider for generic Git URLs" do
-      provider = ProviderFactory.create("https://example.com/repo.git")
-      provider.should be_a(GenericGitProvider)
+    # These used to assert that any URL produced a provider. They now assert the
+    # opposite, which is the point of the gate: a repository_url the registry
+    # will clone is a URL it can be made to fetch, so it is restricted to hosts
+    # we know. Provider classification itself is tested below the gate, in
+    # .detect_provider_type.
+    it "refuses a self-hosted git URL rather than cloning whatever it is handed" do
+      expect_raises(GitHostPolicy::UnsafeUrlError) do
+        ProviderFactory.create("https://example.com/repo.git")
+      end
     end
 
-    it "creates MercurialProvider for Mercurial URLs" do
-      provider = ProviderFactory.create("https://example.com/repo.hg")
-      provider.should be_a(MercurialProvider)
+    it "refuses self-hosted Mercurial and Fossil URLs for the same reason" do
+      expect_raises(GitHostPolicy::UnsafeUrlError) do
+        ProviderFactory.create("https://example.com/repo.hg")
+      end
+
+      expect_raises(GitHostPolicy::UnsafeUrlError) do
+        ProviderFactory.create("https://example.com/repo.fossil")
+      end
+
+      expect_raises(GitHostPolicy::UnsafeUrlError) do
+        ProviderFactory.create("https://example.com/fossil/repo")
+      end
     end
 
-    it "creates FossilProvider for Fossil URLs" do
-      provider = ProviderFactory.create("https://example.com/repo.fossil")
-      provider.should be_a(FossilProvider)
-    end
-
-    it "creates FossilProvider for Fossil-specific URLs" do
-      provider = ProviderFactory.create("https://example.com/fossil/repo")
-      provider.should be_a(FossilProvider)
+    it "refuses an address inside our own network" do
+      expect_raises(GitHostPolicy::UnsafeUrlError) do
+        ProviderFactory.create("http://169.254.169.254/latest/meta-data/")
+      end
     end
   end
 

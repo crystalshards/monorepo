@@ -36,7 +36,7 @@
 
   /* ---- edges ----------------------------------------------------------- */
   --edge:         #d8dfe0;   /* decorative hairline */
-  --edge-strong:  #98a7aa;   /* 3.02:1 on --surface, for control boundaries */
+  --edge-strong:  #7b8e92;   /* 3.43:1 on --surface, 3.16:1 on --paper, 3.02:1 on --surface-sunk */
 
   /* ---- accent, sampled from the specimen ------------------------------- */
   --accent:       #96233a;   /* 8.08:1 on --surface */
@@ -86,7 +86,7 @@
     --ink-faint:    #83989a;   /* 5.94:1 on --surface */
 
     --edge:         #222e30;
-    --edge-strong:  #4a5c5e;   /* 3.06:1 on --surface */
+    --edge-strong:  #5b6e70;   /* 3.38:1 on --surface, 3.70:1 on --paper, 3.54:1 on --surface-sunk */
 
     --accent:       #f0808f;   /* 7.07:1 on --surface */
     --accent-deep:  #ca6a79;   /* 5.15:1 with --on-accent */
@@ -287,19 +287,26 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
   transition: border-color 0.14s ease, background 0.14s ease;
 }
-.post-card:hover { border-color: var(--accent); }
-/* The cut corner catches light, the way a real bevel would. */
+/* The whole card is the target, so the whole card reacts, and it reacts the
+   same way to a pointer as it does to keyboard focus landing inside it. */
+.post-card:hover, .post-card:focus-within { border-color: var(--accent); }
+/* The cut corner catches light, the way a real bevel would. Decorative only:
+   without pointer-events:none it would swallow clicks in the top-right
+   corner, which is now part of the card's click target. */
 .post-card::after {
   content: "";
   position: absolute; top: 0; right: 0;
   width: calc(var(--facet) + 8px); height: calc(var(--facet) + 8px);
   background: linear-gradient(225deg, var(--accent) 0 50%, transparent 50%);
   opacity: 0.28; transition: opacity 0.14s ease;
+  pointer-events: none;
 }
-.post-card:hover::after { opacity: 0.9; }
+.post-card:hover::after, .post-card:focus-within::after { opacity: 0.9; }
 
-/* The featured post is the same card with a garnet leading edge. */
+/* The featured post is the same card with a garnet leading edge. Its left
+   edge is already accent, so hover carries the other three round to match. */
 .featured-post { border-left: 3px solid var(--accent); }
+.featured-post:hover, .featured-post:focus-within { border-color: var(--accent); }
 
 .post-card .post-header { margin-bottom: 0.75rem; }
 
@@ -316,6 +323,39 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 }
 .featured-title a { color: var(--ink); }
 .featured-title a:hover { color: var(--accent); }
+
+/* ---- whole-card click target ------------------------------------------- */
+
+/* The title link stretches over the card with a pseudo-element instead of the
+   card being wrapped in an anchor. That keeps the card body to one tab stop
+   and keeps the link's accessible name the post title rather than the whole
+   card. Known tradeoff: the overlay sits over the excerpt and meta text, so
+   drag-selecting that text is harder than it was. */
+.post-title a::after, .featured-title a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* Every other link in the card rides above the overlay so it keeps its own
+   hit area, hover and focus. This is what keeps the featured post's Read More
+   and any linked tag independently clickable. The title link is the
+   exception: it has to stay unpositioned or its ::after would resolve against
+   the title text instead of the card, covering only the title. */
+.post-card a, .featured-post a { position: relative; z-index: 1; }
+.post-card .post-title a, .featured-post .featured-title a { position: static; }
+
+/* Not outline:none without a replacement. The outline moves from the anchor,
+   which is only as wide as the title, onto the overlay, which is the card, so
+   the ring is drawn where the click target actually is. Offset inward because
+   the card is clip-path'd and an outward ring would be cut away. Still 2px
+   var(--focus). */
+.post-title a:focus-visible, .featured-title a:focus-visible { outline: none; }
+.post-title a:focus-visible::after, .featured-title a:focus-visible::after {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
 
 .post-meta {
   display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
@@ -607,4 +647,390 @@ a.tag:hover { border-color: var(--accent); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+/* ============================================================================
+   Job ad (CrystalGigs)
+
+   Paid placement, so it is drawn as an inset rather than as one more section
+   of this site: sunk ground, a rule along the top, and the disclosure line
+   before anything else. It deliberately does not reuse the card styles this
+   site uses for its own content, because an ad dressed as a listing is a dark
+   pattern.
+
+   The component renders nothing when there is nothing to advertise, so none
+   of these rules need an empty state.
+   ========================================================================= */
+
+.job-ad {
+  /* Same gutters and shell as .container, so the strip lines up with the
+     content above it without having to be wrapped in one. */
+  width: min(calc(var(--shell) - 3rem), calc(100% - 3rem));
+  margin: var(--bay) auto 0;
+  padding: 1.1rem var(--pad) 1.25rem;
+  background: var(--surface-sunk);
+  border: 1px solid var(--edge);
+  border-top: 2px solid var(--edge-strong);
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+}
+
+.job-ad-head {
+  display: flex; align-items: baseline; flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+/* The disclosure comes first in the markup and reads first, because a reader
+   should know this is an ad before they read the offer. */
+.job-ad-disclosure {
+  order: -1; flex-basis: 100%;
+  margin: 0 0 0.15rem;
+  font: 600 var(--step--1)/1.2 var(--mono);
+  letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--ink-muted);   /* 5.28:1 on --surface-sunk light, 8.61:1 dark */
+}
+.job-ad-icon { margin-right: 0.4rem; color: var(--ink-faint); }
+
+.job-ad-heading {
+  margin: 0;
+  font: 700 var(--step-1)/1.2 var(--cond);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.job-ad-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--gap);
+  list-style: none; margin: 0; padding: 0;
+}
+
+.job-ad-item {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 0.3rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+}
+.job-ad-item-featured { border-left: 3px solid var(--accent); }
+
+.job-ad-title {
+  display: inline-flex; align-items: center; min-height: var(--tap);
+  font: 600 var(--step-0)/1.3 var(--sans);
+  color: var(--ink);
+  /* Underlined, because the accent alone does not carry meaning. */
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.job-ad-title:hover { color: var(--accent); }
+
+.job-ad-featured {
+  padding: 0.05rem 0.45rem;
+  font: 600 var(--step--1)/1.5 var(--mono);
+  color: var(--accent);            /* 6.66:1 light, 6.48:1 dark on --accent-wash */
+  background: var(--accent-wash);
+  /* The wash alone barely separates from the card, so the hairline draws it. */
+  border: 1px solid var(--accent);
+}
+
+.job-ad-meta {
+  display: flex; flex-wrap: wrap; gap: 0 0.5rem;
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+/* Separators are drawn, never typed, so a screen reader reads the fields as a
+   list of facts rather than announcing punctuation between them. */
+.job-ad-meta span + span::before { content: "\00b7"; margin-right: 0.5rem; }
+
+@media (max-width: 40rem) {
+  .job-ad { padding: 1rem 1.1rem 1.15rem; }
+  .job-ad-list { grid-template-columns: minmax(0, 1fr); }
+}
+
+
+/* ============================================================================
+   Editorial pipeline: contribution, news index, provenance, moderation
+
+   Provenance is the point of this section, so it is styled as content rather
+   than as chrome. The origin badge sits above the attribution at readable
+   size, and the machine-drafted badge is the loudest of the three because
+   that is the one a reader most needs to notice.
+
+   Colour never carries the meaning on its own: every badge pairs its tint
+   with an icon and with the label spelled out in words.
+   ========================================================================= */
+
+/* ---- provenance --------------------------------------------------------- */
+
+.provenance { margin-top: 0.9rem; }
+
+.provenance-badge {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  min-height: var(--tap);
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--edge-strong);
+  background: var(--surface-sunk);
+  color: var(--ink-muted);
+  font: 600 var(--step--1)/1.3 var(--cond);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.provenance-badge-human    { color: var(--ok); border-color: var(--ok); }
+.provenance-badge-upstream { color: var(--ore); border-color: var(--ore); }
+
+/* The one badge that gets the accent ground. A reader should not have to
+   look for the answer to "did a person write this". */
+.provenance-badge-machine {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+  color: var(--accent-deep);
+}
+
+.provenance-attribution {
+  margin: 0.55rem 0 0;
+  color: var(--ink);
+  font-size: var(--step--1);
+}
+
+.provenance-date,
+.provenance-source,
+.provenance-license {
+  margin: 0.2rem 0 0;
+  color: var(--ink-muted);
+  font: 400 var(--step--1)/1.5 var(--mono);
+}
+
+.provenance-source a { text-decoration: underline; overflow-wrap: anywhere; }
+
+.provenance-license { font-family: var(--sans); font-style: italic; }
+
+.provenance-sources { margin-top: 0.7rem; }
+.provenance-sources-label { margin: 0 0 0.3rem; font-size: var(--step--1); color: var(--ink-muted); }
+.provenance-sources ul { margin: 0; padding-left: 1.1rem; }
+.provenance-sources li { font: 400 var(--step--1)/1.6 var(--mono); overflow-wrap: anywhere; }
+
+/* ---- news index --------------------------------------------------------- */
+
+.news-section { padding: var(--bay) 0; }
+.news-header { margin-bottom: 1.5rem; }
+.news-lede { max-width: 62ch; color: var(--ink-muted); font-size: var(--step-1); }
+
+.news-filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.75rem; }
+
+.news-filter {
+  display: inline-flex; align-items: center;
+  min-height: var(--tap); padding: 0.4rem 0.9rem;
+  border: 1px solid var(--edge-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: 600 0.9rem var(--sans);
+  text-decoration: none;
+}
+.news-filter:hover { background: var(--surface-sunk); }
+
+/* Current is marked by fill and by aria-current, not by fill alone. */
+.news-filter-current {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+.news-list { display: grid; gap: 1.25rem; }
+
+.content-card {
+  border: 1px solid var(--edge);
+  border-top: 2px solid var(--edge-strong);
+  background: var(--surface);
+  padding: var(--pad) var(--pad) 1.2rem;
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+}
+.content-card-generated { border-top-color: var(--accent); }
+.content-card-crystal-blog { border-top-color: var(--ore); }
+.content-card-contribution { border-top-color: var(--ok); }
+
+.content-card-title { font-size: var(--step-2); margin: 0 0 0.4rem; }
+.content-card-title a { color: var(--ink); text-decoration: none; }
+.content-card-title a:hover { color: var(--accent); text-decoration: underline; }
+.content-card-external { font-size: 0.7em; color: var(--ink-faint); }
+
+.content-card-summary { margin: 0; color: var(--ink-muted); max-width: 68ch; }
+
+.news-empty {
+  border: 1px dashed var(--edge-strong);
+  padding: clamp(1.5rem, 4vw, 2.5rem);
+  text-align: center;
+  color: var(--ink-muted);
+}
+
+.news-sources-note {
+  margin-top: var(--bay);
+  border-top: 1px solid var(--edge);
+  padding-top: 1.5rem;
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+.news-sources-note h2 { font-size: var(--step-1); color: var(--ink); }
+.news-sources-note li { margin-bottom: 0.4rem; max-width: 72ch; }
+
+/* ---- news detail -------------------------------------------------------- */
+
+.content-detail { max-width: 68ch; margin: 0 auto; padding: var(--bay) 0; }
+.content-detail-title { font-size: var(--step-4); }
+.content-detail-summary { color: var(--ink-muted); font-size: var(--step-1); }
+.content-detail-body { line-height: 1.75; }
+.content-detail-body a { text-decoration: underline; }
+.content-detail-body pre {
+  background: var(--surface-sunk);
+  border-left: 2px solid var(--edge-strong);
+  padding: 0.9rem 1.1rem;
+  overflow-x: auto;
+}
+.content-detail-body blockquote {
+  margin: 1.2rem 0;
+  padding-left: 1.1rem;
+  border-left: 2px solid var(--accent);
+  color: var(--ink-muted);
+}
+
+/* Placed above the text on purpose: a reader is told what this is before
+   they read it, not after. */
+.machine-notice {
+  display: flex; gap: 0.85rem; align-items: flex-start;
+  margin: 0 0 1.75rem;
+  padding: 1rem 1.15rem;
+  background: var(--accent-wash);
+  border-left: 3px solid var(--accent);
+  color: var(--accent-deep);
+}
+.machine-notice p { margin: 0.25rem 0 0; color: var(--ink); font-size: var(--step--1); }
+.machine-notice strong { font-family: var(--cond); letter-spacing: 0.02em; text-transform: uppercase; }
+
+/* ---- contribute --------------------------------------------------------- */
+
+.contribute-section, .contribute-thanks { padding: var(--bay) 0; max-width: 72ch; }
+.contribute-lede { font-size: var(--step-1); color: var(--ink-muted); max-width: 62ch; }
+
+.contribute-expectations { display: grid; gap: 1.25rem; margin: 2rem 0 2.5rem; }
+
+.contribute-panel {
+  border: 1px solid var(--edge);
+  border-top: 2px solid var(--edge-strong);
+  background: var(--surface);
+  padding: var(--pad);
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+}
+.contribute-panel h2 { font-size: var(--step-2); }
+.contribute-panel li { margin-bottom: 0.4rem; }
+
+.contribute-note {
+  margin: 1rem 0 0;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--edge);
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+.contribute-form { display: grid; gap: 1.4rem; }
+
+.form-field { display: grid; gap: 0.35rem; }
+.form-field label { font: 600 0.95rem var(--sans); color: var(--ink); }
+
+/* A hint, not a placeholder. Placeholders vanish on input and are not a
+   dependable accessible name (WCAG 3.3.2). */
+.form-hint { margin: 0; color: var(--ink-muted); font-size: var(--step--1); }
+
+.form-input, .form-textarea {
+  width: 100%;
+  min-height: 2.6rem;
+  padding: 0.6rem 0.8rem;
+  /* The border is the only thing marking where the control is, so it uses
+     --edge-strong, which clears 3:1 against every ground in both schemes. */
+  border: 1px solid var(--edge-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: 400 var(--step-0) var(--sans);
+}
+.form-textarea { font-family: var(--mono); font-size: var(--step--1); line-height: 1.65; resize: vertical; }
+
+.form-field-invalid .form-input,
+.form-field-invalid .form-textarea { border-color: var(--danger); border-width: 2px; }
+
+/* Errors are announced in words and tied to the field with aria-describedby;
+   the red is reinforcement, never the message. */
+.form-error { margin: 0; color: var(--danger); font-size: var(--step--1); font-weight: 600; }
+
+.contribute-submit { justify-self: start; }
+
+/* ---- moderation queue --------------------------------------------------- */
+
+.moderation { padding: var(--bay) 0; }
+.moderation-lede { color: var(--ink-muted); max-width: 66ch; }
+
+.moderation-status {
+  display: flex; align-items: flex-start; gap: 0.6rem;
+  margin-bottom: 1.5rem; padding: 0.85rem 1rem;
+  border: 1px solid var(--edge-strong);
+  background: var(--surface-sunk);
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+.moderation-status p { margin: 0; }
+.moderation-status code { background: var(--surface); padding: 0.1rem 0.35rem; border: 1px solid var(--edge); }
+.moderation-status-off { border-color: var(--warn); color: var(--warn); }
+
+.moderation-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1.75rem; }
+.moderation-tab {
+  display: inline-flex; align-items: center;
+  min-height: var(--tap); padding: 0.4rem 0.9rem;
+  border: 1px solid var(--edge-strong);
+  background: var(--surface); color: var(--ink);
+  font: 600 0.9rem var(--sans); text-decoration: none;
+}
+.moderation-tab-current { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+
+.moderation-list { display: grid; gap: 1.25rem; }
+
+.moderation-item {
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--edge-strong);
+  background: var(--surface);
+  padding: var(--pad);
+}
+
+.moderation-item-head {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  justify-content: space-between; gap: 0.75rem;
+}
+.moderation-item-title { font-size: var(--step-2); margin: 0; }
+
+.moderation-state {
+  padding: 0.15rem 0.55rem;
+  border: 1px solid currentColor;
+  font: 600 var(--step--1) var(--mono);
+  text-transform: uppercase;
+}
+.moderation-state-submitted { color: var(--ore); }
+.moderation-state-draft     { color: var(--ink-muted); }
+.moderation-state-approved  { color: var(--ok); }
+.moderation-state-rejected  { color: var(--danger); }
+
+.moderation-contact { margin: 0.6rem 0 0; color: var(--ink-muted); font-size: var(--step--1); }
+
+.moderation-preview { margin-top: 1rem; border-top: 1px solid var(--edge); padding-top: 0.75rem; }
+.moderation-preview summary { cursor: pointer; min-height: var(--tap); font-weight: 600; color: var(--accent); }
+.moderation-preview .content-detail-body { margin-top: 0.9rem; max-width: 68ch; }
+
+.moderation-summary { margin: 0.8rem 0 0; color: var(--ink-muted); }
+
+.moderation-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 1.1rem; }
+.moderation-decision { margin: 0; }
+
+@media (min-width: 48rem) {
+  .contribute-expectations { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 40rem) {
+  .content-card { padding: 1rem 1.1rem 1.15rem; }
+  .moderation-item-head { flex-direction: column; align-items: flex-start; gap: 0.4rem; }
 }

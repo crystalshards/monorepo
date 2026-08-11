@@ -3,7 +3,7 @@ require "../../../../spec_helper"
 describe Api::Shards::Versions::Show do
   it "returns 404 when shard not found" do
     response = ApiClient.exec(Api::Shards::Versions::Show.with(
-      shard_name: "nonexistent",
+      **unregistered_identity,
       version_number: "0.1.0"
     ))
 
@@ -14,7 +14,7 @@ describe Api::Shards::Versions::Show do
     shard = ShardFactory.create &.name("test-shard")
 
     response = ApiClient.exec(Api::Shards::Versions::Show.with(
-      shard_name: "test-shard",
+      **identity_of(shard),
       version_number: "999.999.999"
     ))
 
@@ -38,13 +38,13 @@ describe Api::Shards::Versions::Show do
       .scope("runtime")
 
     response = ApiClient.exec(Api::Shards::Versions::Show.with(
-      shard_name: "test-shard",
+      **identity_of(shard),
       version_number: "0.1.0"
     ))
 
     response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)
-    json["shard_name"].should eq("test-shard")
+    json["name"].should eq("test-shard")
     json["version"].should eq("0.1.0")
     json["commit_sha"].should eq("abc123")
     json["dependencies"].as_a.size.should eq(1)
@@ -66,7 +66,7 @@ describe Api::Shards::Versions::Show do
     end
 
     response = ApiClient.exec(Api::Shards::Versions::Show.with(
-      shard_name: "test-shard",
+      **identity_of(shard),
       version_number: "0.1.0"
     ))
 

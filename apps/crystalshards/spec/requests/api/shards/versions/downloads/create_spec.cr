@@ -3,7 +3,7 @@ require "../../../../../spec_helper"
 describe Api::Shards::Versions::Downloads::Create do
   it "returns 404 when shard not found" do
     response = ApiClient.exec(Api::Shards::Versions::Downloads::Create.with(
-      shard_name: "nonexistent",
+      **unregistered_identity,
       version_number: "0.1.0"
     ))
 
@@ -14,7 +14,7 @@ describe Api::Shards::Versions::Downloads::Create do
     shard = ShardFactory.create &.name("test-shard")
 
     response = ApiClient.exec(Api::Shards::Versions::Downloads::Create.with(
-      shard_name: "test-shard",
+      **identity_of(shard),
       version_number: "999.999.999"
     ))
 
@@ -28,7 +28,7 @@ describe Api::Shards::Versions::Downloads::Create do
       .yanked(true)
 
     response = ApiClient.exec(Api::Shards::Versions::Downloads::Create.with(
-      shard_name: "test-shard",
+      **identity_of(shard),
       version_number: "0.1.0"
     ))
 
@@ -44,7 +44,7 @@ describe Api::Shards::Versions::Downloads::Create do
     initial_download_count = DownloadQuery.new.shard_version_id(version.id).select_count
 
     response = ApiClient.exec(Api::Shards::Versions::Downloads::Create.with(
-      shard_name: "test-shard",
+      **identity_of(shard),
       version_number: "0.1.0"
     ))
 
@@ -66,7 +66,7 @@ describe Api::Shards::Versions::Downloads::Create do
     version = ShardVersionFactory.create &.shard_id(shard.id).version("0.1.0")
 
     response = ApiClient.exec(Api::Shards::Versions::Downloads::Create.with(
-      shard_name: "test-shard",
+      **identity_of(shard),
       version_number: "0.1.0"
     ))
 

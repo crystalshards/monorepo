@@ -17,6 +17,10 @@ class Api::Shards::Create < ApiAction
   post "/api/shards" do
     # Accept JSON payload with shard metadata
     # For file uploads with packages, use POST /api/shards/upload (multipart/form-data)
+    #
+    # Identity is derived from repository_url by SaveShard, so a submission
+    # whose URL does not name one repository on one host is rejected here
+    # rather than becoming a row nothing can index or address.
 
     SaveShard.create(params) do |operation, shard|
       if shard
@@ -26,7 +30,7 @@ class Api::Shards::Create < ApiAction
           # Enqueue worker to index the shard (parse shard.yml, create version, upload package)
           begin
             IndexShardWorker.enqueue(
-              shard_name: shard.name,
+              shard_name: shard.canonical_slug.not_nil!,
               version: version_string
             )
           rescue ex : Exception
@@ -39,8 +43,10 @@ class Api::Shards::Create < ApiAction
         json({
           message: "Shard created successfully" + (version_string ? ", indexing started" : ""),
           shard:   {
-            id:   shard.id,
-            name: shard.name,
+            id:             shard.id,
+            name:           shard.name,
+            canonical_slug: shard.canonical_slug,
+            url:            shard.url_path,
           },
         }, status: 201)
       else

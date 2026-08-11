@@ -38,11 +38,18 @@ module CrystalDocs
       (program.types || [] of DocType).sort_by(&.full_name)
     end
 
-    def find_type(full_name : String) : DocType?
+    # Lookup is by qualified name without generic parameters, because that is
+    # what appears in a URL and in a signature. The compiler writes generics
+    # as `Array(T)` and `Hash(K, V)`, so matching on `full_name` alone would
+    # never find the most commonly referenced types in the language.
+    def find_type(qualified_name : String) : DocType?
+      wanted = DocType.strip_generics(qualified_name)
       found : DocType? = nil
+
       program.each_descendant do |type|
-        found = type if found.nil? && type.full_name == full_name
+        found = type if found.nil? && type.qualified_name == wanted
       end
+
       found
     end
   end
@@ -82,9 +89,23 @@ module CrystalDocs
       kind || "type"
     end
 
+    # The compiler writes a generic's full name with its parameters, as in
+    # `Array(T)` or `Hash(K, V)`. Those parameters are part of the display
+    # name but never part of an identity: a reader linking to `Array` means
+    # the same type. Everything that identifies or addresses a type uses the
+    # stripped form, and only the heading shows the parameters.
+    def qualified_name : String
+      DocType.strip_generics(full_name)
+    end
+
+    def self.strip_generics(name : String) : String
+      index = name.index('(')
+      index ? name[0...index].strip : name.strip
+    end
+
     # `Kemal::Config` becomes `Kemal/Config`, which is the tail of its URL.
     def url_path : String
-      full_name.gsub("::", "/")
+      qualified_name.gsub("::", "/")
     end
 
     def has_members? : Bool

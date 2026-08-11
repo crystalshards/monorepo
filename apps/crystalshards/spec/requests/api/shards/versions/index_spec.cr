@@ -2,7 +2,7 @@ require "../../../../spec_helper"
 
 describe Api::Shards::Versions::Index do
   it "returns 404 when shard not found" do
-    response = ApiClient.exec(Api::Shards::Versions::Index.with(shard_name: "nonexistent"))
+    response = ApiClient.exec(Api::Shards::Versions::Index.with(**unregistered_identity))
 
     response.status_code.should eq(404)
   end
@@ -21,11 +21,11 @@ describe Api::Shards::Versions::Index do
       .version("0.2.0")
       .released_at(Time.utc(2024, 2, 1))
 
-    response = ApiClient.exec(Api::Shards::Versions::Index.with(shard_name: "test-shard"))
+    response = ApiClient.exec(Api::Shards::Versions::Index.with(**identity_of(shard)))
 
     response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)
-    json["shard_name"].should eq("test-shard")
+    json["name"].should eq("test-shard")
     json["versions"].as_a.size.should eq(2)
     json["versions"][0]["version"].should eq("0.1.0")
     json["versions"][1]["version"].should eq("0.2.0")
@@ -47,7 +47,7 @@ describe Api::Shards::Versions::Index do
       .user_agent("Test")
       .downloaded_at(Time.utc)
 
-    response = ApiClient.exec(Api::Shards::Versions::Index.with(shard_name: "test-shard"))
+    response = ApiClient.exec(Api::Shards::Versions::Index.with(**identity_of(shard)))
 
     response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)

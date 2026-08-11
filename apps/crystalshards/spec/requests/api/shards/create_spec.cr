@@ -44,24 +44,44 @@ describe Api::Shards::Create do
     response.body.should contain("errors")
   end
 
-  it "validates name uniqueness" do
+  # Uniqueness is on the repository, not the name. Two projects may both be
+  # called "duplicate-shard"; what cannot happen twice is one repository.
+  it "accepts a name another shard already uses, on a different repository" do
     user = UserFactory.create
 
-    # Create first shard
     ShardFactory.create &.name("duplicate-shard")
       .repository_url("https://github.com/user/duplicate-shard")
 
-    # Attempt to create shard with same name
     response = ApiClient.auth(user).exec(Api::Shards::Create,
       shard: {
         name:           "duplicate-shard",
-        repository_url: "https://github.com/user/duplicate-shard-2",
+        repository_url: "https://gitlab.com/other/duplicate-shard",
+      },
+      version: "0.1.0"
+    )
+
+    response.status.should eq(HTTP::Status.new(201))
+    ShardQuery.new.name("duplicate-shard").select_count.should eq(2)
+    JSON.parse(response.body)["shard"]["canonical_slug"]
+      .should eq("gitlab.com/other/duplicate-shard")
+  end
+
+  it "refuses a repository that is already registered" do
+    user = UserFactory.create
+
+    ShardFactory.create &.name("duplicate-shard")
+      .repository_url("https://github.com/user/duplicate-shard")
+
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name:           "renamed-but-same-repo",
+        repository_url: "https://github.com/user/duplicate-shard",
       },
       version: "0.1.0"
     )
 
     response.status.should eq(HTTP::Status.new(422))
-    response.body.should contain("errors")
+    response.body.should contain("already registered")
   end
 
   it "validates repository URL format" do

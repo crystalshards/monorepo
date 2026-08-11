@@ -67,20 +67,30 @@ class Api::Webhooks::Github < ApiAction
     !!payload["ref"]?.try(&.as_s.starts_with?("refs/tags/"))
   end
 
+  # GitHub tells us the repository, which is the identity: full_name is
+  # "owner/repo" and the host is github.com. Resolving by the trailing name
+  # would have pointed a GitHub release at a GitLab shard of the same name.
   private def enqueue_indexing(repo_full_name : String, tag_name : String)
-    shard_name = repo_full_name.split("/").last
     version = tag_name.sub(/^v/, "")
+    identity = ShardIdentity.parse_url("https://github.com/#{repo_full_name}")
 
-    shard = ShardQuery.new.name(shard_name).first?
+    unless identity
+      Log.info { "Ignoring GitHub webhook for unusable repository path: #{repo_full_name}" }
+      return
+    end
+
+    slug = identity.canonical_slug
+    shard = ShardQuery.new.canonical_slug(slug).first?
+
     unless shard
       # Releases only keep already-registered shards current. Registration
       # happens through the publish API, not through an inbound webhook.
-      Log.info { "Ignoring GitHub webhook for unregistered shard: #{shard_name}" }
+      Log.info { "Ignoring GitHub webhook for unregistered shard: #{slug}" }
       return
     end
 
     if ShardVersionQuery.new.shard_id(shard.id.not_nil!).version(version).first?
-      Log.info { "Shard version already indexed: #{shard_name}@#{version}" }
+      Log.info { "Shard version already indexed: #{slug}@#{version}" }
       return
     end
 
@@ -93,9 +103,9 @@ class Api::Webhooks::Github < ApiAction
       released_at: Time.utc
     )
 
-    IndexShardWorker.enqueue(shard_name: shard_name, version: version)
+    IndexShardWorker.enqueue(shard_name: slug, version: version)
 
-    Log.info { "Enqueued IndexShardWorker for #{shard_name}@#{version}" }
+    Log.info { "Enqueued IndexShardWorker for #{slug}@#{version}" }
   end
 
   # Constant-time comparison to prevent timing attacks.

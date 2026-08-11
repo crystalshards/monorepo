@@ -1,3 +1,4 @@
+require "../services/git_host_policy"
 require "./base_provider"
 require "./github_provider"
 require "./gitlab_provider"
@@ -22,14 +23,28 @@ class ProviderFactory
   # touches the network. Always nil in production.
   class_property builder : Proc(String, BaseProvider)? = nil
 
+  # Every real provider in the registry is built here, so this is where the URL
+  # gate belongs. Raises GitHostPolicy::UnsafeUrlError for anything that is not
+  # a known public git host, which is what stops a submitted repository_url
+  # from becoming a request against our own network.
+  #
+  # The builder seam is checked first and deliberately ungated: it exists so
+  # specs can hand a worker a provider that never opens a socket, and a mock
+  # provider has no network to protect. Production leaves it nil.
   def self.create(repository_url : String) : BaseProvider
     if custom = @@builder
-      custom.call(repository_url)
-    else
-      detect_and_create(repository_url)
+      return custom.call(repository_url)
     end
+
+    url = GitHostPolicy.normalize_url(repository_url)
+    GitHostPolicy.validate_fetch_url!(url)
+    detect_and_create(url)
   end
 
+  # Pure string classification. This used to shell out to `git ls-remote` and
+  # `hg identify` against the URL to decide, which made classification alone an
+  # outbound request with the URL interpolated into a shell command. Detection
+  # now never touches the network.
   def self.detect_provider_type(repository_url : String) : String
     case repository_url
     when /github\.com/
@@ -40,39 +55,23 @@ class ProviderFactory
       "bitbucket"
     when /codeberg\.org/
       "codeberg"
-    when /\.git$/
-      "git"
     when /\.hg$/
       "mercurial"
-    when /\.fossil$/
+    when /\.fossil$/, /\/fossil\//
       "fossil"
     else
-      if git_repository?(repository_url)
-        "git"
-      elsif mercurial_repository?(repository_url)
-        "mercurial"
-      elsif fossil_repository?(repository_url)
-        "fossil"
-      else
-        "git"
-      end
+      "git"
     end
   end
 
   def self.detect_repository_type(repository_url : String) : RepositoryType
-    case repository_url
-    when /\.hg$/
+    case detect_provider_type(repository_url)
+    when "mercurial"
       RepositoryType::Mercurial
-    when /\.fossil$/
+    when "fossil"
       RepositoryType::Fossil
     else
-      if mercurial_repository?(repository_url)
-        RepositoryType::Mercurial
-      elsif fossil_repository?(repository_url)
-        RepositoryType::Fossil
-      else
-        RepositoryType::Git
-      end
+      RepositoryType::Git
     end
   end
 
@@ -97,25 +96,5 @@ class ProviderFactory
     else
       GenericGitProvider.new(repository_url)
     end
-  end
-
-  private def self.git_repository?(url : String) : Bool
-    return false if url.empty?
-
-    test_cmd = "git ls-remote --exit-code -h #{url} 2>/dev/null"
-    system(test_cmd)
-  end
-
-  private def self.mercurial_repository?(url : String) : Bool
-    return false if url.empty?
-
-    test_cmd = "hg identify #{url} 2>/dev/null"
-    system(test_cmd)
-  end
-
-  private def self.fossil_repository?(url : String) : Bool
-    return false if url.empty?
-
-    url.ends_with?(".fossil") || url.includes?("/fossil/")
   end
 end

@@ -14,8 +14,11 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
     end
   end
 
-  post "/api/shards/:shard_name/:version_number/download" do
-    shard = ShardQuery.new.name(shard_name).first?
+  # Download counts are attributed to a repository, never to a name. A bare
+  # name could name two shards, and crediting a download to the wrong one is
+  # not recoverable, so this endpoint only takes the identity.
+  post "/api/shards/:host/:owner/:repo/:version_number/download" do
+    shard = ShardQuery.new.canonical_slug("#{host}/#{owner}/#{repo}").first?
 
     if shard.nil?
       head 404
@@ -46,25 +49,34 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
         # This allows MinIO to serve the file directly without going through our app
         begin
           storage = CrystalShards::StorageService.new
-          download_url = storage.package_download_url(shard.name, version.version)
+          download_url = storage.package_download_url(storage_key(shard), version.version)
 
           json({
-            shard_name:   shard.name,
-            version:      version.version,
-            download_url: download_url,
-            message:      "Download tracked successfully",
+            name:           shard.name,
+            canonical_slug: shard.canonical_slug,
+            version:        version.version,
+            download_url:   download_url,
+            message:        "Download tracked successfully",
           })
         rescue ex
           # In test environments, MinIO may not be available
           # Return success anyway since download tracking succeeded
           Log.warn { "Storage not available, skipping download URL generation: #{ex.message}" }
           json({
-            shard_name: shard.name,
-            version:    version.version,
-            message:    "Download tracked successfully (storage unavailable in test)",
+            name:           shard.name,
+            canonical_slug: shard.canonical_slug,
+            version:        version.version,
+            message:        "Download tracked successfully (storage unavailable in test)",
           })
         end
       end
     end
+  end
+
+  # Packages are stored under the identity, so two shards sharing a name do
+  # not share one object key. Legacy rows without identity keep their existing
+  # name-keyed objects.
+  private def storage_key(shard : Shard) : String
+    shard.canonical_slug || shard.name
   end
 end

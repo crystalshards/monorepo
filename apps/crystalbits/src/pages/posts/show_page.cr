@@ -42,7 +42,12 @@ class Posts::ShowPage < MainLayout
 
   private def render_body
     div class: "post-body" do
-      raw markdown_to_html(@post.content)
+      # Post bodies come from the same untrusted places as everything else, so
+      # they go through the same door. BitsHtml is the only path to `raw` in
+      # this app: Markd in safe mode, then the allowlist sanitiser. The
+      # previous `Markd.to_html` here passed raw HTML from a post body
+      # straight into the page.
+      raw BitsHtml.markdown(@post.content)
     end
   end
 
@@ -74,9 +79,5 @@ class Posts::ShowPage < MainLayout
   private def format_date(date : Time?) : String
     return "Draft" unless date
     date.to_s("%B %-d, %Y")
-  end
-
-  private def markdown_to_html(content : String) : String
-    Markd.to_html(content)
   end
 end

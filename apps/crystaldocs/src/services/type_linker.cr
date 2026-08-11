@@ -3,48 +3,19 @@ module CrystalDocs
   #
   # Documentation is only useful if the names in it are reachable. A signature
   # mentioning `HTTP::Server::Context` should get the reader to that type,
-  # whether it lives in this package, in a shard we also index, or in the
-  # Crystal standard library. Resolution runs in that order, most specific
-  # first.
+  # whether it lives in this package, in another shard we index, or in the
+  # Crystal standard library.
   #
-  # Anything that does not resolve stays plain text. A link that guesses is
-  # worse than no link: it sends the reader to a 404 and implies the name
-  # means something it does not. That is why the standard library is an
-  # explicit allowlist extracted from the compiler's own source tree rather
-  # than a "looks capitalised" test, which would turn every typo and every
-  # unindexed dependency type into a confident link to crystal-lang.org.
+  # The standard library is not a special case: it is published through the
+  # same pipeline as every shard, as the package named by `CORE_PACKAGE`, so
+  # core types resolve to pages on this site rather than sending the reader
+  # somewhere else. That also removes the guesswork an external link needed.
+  # An earlier version kept an allowlist of standard library constants and
+  # pointed at crystal-lang.org, which meant deciding from the shape of a name
+  # whether a page existed. Now the index either contains the type or it does
+  # not, and an unresolved name stays plain text, because a link that guesses
+  # sends the reader to a 404 and implies the name means something it does not.
   class TypeLinker
-    # Top-level constants defined by the Crystal standard library, generated
-    # by scanning the module, class, struct and enum declarations in the
-    # compiler's src/ tree, so it reflects a real release rather than
-    # recollection. Regenerate when the pinned Crystal version changes.
-    STDLIB_ROOTS = Set{
-      "ArgumentError", "Array", "Atomic", "Base64", "Benchmark",
-      "BigDecimal", "BigFloat", "BigInt", "BigRational", "BitArray", "Bool",
-      "Box", "CSV", "Channel", "Char", "Class", "Colorize", "Comparable",
-      "Complex", "Compress", "Crypto", "Deprecated", "Deque", "Digest",
-      "Dir", "DivisionByZeroError", "ECR", "ENV", "Enum", "Enumerable",
-      "Errno", "Exception", "Experimental", "Fiber", "File", "FileUtils",
-      "Flags", "Float", "Float32", "Float64", "GC", "HTML", "HTTP", "Hash",
-      "INI", "IO", "IPSocket", "IndexError", "Indexable", "Int", "Int128",
-      "Int16", "Int32", "Int64", "Int8", "Intrinsics",
-      "InvalidBigDecimalException", "InvalidByteSequenceError", "Iterable",
-      "Iterator", "JSON", "KeyError", "LLVM", "Levenshtein", "Link", "Log",
-      "MIME", "Math", "NamedTuple", "Nil", "NilAssertionError",
-      "NotImplementedError", "Number", "OAuth", "OAuth2", "Object",
-      "OpenSSL", "OptionParser", "OverflowError", "Path", "Pointer",
-      "PrettyPrint", "Proc", "Process", "Random", "Range", "Reference",
-      "ReferenceStorage", "Regex", "RuntimeError", "SemanticVersion", "Set",
-      "Signal", "Slice", "Socket", "Spec", "StaticArray", "Steppable",
-      "String", "StringPool", "StringScanner", "Struct", "Symbol", "Sync",
-      "Syscall", "System", "SystemError", "TCPServer", "TCPSocket",
-      "TargetFeature", "Termios", "Thread", "Time", "Tuple", "TypeCastError",
-      "UDPSocket", "UInt128", "UInt16", "UInt32", "UInt64", "UInt8",
-      "UNIXServer", "UNIXSocket", "URI", "UUID", "Unicode", "Union",
-      "VaList", "Value", "WaitGroup", "WasiError", "WeakRef", "WinError",
-      "XML", "YAML",
-    }
-
     # Names the compiler emits that are not types a reader can follow.
     NON_TYPES = Set{"self", "nil", "Nil", "Void", "NoReturn", "_"}
 
@@ -52,24 +23,16 @@ module CrystalDocs
       @package_name : String,
       @version : String,
       @local_types : Set(String),
-      @dependency_index : Hash(String, NamedTuple(package: String, version: String)) = {} of String => NamedTuple(package: String, version: String),
-      @core_api_base : String = CrystalDocs::TypeLinker.configured_core_api_base,
+      @dependency_index : Hash(String, DependencyIndex::Location) = {} of String => DependencyIndex::Location,
     )
     end
 
-    # The standard library documentation we link to is a specific published
-    # version, so it is configuration rather than a default buried in code.
-    # An unset value disables core links instead of guessing at "latest",
-    # which drifts and breaks links under the reader.
-    def self.configured_core_api_base : String
-      ENV.fetch("CRYSTAL_CORE_DOCS_URL", "")
-    end
-
     # The set of names this package defines, so everything else is known to
-    # come from somewhere else.
+    # come from somewhere else. Indexed without generic parameters, matching
+    # how names appear in signatures.
     def self.local_names(document : DocsDocument) : Set(String)
       names = Set(String).new
-      document.all_types.each { |type| names << type.full_name }
+      document.all_types.each { |type| names << type.qualified_name }
       names
     end
 
@@ -86,18 +49,25 @@ module CrystalDocs
           external: false,
           title: nil
         )
-      elsif dependency = @dependency_index[name]?
+      elsif owner = @dependency_index[name]?
         Link.new(
-          href: "/docs/#{dependency[:package]}/#{dependency[:version]}/#{name.gsub("::", "/")}",
+          href: "/docs/#{owner[:package]}/#{owner[:version]}/#{name.gsub("::", "/")}",
+          # Still on this site, but a different package than the one being
+          # read, which is worth marking so the reader knows they are moving.
           external: true,
-          title: "#{name} in #{dependency[:package]} #{dependency[:version]}"
+          title: title_for(name, owner)
         )
-      elsif core_link?(name)
-        Link.new(
-          href: "#{@core_api_base.rstrip('/')}/#{name.gsub("::", "/")}.html",
-          external: true,
-          title: "#{name} in the Crystal standard library"
-        )
+      end
+    end
+
+    private def title_for(name : String, owner : DependencyIndex::Location) : String
+      if owner[:package] == CORE_PACKAGE
+        # The standard library version is chosen from what the package being
+        # read declared support for, not from what is current, so naming it
+        # tells the reader which era of the API they are about to look at.
+        "#{name} in the Crystal standard library #{owner[:version]}"
+      else
+        "#{name} in #{owner[:package]} #{owner[:version]}"
       end
     end
 
@@ -109,13 +79,6 @@ module CrystalDocs
       name = name.split('|').first.strip
       name = name.rchop('?')
       name.strip
-    end
-
-    # Only link into the standard library when it is configured AND the root
-    # namespace is one the standard library actually defines.
-    private def core_link?(name : String) : Bool
-      return false if @core_api_base.empty?
-      STDLIB_ROOTS.includes?(name.split("::").first)
     end
   end
 end

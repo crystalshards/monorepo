@@ -28,3 +28,4 @@ variable "minio_backup_bucket" {
   description = "GCS bucket for MinIO backups"
   type        = string
 }
+
