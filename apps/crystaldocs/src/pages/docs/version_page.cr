@@ -1,140 +1,176 @@
 class Docs::VersionPage < MainLayout
   needs doc : Doc
   needs doc_version : DocVersion
-  needs doc_content : String?
-  needs file_path : String
+  needs document : CrystalDocs::DocsDocument?
 
   def page_title
-    "#{doc.package_name} v#{doc_version.version}"
+    "#{doc.package_name} #{doc_version.version}"
   end
 
   def content
-    render_breadcrumbs
+    div class: "docs-shell" do
+      mount Components::DocsSidebarNav,
+        doc: doc,
+        doc_version: doc_version,
+        types: document.try(&.all_types) || [] of CrystalDocs::DocType,
+        current_full_name: nil
 
-    div class: "docs-viewer" do
-      render_docs_header
+      div class: "docs-main" do
+        render_header
 
-      div class: "docs-layout" do
-        mount Components::DocSidebar,
-          doc: doc,
-          doc_version: doc_version,
-          current_file: file_path
-
-        render_docs_content
+        if parsed = document
+          render_readme(parsed)
+          render_type_index(parsed)
+        else
+          render_unavailable
+        end
       end
     end
   end
 
-  private def render_breadcrumbs
-    breadcrumb_items = [
+  # Breadcrumbs, the version switcher and the build badge predate the JSON
+  # renderer and are still the only way to move between versions or to see
+  # that a build failed, so they survive the rewrite. The switcher's label
+  # association in particular was an accessibility fix; do not drop it again.
+  private def render_header
+    mount Components::Breadcrumb, items: [
       Components::Breadcrumb::BreadcrumbItem.new("Home", "/"),
       Components::Breadcrumb::BreadcrumbItem.new("Documentation", "/docs"),
       Components::Breadcrumb::BreadcrumbItem.new(doc.package_name, "/docs/#{doc.package_name}"),
-      Components::Breadcrumb::BreadcrumbItem.new("v#{doc_version.version}", "/docs/#{doc.package_name}/#{doc_version.version}"),
+      Components::Breadcrumb::BreadcrumbItem.new(doc_version.version, "/docs/#{doc.package_name}/#{doc_version.version}"),
     ]
 
-    mount Components::Breadcrumb, items: breadcrumb_items
-  end
+    header class: "docs-type-header" do
+      span class: "docs-kind" do
+        text "package"
+      end
 
-  private def render_docs_header
-    div class: "docs-header" do
-      div class: "docs-nav" do
-        a href: "/docs/#{doc.package_name}", class: "back-link" do
-          tag "i", class: "fa-solid fa-arrow-left", "aria-hidden": "true"
-          text " Back to #{doc.package_name}"
+      h1 class: "docs-type-name" do
+        text doc.package_name
+      end
+
+      para class: "docs-ancestry" do
+        text doc_version.version
+
+        if published = doc_version.published_at
+          text " / published #{published.to_s("%b %-d, %Y")}"
         end
 
-        div class: "version-switcher" do
-          render_version_dropdown
+        if url = doc.repository_url
+          text " / "
+          a href: url, class: "docs-ancestry-link docs-external", target: "_blank", rel: "noopener" do
+            text "repository"
+          end
         end
       end
 
-      div class: "docs-title-block" do
-        h1 do
-          text doc.package_name
-          span " v#{doc_version.version}", class: "version-badge"
-        end
+      render_version_switcher
+      render_build_status
 
-        if description = doc.description
-          para description, class: "docs-subtitle"
-        end
-      end
-
-      if repository_url = doc.repository_url
-        div class: "docs-links" do
-          a "View Source", href: repository_url, class: "docs-link", target: "_blank"
-          a "CrystalShards", href: "https://crystalshards.org/shards/#{doc.package_name}", class: "docs-link", target: "_blank"
+      if description = doc.description
+        para class: "docs-summary" do
+          text description
         end
       end
     end
   end
 
-  private def render_version_dropdown
-    versions = doc.doc_versions.sort_by(&.published_at).reverse
+  # The label carries `for` and the select carries the matching `id`. A screen
+  # reader announced this as a bare "combo box" before that was fixed.
+  private def render_version_switcher
+    versions = doc.doc_versions.sort_by(&.version).reverse
+    return if versions.size < 1
 
-    label "Version:", for: "version-select"
-    tag "select", id: "version-select", onchange: "window.location.href = this.value" do
-      versions.each do |v|
-        version_option(v.version, v.version == doc_version.version)
+    div class: "docs-version-switcher" do
+      label "Version:", for: "version-select"
+
+      tag "select", id: "version-select", onchange: "window.location.href = this.value" do
+        versions.each do |candidate|
+          href = "/docs/#{doc.package_name}/#{candidate.version}"
+
+          if candidate.version == doc_version.version
+            tag("option", value: href, selected: "selected") { text candidate.version }
+          else
+            tag("option", value: href) { text candidate.version }
+          end
+        end
       end
     end
   end
 
-  # `selected` is a boolean attribute: rendering selected="false" still marks
-  # the option selected, which left every option selected and the browser
-  # showing the last one rather than the version actually being viewed.
-  private def version_option(version : String, selected : Bool)
-    href = "/docs/#{doc.package_name}/#{version}"
+  # A failed or pending build is the explanation for a thin page, so it is
+  # stated rather than left for the reader to infer.
+  private def render_build_status
+    para class: "docs-build-status" do
+      text "Build: "
+      strong doc_version.build_status.to_s
+    end
+  end
 
-    if selected
-      tag "option", value: href, selected: "selected" do
-        text version
-      end
-    else
-      tag "option", value: href do
-        text version
+  # The README is raw Markdown in the document, and it was written by whoever
+  # published the shard, so it is rendered and sanitised rather than trusted.
+  private def render_readme(parsed : CrystalDocs::DocsDocument)
+    body = parsed.body
+    return unless body && !body.empty?
+
+    section class: "docs-section" do
+      div class: "docs-readme" do
+        raw CrystalDocs::DocHtml.markdown(body)
       end
     end
   end
 
-  private def render_docs_content
-    div class: "docs-content-wrapper" do
-      if content = doc_content
-        div class: "docs-content" do
-          raw demote_content_headings(content)
+  private def render_type_index(parsed : CrystalDocs::DocsDocument)
+    types = parsed.top_level_types
+
+    section class: "docs-section" do
+      h2 class: "docs-section-heading" do
+        text "API"
+      end
+
+      if types.empty?
+        para do
+          text "This version publishes no documented types."
         end
       else
-        render_content_unavailable
+        ul class: "docs-toc" do
+          types.each do |type|
+            li do
+              a(
+                href: "/docs/#{doc.package_name}/#{doc_version.version}/#{type.url_path}",
+                class: "docs-toc-link"
+              ) do
+                text type.full_name
+              end
+
+              if summary = type.summary.presence
+                div class: "docs-member-doc" do
+                  raw CrystalDocs::DocHtml.sanitize(summary)
+                end
+              end
+            end
+          end
+        end
       end
     end
   end
 
-  # Generated documentation bodies carry their own top-level h1, but the page
-  # chrome already prints one (package + version). Demote the content h1 to
-  # h2 so the chrome owns the only h1 and heading order never skips.
-  private def demote_content_headings(html : String) : String
-    html
-      .gsub(/<h1(?=[\s>])/i, "<h2")
-      .gsub(/<\/h1>/i, "</h2>")
-  end
-
-  # Rendered when storage did not hand us the documentation body. The package
-  # and version exist, so say what is actually wrong instead of implying the
-  # documentation was never published.
-  private def render_content_unavailable
-    div class: "docs-content docs-content-unavailable" do
-      h2 "Documentation content is temporarily unavailable"
-
-      para do
-        text "We could not load the documentation for "
-        strong "#{doc.package_name} v#{doc_version.version}"
-        text " from storage. This version is published, so the problem is on our end."
+  # No document. The version exists, so say what is actually wrong instead of
+  # implying the package was never documented.
+  private def render_unavailable
+    section class: "docs-section" do
+      h2 class: "docs-section-heading" do
+        text "Documentation is not available for this version"
       end
 
-      para class: "docs-content-hint" do
-        text "Try again in a moment, or "
-        a "browse the other versions", href: "/docs/#{doc.package_name}"
-        text "."
+      para do
+        text "The documentation build for "
+        strong "#{doc.package_name} #{doc_version.version}"
+        text " has not produced a result yet, or could not be loaded from storage."
+      end
+
+      para do
+        a "Browse the other versions", href: "/docs/#{doc.package_name}"
       end
     end
   end

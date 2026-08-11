@@ -72,6 +72,11 @@ resolve_tag() {
 # $3: work dir (mounted read-write), $4: path the watchdog touches when the
 # build had to be killed for exceeding the wall clock limit.
 #
+# --format=json writes the documentation to stdout instead of writing an
+# HTML tree, so the shell redirects it into the output mount. That one file
+# is the whole artifact: crystaldocs renders documentation itself and never
+# stores shard-authored HTML.
+#
 # /work is a fresh, empty host scratch dir bind-mounted in, not a tmpfs:
 # `crystal docs` compiles a helper binary for every macro `run` in the shard
 # and executes it, and executing a freshly written file from a tmpfs fails
@@ -104,7 +109,7 @@ sandboxed_crystal_docs() {
     --user 1000:1000 -e HOME=/work \
     -v "$src:/src:ro" -v "$out:/out:rw" -w /work \
     "$SANDBOX_IMAGE" \
-    sh -c 'cp -r /src/. /work/ && cd /work && crystal docs --output=/out'
+    sh -c 'cp -r /src/. /work/ && cd /work && crystal docs --format=json > /out/docs.json'
   rc=$?
 
   kill "$watchdog" 2>/dev/null
@@ -112,14 +117,14 @@ sandboxed_crystal_docs() {
   return $rc
 }
 
-# Upload the generated tree to <package>/<version>/ in the docs bucket,
-# preserving nested paths.
+# Upload the single generated artifact to <package>/<version>/docs.json in
+# the docs bucket. One object per version, never a tree of files.
 upload_docs() {
-  local docs_dir="$1" name="$2" version="$3"
+  local docs_json="$1" name="$2" version="$3"
   docker run --rm --network host \
-    -v "$docs_dir:/upload:ro" --entrypoint sh "$MC_IMAGE" -c \
+    -v "$docs_json:/upload/docs.json:ro" --entrypoint sh "$MC_IMAGE" -c \
     "mc alias set local '$MINIO_ENDPOINT' '$MINIO_ACCESS_KEY' '$MINIO_SECRET_KEY' >/dev/null && \
-     mc cp --recursive /upload/ 'local/$DOCS_BUCKET/$name/$version/'"
+     mc cp /upload/docs.json 'local/$DOCS_BUCKET/$name/$version/docs.json'"
 }
 
 build_one() {
@@ -174,16 +179,18 @@ build_one() {
     return 1
   fi
 
-  if [ ! -f "$outdir/index.html" ]; then
-    echo "$name $version crystal docs produced no index.html"
+  # A zero-byte docs.json is a failed build: `crystal docs` can exit 0 having
+  # written nothing useful.
+  if [ ! -s "$outdir/docs.json" ]; then
+    echo "$name $version crystal docs produced no docs.json"
     rm -rf "$workdir"
     return 1
   fi
 
-  local file_count
-  file_count="$(find "$outdir" -type f | wc -l | tr -d ' ')"
+  local json_bytes
+  json_bytes="$(stat -f%z "$outdir/docs.json" 2>/dev/null || stat -c%s "$outdir/docs.json")"
 
-  if ! upload_docs "$outdir" "$name" "$version" >"$workdir/upload.log" 2>&1; then
+  if ! upload_docs "$outdir/docs.json" "$name" "$version" >"$workdir/upload.log" 2>&1; then
     echo "$name $version upload to MinIO failed:"
     tail -n 5 "$workdir/upload.log" | sed 's/^/    /'
     rm -rf "$workdir"
@@ -191,7 +198,7 @@ build_one() {
   fi
 
   rm -rf "$workdir"
-  printf '%-14s %-12s %6s files  ok\n' "$name" "$version" "$file_count"
+  printf '%-14s %-12s %8s bytes  ok\n' "$name" "$version" "$json_bytes"
   return 0
 }
 

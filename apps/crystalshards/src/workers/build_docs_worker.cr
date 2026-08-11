@@ -46,25 +46,25 @@ struct BuildDocsWorker < BaseJob
     Dir.mkdir_p(temp_dir)
 
     begin
-      docs_dir = CrystalShards::DocsBuilder.build.generate_docs(
+      docs_json = CrystalShards::DocsBuilder.build.generate_docs(
         shard.repository_url,
         shard_version.version,
         shard_version.commit_sha,
         temp_dir
       )
-      return nil unless docs_dir
+      return nil unless docs_json
 
-      upload_to_storage(shard, shard_version, docs_dir)
+      upload_to_storage(shard, shard_version, docs_json)
     ensure
       FileUtils.rm_rf(temp_dir) if Dir.exists?(temp_dir)
     end
   end
 
-  private def upload_to_storage(shard : Shard, shard_version : ShardVersion, docs_dir : String) : String
+  private def upload_to_storage(shard : Shard, shard_version : ShardVersion, docs_json : String) : String
     storage = CrystalShards::StorageService.build
-    uploaded_keys = storage.upload_docs(shard.name, shard_version.version, docs_dir)
+    key = storage.upload_docs_json(shard.name, shard_version.version, docs_json)
 
-    log_info "Uploaded #{uploaded_keys.size} documentation files to MinIO"
+    log_info "Uploaded #{key} (#{File.size(docs_json)} bytes) to MinIO"
     "https://crystaldocs.org/#{shard.name}/#{shard_version.version}"
   rescue ex : Exception
     log_error "Error uploading docs to MinIO", ex

@@ -41,8 +41,8 @@ module CrystalShards
     end
 
     # Populates `work_dir` from the repository and generates documentation.
-    # Returns the directory holding the generated docs, or nil when the build
-    # failed or produced nothing.
+    # Returns the path to the generated docs.json, or nil when the build
+    # failed or produced nothing usable.
     #
     # Raises when the repository cannot be cloned, or when no sandbox is
     # available: refusing to build is correct, building unconfined is not.
@@ -116,13 +116,17 @@ module CrystalShards
         return nil
       end
 
-      unless Dir.exists?(docs_dir) && !Dir.empty?(docs_dir)
-        log_error "Sandbox produced no documentation"
+      # The sandboxes already refuse a missing or unparseable artifact; this
+      # is the same contract at the hand-off, so a custom DocsSandbox cannot
+      # silently downgrade it.
+      docs_json = File.join(docs_dir, DocsSandbox::DOCS_JSON)
+      unless DocsSandbox.valid_docs_json?(docs_json)
+        log_error "Sandbox produced no usable #{DocsSandbox::DOCS_JSON}"
         return nil
       end
 
       log_info "Built documentation successfully"
-      docs_dir
+      docs_json
     end
 
     # Arguments are passed as an array rather than interpolated into a shell

@@ -53,25 +53,20 @@ describe BuildDocsWorker do
       builder.calls.first.commit_sha.should be_nil
     end
 
-    it "uploads every generated file under the shard and version prefix" do
+    it "uploads the generated docs.json under the shard and version prefix" do
       shard = ShardFactory.create &.name("upload-test")
       ShardVersionFactory.create &.shard_id(shard.id).version("2.0.0")
 
       builder = CrystalShards::MockDocsBuilder.new
-      builder.docs_files = {
-        "index.html" => "<html>Index</html>",
-        "style.css"  => "body { color: blue; }",
-      }
       storage = CrystalShards::MockStorageService.new
 
       WorkerSeams.with_docs_pipeline(builder, storage) do
         BuildDocsWorker.new(shard_name: "upload-test", version: "2.0.0").perform
       end
 
-      storage.uploaded_docs.sort.should eq([
-        "upload-test/2.0.0/index.html",
-        "upload-test/2.0.0/style.css",
-      ])
+      # Exactly one artifact ever lands in storage for a version, and it is
+      # the JSON document, never a tree of shard-authored HTML.
+      storage.uploaded_docs.should eq(["upload-test/2.0.0/docs.json"])
     end
 
     it "removes the working directory once the build finishes" do

@@ -12,7 +12,13 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./libraries/migrations:/docker-entrypoint-initdb.d
+      # The raw SQL in libraries/migrations is deliberately NOT mounted into
+      # /docker-entrypoint-initdb.d. Each app owns its schema through its own
+      # Avram migrations, run by `make migrate`, and mounting these files made
+      # Postgres a second source of truth: on any fresh volume the init
+      # scripts created users, shards and friends, and then every app's first
+      # migration failed with "relation already exists". Two schema owners for
+      # one database is the bug; the apps are the owner that ships.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s

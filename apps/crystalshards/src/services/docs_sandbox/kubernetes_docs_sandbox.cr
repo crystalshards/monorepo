@@ -31,6 +31,10 @@ module CrystalShards
     TOKEN_PATH       = "/var/run/secrets/kubernetes.io/serviceaccount/token"
     CA_PATH          = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
+    # Where `mc` keeps the credentials it writes. Mounted by the trusted
+    # steps only.
+    MC_CONFIG_DIR = "/mc-config"
+
     @namespace : String
     @scratch_prefix : String
     @runtime_class : String?
@@ -49,7 +53,7 @@ module CrystalShards
     def build_docs(source_dir : String, output_dir : String) : Bool
       build_id = UUID.random.to_s
       source_key = "#{@scratch_prefix}/#{build_id}/source.tar.gz"
-      docs_key = "#{@scratch_prefix}/#{build_id}/docs.tar.gz"
+      docs_key = "#{@scratch_prefix}/#{build_id}/#{DOCS_JSON}"
 
       stage_source(source_dir, source_key)
 
@@ -62,6 +66,14 @@ module CrystalShards
       end
 
       collect_docs(docs_key, output_dir)
+
+      # The compiler can exit 0 without writing anything useful, so the Job
+      # succeeding is never the whole story: the artifact has to parse.
+      unless DocsSandbox.valid_docs_json?(File.join(output_dir, DOCS_JSON))
+        log_error "Sandboxed build produced no usable #{DOCS_JSON}"
+        return false
+      end
+
       true
     ensure
       cleanup(build_id.to_s) if build_id
@@ -78,15 +90,16 @@ module CrystalShards
       File.delete(tarball) if tarball && File.exists?(tarball)
     end
 
+    # The result comes back as one regular file, not an archive.
+    #
+    # It used to be a tarball, which was a hole: the directory it was built
+    # from is written by the untrusted step, so a shard could plant a symlink
+    # or a `../` member and have this trusted side extract it onto the worker.
+    # A single JSON file has no members to traverse with, so the whole class
+    # of attack disappears rather than being validated against.
     private def collect_docs(key : String, output_dir : String)
       Dir.mkdir_p(output_dir)
-      tarball = File.tempname("docs_output", ".tar.gz")
-      File.write(tarball, @storage.download_scratch(key))
-
-      status = Process.run("tar", ["-xzf", tarball, "-C", output_dir])
-      raise DocsSandbox::Unavailable.new("Could not unpack sandbox output") unless status.success?
-    ensure
-      File.delete(tarball) if tarball && File.exists?(tarball)
+      File.write(File.join(output_dir, DOCS_JSON), @storage.download_scratch(key))
     end
 
     private def create_job(name : String, source_key : String, docs_key : String)
@@ -160,6 +173,10 @@ module CrystalShards
               volumes: [
                 {name: "workspace", emptyDir: {sizeLimit: "2Gi"}},
                 {name: "tmp", emptyDir: {medium: "Memory", sizeLimit: "256Mi"}},
+                # Mounted only by the trusted steps, so the credentials `mc`
+                # writes never sit on a volume the build can read. It lives
+                # and dies with the Job.
+                {name: "mc-config", emptyDir: {medium: "Memory", sizeLimit: "1Mi"}},
               ],
               initContainers: [
                 storage_container("fetch", fetch_command(source_key)),
@@ -191,28 +208,51 @@ module CrystalShards
         command:         ["sh", "-c", command],
         securityContext: hardened_security_context,
         resources:       resources,
-        volumeMounts:    volume_mounts,
-        env:             storage_env,
+        # Trusted steps additionally mount the mc config volume. The build
+        # step does not, which is the point: `mc alias set` writes the access
+        # and secret key to disk, so that file must not live anywhere the
+        # untrusted container can read.
+        volumeMounts: volume_mounts + [{name: "mc-config", mountPath: MC_CONFIG_DIR}],
+        env:          storage_env,
       }
     end
 
     private def fetch_command(source_key : String) : String
-      "#{mc_alias} && mc cp local/#{scratch_bucket}/#{source_key} /workspace/source.tar.gz && " \
+      "#{mc_alias} && #{mc} cp local/#{scratch_bucket}/#{source_key} /workspace/source.tar.gz && " \
       "mkdir -p /workspace/src && tar -xzf /workspace/source.tar.gz -C /workspace/src && " \
       "rm /workspace/source.tar.gz"
     end
 
+    # `--format=json` sends the document to stdout rather than writing an
+    # HTML tree, so the shell captures it. That one file is the whole
+    # artifact: we render documentation ourselves and never store
+    # shard-authored HTML.
     private def build_command : String
-      "cd /workspace/src && crystal docs --output=/workspace/docs"
+      "mkdir -p /workspace/docs && cd /workspace/src && " \
+      "crystal docs --format=json > /workspace/docs/#{DOCS_JSON}"
     end
 
+    # The path being uploaded was written by the untrusted step, so it is
+    # checked before it is read. A symlink here would make the trusted
+    # container copy whatever it points at, its own /proc included, straight
+    # into object storage.
     private def upload_command(docs_key : String) : String
-      "#{mc_alias} && tar -czf /workspace/docs.tar.gz -C /workspace/docs . && " \
-      "mc cp /workspace/docs.tar.gz local/#{scratch_bucket}/#{docs_key}"
+      artifact = "/workspace/docs/#{DOCS_JSON}"
+
+      "test -f #{artifact} && test ! -L #{artifact} && " \
+      "#{mc_alias} && #{mc} cp #{artifact} local/#{scratch_bucket}/#{docs_key}"
     end
 
+    # `--config-dir` keeps the written credentials on the volume only the
+    # trusted containers mount, rather than in HOME on a shared one.
     private def mc_alias : String
-      "mc alias set local \"$MINIO_ENDPOINT\" \"$MINIO_ACCESS_KEY\" \"$MINIO_SECRET_KEY\""
+      "#{mc} alias set local \"$MINIO_ENDPOINT\" \"$MINIO_ACCESS_KEY\" \"$MINIO_SECRET_KEY\""
+    end
+
+    # Every `mc` call has to use the same config directory, or the copy will
+    # not find the alias the first call wrote.
+    private def mc : String
+      "mc --config-dir #{MC_CONFIG_DIR}"
     end
 
     private def scratch_bucket : String
@@ -222,10 +262,21 @@ module CrystalShards
     private def storage_env
       %w[MINIO_ENDPOINT MINIO_ACCESS_KEY MINIO_SECRET_KEY].map do |key|
         {
-          name:      key,
-          valueFrom: {secretKeyRef: {name: "crystalshards-secrets", key: key.downcase}},
+          name: key,
+          # Secrets are namespace scoped, and this Job runs in the sandbox
+          # namespace, so it cannot read the application's secret. Terraform
+          # provisions a separate, storage-only credential there: the trusted
+          # fetch and upload steps need object storage and nothing else, and
+          # the app's secret also carries the database URL and key base, which
+          # have no business anywhere near a build.
+          valueFrom: {secretKeyRef: {name: sandbox_secret_name, key: key.downcase}},
         }
       end
+    end
+
+    # The storage-only credential Terraform creates in the sandbox namespace.
+    private def sandbox_secret_name : String
+      ENV.fetch("DOCS_SANDBOX_SECRET_NAME", "docs-sandbox-storage")
     end
 
     private def hardened_security_context

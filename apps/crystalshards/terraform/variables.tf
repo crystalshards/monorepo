@@ -36,7 +36,10 @@ variable "minio_backup_bucket" {
 variable "docs_sandbox_image" {
   description = "Container image used for untrusted documentation builds in the docs-sandbox namespace"
   type        = string
-  default     = "crystallang/crystal:1.17.1-alpine"
+  # Must track the toolchain the platform builds with. On an older compiler a
+  # shard using newer standard library types fails to document for a reason
+  # that has nothing to do with the shard.
+  default = "crystallang/crystal:1.21.0-alpine"
 }
 
 variable "docs_sandbox_timeout_seconds" {
@@ -129,4 +132,16 @@ variable "docs_sandbox_max_memory" {
   description = "Maximum memory a single build container may request or limit"
   type        = string
   default     = "8Gi"
+}
+
+# The build Jobs' storage credentials are derived from the same MinIO data
+# source the application secret uses, in
+# resource.kubernetes_secret.docs_sandbox_storage.tf, rather than being
+# threaded through variables. One source of truth, and no second set of
+# credentials to keep in step.
+
+variable "docs_sandbox_secret_name" {
+  description = "Name of the storage credential Secret in the docs-sandbox namespace"
+  type        = string
+  default     = "docs-sandbox-storage"
 }

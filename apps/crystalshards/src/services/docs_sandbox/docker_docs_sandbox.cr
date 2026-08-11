@@ -46,6 +46,13 @@ module CrystalShards
         return false
       end
 
+      # The compiler can exit 0 without writing anything useful, so the exit
+      # status is never the whole story: the artifact has to parse.
+      unless DocsSandbox.valid_docs_json?(File.join(output_dir, DOCS_JSON))
+        log_error "Sandboxed docs build produced no usable #{DOCS_JSON}"
+        return false
+      end
+
       true
     rescue ex : IO::Error | RuntimeError
       raise DocsSandbox::Unavailable.new("Could not start the docker sandbox: #{ex.message}")
@@ -87,9 +94,12 @@ module CrystalShards
     end
 
     # The source is copied out of the read-only mount because `crystal docs`
-    # writes alongside the sources it reads.
+    # writes alongside the sources it reads. `--format=json` sends the
+    # document to stdout rather than writing an HTML tree, so the shell
+    # captures it into the output mount. That one file is the whole artifact:
+    # we render documentation ourselves and never store shard-authored HTML.
     private def build_command : String
-      "cp -r /src/. #{WORK_DIR}/ && cd #{WORK_DIR} && crystal docs --output=/out"
+      "cp -r /src/. #{WORK_DIR}/ && cd #{WORK_DIR} && crystal docs --format=json > /out/#{DOCS_JSON}"
     end
 
     # Docker wants `2g`, Kubernetes quantities are written `2Gi`. Accept the
