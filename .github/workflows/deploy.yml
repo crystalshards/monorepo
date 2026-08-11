@@ -749,7 +749,7 @@ jobs:
                 -var="region=${REGION}" \
                 -var="image_tag=${IMAGE_TAG}" \
                 "$address" "projects/${PROJECT_ID}/serviceAccounts/${email}"
-            elif printf '%s' "$err" | grep -qiE 'not_found|not found|404|does not exist'; then
+            elif printf '%s' "$err" | grep -qiE 'not_found|not found|cannot find|404|does not exist'; then
               return 0
             else
               echo "Could not determine whether ${email} exists: ${err}" >&2
@@ -787,7 +787,7 @@ jobs:
                 -var="region=${REGION}" \
                 -var="image_tag=${IMAGE_TAG}" \
                 "$address" "projects/${PROJECT_ID}/locations/${REGION}/${kind}/${name}"
-            elif printf '%s' "$err" | grep -qiE 'not_found|not found|404|does not exist'; then
+            elif printf '%s' "$err" | grep -qiE 'not_found|not found|cannot find|404|does not exist'; then
               return 0
             else
               echo "Could not determine whether ${kind%s} ${name} exists: ${err}" >&2
