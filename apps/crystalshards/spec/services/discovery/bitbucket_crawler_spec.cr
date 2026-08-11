@@ -546,6 +546,10 @@ describe Discovery::BitbucketCrawler do
         problems.map(&.[0]).should eq(["acme"])
         problems.first[1].should contain("evil.test")
         report.complete?.should be_false
+        # The link was unusable; the page it came on was not. Everything the
+        # host already handed over on it is kept, because refusing to walk
+        # further is not a reason to throw away what was already read.
+        report.discovered.should eq(1)
       end
     end
 
@@ -569,10 +573,12 @@ describe Discovery::BitbucketCrawler do
         problems = [] of {String, String}
         crawler = bitbucket(fake, ["acme"])
         crawler.on_workspace_problem = ->(slug : String, reason : String) { problems << {slug, reason}; nil }
-        crawler.run
+        report = crawler.run
 
         fake.requests.none?(&.includes?("other-workspace")).should be_true
         problems.map(&.[0]).should eq(["acme"])
+        # And again, the page that carried the bad link is still harvested.
+        report.discovered.should eq(1)
       end
     end
 

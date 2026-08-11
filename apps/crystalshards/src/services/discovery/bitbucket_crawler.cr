@@ -201,14 +201,18 @@ module Discovery
       # gate, so it gets two. `follow_url` pins it to the configured origin and
       # to this workspace's own collection before it is written to the cursor,
       # so a poisoned URL is never persisted, and `url_gate_for` checks it again
-      # at request time. A `next` that fails either is a broken page rather than
-      # a reason to trust it: the workspace is recorded and stepped over, not
-      # quietly truncated to the pages seen so far.
+      # at request time. A `next` that fails either is a broken link, not a
+      # broken page: this page was served and parsed, so its repositories are
+      # kept and only the walk into the next page is abandoned. The workspace is
+      # recorded and stepped over rather than the read being quietly truncated
+      # and reported as an ending.
       more = payload["next"]?.try(&.as_s?).presence
 
       next_cursor = if more
                       following = follow_url(position, more)
-                      return skip_workspace(position, "unusable next link: #{more.inspect}") unless following
+                      unless following
+                        return skip_workspace(position, "unusable next link: #{more.inspect}", keeping: repositories)
+                      end
 
                       Position.new(position.slug, position.page + 1, following).to_cursor
                     else
@@ -265,13 +269,23 @@ module Discovery
       following ? Position.new(following, 1) : nil
     end
 
-    private def skip_workspace(position : Position, reason : String) : CrawlPage
+    # Records a workspace as unreadable and moves the walk past it.
+    #
+    # `keeping` is what was already successfully read before the problem, which
+    # is empty when the request itself failed and is the page's repositories
+    # when the page arrived and only the link out of it was unusable. Dropping
+    # those would lose shards the host had already handed over.
+    private def skip_workspace(
+      position : Position,
+      reason : String,
+      keeping : Array(DiscoveredRepository) = [] of DiscoveredRepository,
+    ) : CrawlPage
       report.failed += 1
       message = "#{HOST}/#{position.slug}: #{reason}"
       Log.warn { "Skipping workspace #{message}" }
       on_workspace_problem.call(position.slug, reason)
 
-      CrawlPage.new([] of DiscoveredRepository, advance_workspace(position).try(&.to_cursor))
+      CrawlPage.new(keeping, advance_workspace(position).try(&.to_cursor))
     end
 
     # Decides whether the host's `next` URL is one this crawl is willing to
