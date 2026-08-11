@@ -57,6 +57,15 @@ DOCS_SANDBOX_IMAGE ?= crystallang/crystal:1.21.0-alpine
 
 SANDBOX_ENV = DOCS_SANDBOX=$(DOCS_SANDBOX) DOCS_SANDBOX_IMAGE=$(DOCS_SANDBOX_IMAGE)
 
+# The job ad strip. CrystalShards, CrystalDocs and CrystalBits read promotable
+# jobs from CrystalGigs over HTTP; unset turns the strip off rather than
+# breaking the app, so it is set here to keep `make dev` showing what
+# production shows. Harmless on CrystalGigs itself, which never reads it.
+JOB_ADS_URL ?= http://localhost:3002/api/ads
+
+JOB_ADS_ENV = JOB_ADS_URL=$(JOB_ADS_URL)
+
+
 help: ## Show this help message
 	@echo "CrystalShards Development Commands:"
 	@grep -E '^[a-zA-Z_.-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -167,6 +176,7 @@ dev: ## Run all four apps and the background worker (Ctrl-C stops everything)
 			DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_development" \
 			REDIS_URL=redis://localhost:6379/0 \
 			$(MINIO_ENV) \
+			$(JOB_ADS_ENV) \
 			./bin/$$app 2>&1 | sed "s/^/[$$app] /") & \
 		port=$$((port + 1)); \
 	done; \

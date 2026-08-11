@@ -2,7 +2,7 @@ require "../../../spec_helper"
 
 describe Api::Shards::Show do
   it "returns 404 when shard not found" do
-    response = ApiClient.exec(Api::Shards::Show.with(shard_name: "nonexistent"))
+    response = ApiClient.exec(Api::Shards::Show.with(**unregistered_identity))
 
     response.status.should eq(HTTP::Status::NOT_FOUND)
   end
@@ -17,7 +17,7 @@ describe Api::Shards::Show do
       .version("0.1.0")
       .released_at(Time.utc)
 
-    response = ApiClient.exec(Api::Shards::Show.with(shard_name: "test-shard"))
+    response = ApiClient.exec(Api::Shards::Show.with(**identity_of(shard)))
 
     response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)

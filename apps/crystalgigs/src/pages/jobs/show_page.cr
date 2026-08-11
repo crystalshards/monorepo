@@ -187,8 +187,16 @@ class Jobs::ShowPage < MainLayout
     end
   end
 
+  # Job descriptions are written by whoever posts the job, so this is
+  # untrusted input going into `raw`. It was passed through unescaped, which
+  # made any description containing a script tag stored XSS on this origin.
+  #
+  # Escape first, then add the line breaks. The reverse order would escape the
+  # breaks we just inserted, and escaping afterwards would be no protection at
+  # all. This is the only markup the function has ever produced: it is a
+  # newline-to-break conversion, not a Markdown renderer.
   private def render_markdown(text : String)
-    raw text.gsub("\n", "<br>")
+    raw HTML.escape(text).gsub("\n", "<br>")
   end
 
   private def current_url : String

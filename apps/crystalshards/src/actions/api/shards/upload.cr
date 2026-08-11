@@ -97,8 +97,11 @@ class Api::Shards::Upload < ApiAction
       }, status: 400)
     end
 
-    # Find or create the shard
-    shard = ShardQuery.new.name(shard_name).first?
+    # A publish names the repository it comes from, so the shard it belongs to
+    # is found by identity. Looking it up by name would attach a GitLab
+    # project's release to a GitHub project that happens to share its name.
+    identity = ShardIdentity.parse_url(repository_url)
+    shard = identity.try { |found| ShardQuery.new.canonical_slug(found.canonical_slug).first? }
 
     unless shard
       SaveShard.create(
@@ -125,7 +128,7 @@ class Api::Shards::Upload < ApiAction
       begin
         storage = CrystalShards::StorageService.new
         storage.upload_package_from_io(
-          shard_name: shard.not_nil!.name,
+          shard_name: package_storage_key(shard.not_nil!),
           version: version,
           content: package_content
         )
@@ -142,10 +145,11 @@ class Api::Shards::Upload < ApiAction
         yanked: false
       ) do |version_operation, shard_version|
         if shard_version
-          # Enqueue background job to index shard metadata
+          # Enqueue background job to index shard metadata, keyed on identity
+          # so the job cannot land on another shard of the same name.
           begin
             IndexShardWorker.enqueue(
-              shard_name: shard.not_nil!.name,
+              shard_name: package_storage_key(shard.not_nil!),
               version: version
             )
           rescue ex : Exception
@@ -157,8 +161,10 @@ class Api::Shards::Upload < ApiAction
           json({
             message: "Shard uploaded successfully",
             shard:   {
-              id:   shard.not_nil!.id,
-              name: shard.not_nil!.name,
+              id:             shard.not_nil!.id,
+              name:           shard.not_nil!.name,
+              canonical_slug: shard.not_nil!.canonical_slug,
+              url:            shard.not_nil!.url_path,
             },
             version: {
               id:       shard_version.id,
@@ -178,5 +184,12 @@ class Api::Shards::Upload < ApiAction
         error: "Failed to upload package: #{ex.message}",
       }, status: 500)
     end
+  end
+
+  # Packages and jobs are keyed on the repository, so two shards sharing a
+  # name cannot overwrite each other's archives. A legacy row with no identity
+  # keeps its existing name-keyed objects.
+  private def package_storage_key(shard : Shard) : String
+    shard.canonical_slug || shard.name
   end
 end

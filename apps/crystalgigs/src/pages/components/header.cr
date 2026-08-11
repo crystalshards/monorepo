@@ -9,8 +9,8 @@ class Header < Lucky::BaseComponent
     header class: "site-header" do
       nav class: "navbar", "aria-label": "Primary" do
         div class: "navbar-brand" do
-          # The mark is drawn in CSS as a bevelled square (the cube face of
-          # pyrite), never an emoji.
+          # The mark is drawn in CSS as a hexagonal section, the shape shared
+          # by all four apps, never an emoji.
           a href: "/", class: "logo" do
             text "CrystalGigs"
           end

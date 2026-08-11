@@ -8,7 +8,7 @@ class ShardCard < Lucky::BaseComponent
     article class: "shard-card" do
       div class: "shard-card-header" do
         tag "h#{@heading_level}", class: "shard-name" do
-          a href: "/shards/#{@shard.name}" do
+          a href: @shard.url_path do
             text @shard.name
           end
         end
@@ -19,6 +19,14 @@ class ShardCard < Lucky::BaseComponent
           span class: "version-number" do
             text version.version
           end
+        end
+      end
+
+      # Two shards may share a name, so the card says which repository this one
+      # is. Without it a listing of two "router" shards is unreadable.
+      if slug = @shard.canonical_slug
+        para class: "shard-identity" do
+          text slug
         end
       end
 

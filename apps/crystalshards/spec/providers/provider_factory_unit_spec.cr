@@ -91,25 +91,30 @@ describe ProviderFactory do
       provider.repository_type.should eq("git")
     end
 
-    it "creates GenericGitProvider for generic Git URLs" do
-      provider = ProviderFactory.create("https://example.com/repo.git")
-      provider.should be_a(GenericGitProvider)
-      provider.provider_name.should eq("generic_git")
-      provider.repository_type.should eq("git")
+    # Non-forge hosts no longer reach a provider through the factory. What still
+    # matters is that classification picks the right provider for each kind of
+    # repository, so that is asserted directly rather than through a create()
+    # call the gate refuses.
+    it "classifies self-hosted repositories without building a provider for them" do
+      ProviderFactory.detect_provider_type("https://example.com/repo.git").should eq("git")
+      ProviderFactory.detect_provider_type("https://example.com/repo.hg").should eq("mercurial")
+      ProviderFactory.detect_provider_type("https://example.com/repo.fossil").should eq("fossil")
+      ProviderFactory.detect_provider_type("https://example.com/fossil/repo").should eq("fossil")
     end
 
-    it "creates MercurialProvider for Mercurial URLs" do
-      provider = ProviderFactory.create("https://example.com/repo.hg")
-      provider.should be_a(MercurialProvider)
-      provider.provider_name.should eq("mercurial")
-      provider.repository_type.should eq("mercurial")
+    it "names and types each provider it can build" do
+      GenericGitProvider.new("https://example.com/repo.git").provider_name.should eq("generic_git")
+      GenericGitProvider.new("https://example.com/repo.git").repository_type.should eq("git")
+      MercurialProvider.new("https://example.com/repo.hg").provider_name.should eq("mercurial")
+      MercurialProvider.new("https://example.com/repo.hg").repository_type.should eq("mercurial")
+      FossilProvider.new("https://example.com/repo.fossil").provider_name.should eq("fossil")
+      FossilProvider.new("https://example.com/repo.fossil").repository_type.should eq("fossil")
     end
 
-    it "creates FossilProvider for Fossil URLs" do
-      provider = ProviderFactory.create("https://example.com/repo.fossil")
-      provider.should be_a(FossilProvider)
-      provider.provider_name.should eq("fossil")
-      provider.repository_type.should eq("fossil")
+    it "refuses to build anything for a host outside the allowlist" do
+      expect_raises(GitHostPolicy::UnsafeUrlError) do
+        ProviderFactory.create("https://example.com/repo.git")
+      end
     end
   end
 end

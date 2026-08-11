@@ -34,6 +34,12 @@ class Components::Head < Lucky::BaseComponent
       tag "script", src: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js", defer: "defer"
       tag "script", src: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-crystal.min.js", defer: "defer"
 
+      # Progressive enhancement, and only that. The sidebar tree is
+      # <details>/<summary> and its current branch is opened server side; this
+      # adds the filter field's behaviour and nothing else, and no-ops on every
+      # page that has no sidebar.
+      tag "script", src: asset("js/docs_nav.js"), defer: "defer"
+
       csrf_meta_tags
     end
   end

@@ -196,8 +196,12 @@ describe IndexShardWorker do
   end
 
   describe "worker chaining" do
+    # Follow-ups are keyed on the shard's identity, not the string the job
+    # arrived under, so the rest of the pipeline cannot land on a different
+    # shard that happens to share this one's name.
     it "schedules dependency and docs jobs for the indexed version" do
       shard = ShardFactory.create &.name("chain-test")
+        .repository_url("https://github.com/someone/chain-test")
       ShardVersionFactory.create &.shard_id(shard.id).version("2.1.0")
 
       provider = MockProvider.new(shard.repository_url)
@@ -205,11 +209,11 @@ describe IndexShardWorker do
 
       WorkerSeams.with_provider(provider) do
         WorkerSeams.capturing_followups do |followups|
-          IndexShardWorker.new(shard_name: "chain-test", version: "2.1.0").perform
+          IndexShardWorker.new(shard_name: "github.com/someone/chain-test", version: "2.1.0").perform
 
           followups.should eq([
-            {IndexShardWorker::Followup::UpdateDependencies, "chain-test", "2.1.0"},
-            {IndexShardWorker::Followup::BuildDocs, "chain-test", "2.1.0"},
+            {IndexShardWorker::Followup::UpdateDependencies, "github.com/someone/chain-test", "2.1.0"},
+            {IndexShardWorker::Followup::BuildDocs, "github.com/someone/chain-test", "2.1.0"},
           ])
         end
       end

@@ -13,7 +13,7 @@ describe Shards::Show do
         .version("1.2.3")
         .crystal_version(">= 1.0.0")
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "awesome-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status.should eq(HTTP::Status::OK)
       response.body.should contain("awesome-shard")
@@ -30,7 +30,7 @@ describe Shards::Show do
 
       ShardVersionFactory.create &.shard_id(shard.id).version("2.0.0")
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Add this to your shard.yml")
       response.body.should contain("dependencies:")
@@ -55,7 +55,7 @@ describe Shards::Show do
         .version("2.0.0")
         .released_at(Time.utc(2024, 3, 1))
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "versioned-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Versions")
       response.body.should contain("1.0.0")
@@ -77,7 +77,7 @@ describe Shards::Show do
         .version_requirement(">= 2.0.0")
         .scope("runtime")
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "dependent-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Runtime Dependencies")
       response.body.should contain("http-client")
@@ -98,7 +98,7 @@ describe Shards::Show do
         .name("spec-helper")
         .scope("development")
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "dev-deps-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Runtime Dependencies")
       response.body.should contain("runtime-lib")
@@ -113,15 +113,15 @@ describe Shards::Show do
       version = ShardVersionFactory.create &.shard_id(shard.id)
         .crystal_version(">= 1.10.0")
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "meta-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Metadata")
       response.body.should contain("Created:")
       response.body.should contain("Updated:")
       response.body.should contain("Crystal:")
       response.body.should contain("&gt;= 1.10.0")
-      response.body.should contain("Provider")
-      response.body.should contain("Github")
+      response.body.should contain("Repository")
+      response.body.should contain(shard.canonical_slug.not_nil!)
     end
 
     it "displays links to repository and documentation" do
@@ -132,7 +132,7 @@ describe Shards::Show do
 
       ShardVersionFactory.create &.shard_id(shard.id)
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "linked-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Links")
       response.body.should contain("https://github.com/crystal/linked-shard")
@@ -147,7 +147,7 @@ describe Shards::Show do
 
       ShardVersionFactory.create &.shard_id(shard.id)
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "readme-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("README")
       response.body.should contain("This shard provides")
@@ -158,7 +158,7 @@ describe Shards::Show do
         .repository_url("https://github.com/user/bare-shard")
       ShardVersionFactory.create &.shard_id(shard.id)
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "bare-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("No README has been indexed")
       response.body.should contain("https://github.com/user/bare-shard")
@@ -175,7 +175,7 @@ describe Shards::Show do
         .version("0.9.0")
         .yanked(true)
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "yanked-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("1.0.0")
       response.body.should contain("0.9.0")
@@ -185,7 +185,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("independent-shard")
       ShardVersionFactory.create &.shard_id(shard.id)
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "independent-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status.should eq(HTTP::Status::OK)
       response.body.should_not contain("Dependencies")
@@ -194,7 +194,7 @@ describe Shards::Show do
     it "handles shard with no versions gracefully" do
       shard = ShardFactory.create &.name("versionless-shard")
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "versionless-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status.should eq(HTTP::Status::OK)
       response.body.should contain("versionless-shard")
@@ -204,7 +204,7 @@ describe Shards::Show do
       # The action raises RouteNotFoundError which Lucky converts to 404
       # The test framework may handle this differently
       begin
-        response = ApiClient.exec(Shards::Show.with(shard_name: "non-existent-shard"))
+        response = ApiClient.exec(Shards::Show.with(**unregistered_identity))
         # If we get here without exception, verify it's a 404
         response.status.should eq(HTTP::Status::NOT_FOUND)
       rescue Lucky::RouteNotFoundError
@@ -216,7 +216,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("badged-shard")
       ShardVersionFactory.create &.shard_id(shard.id).version("3.1.4")
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "badged-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("v3.1.4")
     end
@@ -236,7 +236,7 @@ describe Shards::Show do
         .version("1.5.0")
         .released_at(Time.utc(2023, 6, 1))
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "sorted-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       # Latest version should be shown in badge
       response.body.should contain("v2.0.0")
@@ -251,7 +251,7 @@ describe Shards::Show do
           .released_at(Time.utc(2024, 1, i + 1))
       end
 
-      response = ApiClient.exec(Shards::Show.with(shard_name: "many-versions-shard"))
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("and 5 more")
     end

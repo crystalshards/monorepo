@@ -2,6 +2,7 @@ require "./shards"
 
 require "../config/server"
 require "./app_database"
+require "./registry_database"
 require "../config/**"
 require "./models/base_model"
 require "./models/mixins/**"

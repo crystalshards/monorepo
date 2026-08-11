@@ -48,8 +48,19 @@ class Docs::Type < BrowserAction
       # Either the build produced nothing or storage is unreachable. The
       # version page already tells those apart for the reader, so defer to it
       # rather than inventing a second explanation here.
+      #
+      # This action deliberately never enqueues. With lazy generation any URL
+      # that can commission a build is a spend endpoint, and a type path is
+      # attacker shaped: /docs/pkg/1.0.0/Anything/At/All parses fine and
+      # resolves to nothing. Without the index there is no way to tell an
+      # invented path from a real type, so this does not pretend to; it hands
+      # off to the version route, which enqueues for the version, which
+      # genuinely is missing. Enqueue is keyed on the version and never on the
+      # requested path, so ten thousand invented paths under one unbuilt
+      # version still commission exactly one build.
       redirect to: "/docs/#{package_name}/#{doc_version.version}"
     else
+      # The index is in hand, so an unknown path is known to be no type.
       type = document.find_type(requested_path.gsub('/', "::"))
       raise Lucky::RouteNotFoundError.new(context) if type.nil?
 
@@ -67,7 +78,7 @@ class Docs::Type < BrowserAction
       package_name: package_name,
       version: doc_version.version,
       local_types: CrystalDocs::TypeLinker.local_names(document),
-      dependency_index: CrystalDocs::DependencyIndex.for(doc_version)
+      dependency_index: CrystalDocs::DependencyIndex.for(package_name, doc_version.version)
     )
   end
 

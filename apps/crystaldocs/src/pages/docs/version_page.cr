@@ -3,6 +3,11 @@ class Docs::VersionPage < MainLayout
   needs doc_version : DocVersion
   needs document : CrystalDocs::DocsDocument?
 
+  # Present only when there is no document and a build has been asked for.
+  # Nil when the document rendered, and nil when storage never answered,
+  # because nothing was queued in either case.
+  needs build_request : DocBuildRequest?
+
   def page_title
     "#{doc.package_name} #{doc_version.version}"
   end
@@ -157,21 +162,164 @@ class Docs::VersionPage < MainLayout
 
   # No document. The version exists, so say what is actually wrong instead of
   # implying the package was never documented.
+  #
+  # With documentation built on first request there are two different reasons
+  # to be here, and conflating them is what made the old copy useless: either
+  # a build has been asked for and its state is known, or storage could not be
+  # reached and nothing is known at all.
   private def render_unavailable
-    section class: "docs-section" do
-      h2 class: "docs-section-heading" do
-        text "Documentation is not available for this version"
-      end
-
-      para do
-        text "The documentation build for "
-        strong "#{doc.package_name} #{doc_version.version}"
-        text " has not produced a result yet, or could not be loaded from storage."
+    section class: "docs-section build-state" do
+      if request = build_request
+        render_build_state(request)
+      else
+        render_storage_unavailable
       end
 
       para do
         a "Browse the other versions", href: "/docs/#{doc.package_name}"
       end
+    end
+  end
+
+  # A live region: while a build runs the page reloads itself, and this is the
+  # only part that changes. Without it a screen reader re-reads the whole
+  # document with no indication of what moved.
+  private def render_build_state(request : DocBuildRequest)
+    h2 class: "docs-section-heading" do
+      text build_heading(request)
+    end
+
+    div class: "build-state-status", role: "status", "aria-live": "polite" do
+      span class: "build-status-badge #{build_badge_class(request)} build-state-badge" do
+        tag "i", class: build_badge_icon(request), "aria-hidden": "true"
+        text build_badge_label(request)
+      end
+    end
+
+    case request.status
+    when DocBuildRequest::FAILED    then render_build_failed(request)
+    when DocBuildRequest::SUCCEEDED then render_artifact_missing
+    when DocBuildRequest::BUILDING  then render_building
+    else                                 render_queued
+    end
+  end
+
+  private def render_queued
+    para class: "build-state-copy" do
+      text "Nobody had asked for this version before, so its documentation is "
+      text "being built now. Documentation is built the first time a version "
+      text "is requested rather than ahead of time for every version ever "
+      text "published."
+    end
+
+    render_refresh_note
+  end
+
+  private def render_building
+    para class: "build-state-copy" do
+      text "The build is running: the repository is cloned, its dependencies "
+      text "are installed and the API is extracted in a sandbox. Larger shards "
+      text "take longer."
+    end
+
+    render_refresh_note
+  end
+
+  # The reader is told the reload button will not help, because otherwise they
+  # will press it, and the retry floor is stated as a property of the system
+  # rather than a timestamp to decode.
+  private def render_build_failed(request : DocBuildRequest)
+    para class: "build-state-copy" do
+      text "The documentation build for this version ran and did not produce "
+      text "anything usable. That is usually a shard that does not compile "
+      text "against the Crystal version it declared."
+    end
+
+    if failed_at = request.failed_at
+      para class: "build-state-meta" do
+        text "Last attempt #{failed_at.to_s("%b %-d, %Y at %H:%M UTC")}"
+        text " (attempt #{request.attempts})" if request.attempts > 1
+      end
+    end
+
+    para class: "build-state-meta" do
+      text "Reloading will not start another build. A failed version is left "
+      text "alone for an hour before it can be requested again, so one shard "
+      text "that cannot build does not crowd out the ones that can."
+    end
+
+    if message = request.last_error.presence
+      details class: "build-state-error" do
+        summary "What the builder reported"
+        # Compiler output from third party code. Escaped text, never markup.
+        pre { code message }
+      end
+    end
+  end
+
+  # The builder says it succeeded and storage says there is nothing there.
+  # Surfaced rather than quietly rebuilt: an automatic retry here would erase
+  # the only signal that something removed an object.
+  private def render_artifact_missing
+    para class: "build-state-copy" do
+      text "This version was built successfully, but its documentation could "
+      text "not be read back from storage. That is an inconsistency on our "
+      text "side rather than a problem with the shard."
+    end
+  end
+
+  private def render_storage_unavailable
+    h2 class: "docs-section-heading" do
+      text "Documentation could not be loaded"
+    end
+
+    para class: "build-state-copy" do
+      text "The documentation store did not answer, so whether this version "
+      text "has been built is unknown. Nothing has been queued, because a "
+      text "build cannot fix a store that is down. Try again shortly."
+    end
+  end
+
+  private def render_refresh_note
+    para class: "build-state-meta" do
+      text "This page refreshes every #{Docs::LazyBuild::REFRESH_SECONDS} "
+      text "seconds and shows the documentation as soon as the build finishes."
+    end
+  end
+
+  private def build_heading(request : DocBuildRequest) : String
+    case request.status
+    when DocBuildRequest::FAILED    then "Documentation could not be built"
+    when DocBuildRequest::SUCCEEDED then "Documentation is missing from storage"
+    else                                 "Documentation is being built"
+    end
+  end
+
+  # Reuses the status tints the rest of the site already uses for build state.
+  private def build_badge_class(request : DocBuildRequest) : String
+    if request.in_flight?
+      "status-pending"
+    else
+      "status-failed"
+    end
+  end
+
+  # Font Awesome is already loaded for the rest of the site.
+  private def build_badge_icon(request : DocBuildRequest) : String
+    case request.status
+    when DocBuildRequest::FAILED    then "fa-solid fa-circle-exclamation"
+    when DocBuildRequest::SUCCEEDED then "fa-solid fa-triangle-exclamation"
+    when DocBuildRequest::BUILDING  then "fa-solid fa-gear"
+    else                                 "fa-regular fa-clock"
+    end
+  end
+
+  private def build_badge_label(request : DocBuildRequest) : String
+    case request.status
+    when DocBuildRequest::FAILED    then "Build failed"
+    when DocBuildRequest::SUCCEEDED then "Artifact missing"
+    when DocBuildRequest::BUILDING  then "Building"
+    else                                 "Queued"
     end
   end
 end

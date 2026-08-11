@@ -77,6 +77,11 @@ module CrystalShards
       log_info "Cloned repository for docs build"
     end
 
+    # A checkout that cannot reach the requested ref is fatal, not a warning.
+    # Falling back to HEAD produced an artifact labelled with a version it was
+    # not built from, which is worse than having no documentation: every
+    # signature, every type and every cross link would describe a different
+    # release while claiming to be this one.
     private def checkout_version(repo_dir : String, version : String, commit_sha : String?)
       args = if commit_sha
                ["fetch", "--depth", "1", "origin", commit_sha]
@@ -88,8 +93,27 @@ module CrystalShards
       target = commit_sha || version
 
       unless run("git", ["checkout", target], chdir: repo_dir)[:success]
-        log_info "Could not checkout #{target}, using HEAD"
+        raise "Could not check out #{target}, refusing to document a different revision as #{version}"
       end
+
+      # `git checkout` reporting success is not the same as being on the
+      # revision we asked for. When the caller named an exact commit, confirm
+      # the working tree really is that commit before anything gets compiled
+      # and published under this version's name.
+      if commit_sha
+        landed = resolved_commit(repo_dir)
+
+        unless landed && landed.starts_with?(commit_sha[0, {commit_sha.size, landed.size}.min])
+          raise "Checked out #{landed.inspect} but #{commit_sha.inspect} was requested for #{version}"
+        end
+      end
+    end
+
+    # The commit actually built, recorded so an artifact can be traced back to
+    # a revision rather than to a tag, which can be moved after the fact.
+    private def resolved_commit(repo_dir : String) : String?
+      status = run("git", ["rev-parse", "HEAD"], chdir: repo_dir)
+      status[:success] ? status[:output].strip.presence : nil
     end
 
     # `--skip-postinstall` is load bearing, not tidiness. A postinstall hook is

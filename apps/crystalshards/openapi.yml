@@ -328,17 +328,71 @@ paths:
 
   /api/shards/{name}:
     get:
-      summary: Get shard details
-      description: Get detailed information about a specific shard
+      summary: Get shard details by name (deprecated)
+      deprecated: true
+      description: |
+        Superseded by /api/shards/{host}/{owner}/{repo}. A shard is identified by
+        the repository it comes from, because two shards may share a name on
+        different hosts.
+
+        When exactly one shard carries the name, this responds 301 with the
+        canonical path in Location. When more than one does, it responds 409
+        with the candidate paths rather than guessing which was meant.
       tags:
         - shards
       parameters:
         - name: name
           in: path
-          description: Shard name
+          description: Shard display name
           required: true
           schema:
             type: string
+      responses:
+        '301':
+          description: Moved to the shard's canonical path
+          headers:
+            Location:
+              schema:
+                type: string
+              example: /api/shards/github.com/kemalcr/kemal
+        '409':
+          description: The name belongs to more than one shard
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                  candidates:
+                    type: array
+                    items:
+                      type: string
+                    example:
+                      - /shards/github.com/kemalcr/router
+                      - /shards/gitlab.com/acme/router
+        '404':
+          description: No shard carries this name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/shards/{host}/{owner}/{repo}:
+    get:
+      summary: Get shard details
+      description: |
+        Get a shard by the repository that identifies it, for example
+        /api/shards/github.com/kemalcr/kemal.
+
+        Nested namespace paths (host/group/subgroup/repo) are not addressable:
+        identity is host/owner/repo.
+      tags:
+        - shards
+      parameters:
+        - $ref: '#/components/parameters/Host'
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Repo'
       responses:
         '200':
           description: Successful response
@@ -353,19 +407,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /api/shards/{name}/versions:
+  /api/shards/{host}/{owner}/{repo}/versions:
     get:
       summary: List shard versions
       description: Get all versions of a specific shard
       tags:
         - versions
       parameters:
-        - name: name
-          in: path
-          description: Shard name
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/Host'
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Repo'
       responses:
         '200':
           description: Successful response
@@ -374,11 +425,12 @@ paths:
               schema:
                 type: object
                 properties:
-                  shard:
-                    type: object
-                    properties:
-                      name:
-                        type: string
+                  name:
+                    type: string
+                    description: Display name, which is not unique
+                  canonical_slug:
+                    type: string
+                    example: github.com/kemalcr/kemal
                   versions:
                     type: array
                     items:
@@ -390,19 +442,16 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /api/shards/{name}/{version}:
+  /api/shards/{host}/{owner}/{repo}/{version}:
     get:
       summary: Get specific version
       description: Get detailed information about a specific version of a shard
       tags:
         - versions
       parameters:
-        - name: name
-          in: path
-          description: Shard name
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/Host'
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Repo'
         - name: version
           in: path
           description: Version string (e.g., 1.0.0)
@@ -417,11 +466,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  shard:
-                    type: object
-                    properties:
-                      name:
-                        type: string
+                  name:
+                    type: string
+                  canonical_slug:
+                    type: string
                   version:
                     $ref: '#/components/schemas/ShardVersionDetail'
         '404':
@@ -431,19 +479,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /api/shards/{name}/{version}/download:
+  /api/shards/{host}/{owner}/{repo}/{version}/download:
     post:
       summary: Track download
-      description: Record a download of a specific shard version
+      description: |
+        Record a download of a specific shard version. Downloads are attributed
+        to the repository, never to a name, so this endpoint takes the identity
+        only.
       tags:
         - downloads
       parameters:
-        - name: name
-          in: path
-          description: Shard name
-          required: true
-          schema:
-            type: string
+        - $ref: '#/components/parameters/Host'
+        - $ref: '#/components/parameters/Owner'
+        - $ref: '#/components/parameters/Repo'
         - name: version
           in: path
           description: Version string (e.g., 1.0.0)
@@ -479,13 +527,73 @@ components:
       scheme: bearer
       description: JWT token or API key
 
+  # A shard is addressed by the repository it comes from, in three path
+  # segments. Nested namespace paths are out of scope: see the shard schemas.
+  parameters:
+    Host:
+      name: host
+      in: path
+      description: Repository host
+      required: true
+      schema:
+        type: string
+        example: github.com
+    Owner:
+      name: owner
+      in: path
+      description: Owner or organisation on that host
+      required: true
+      schema:
+        type: string
+        example: kemalcr
+    Repo:
+      name: repo
+      in: path
+      description: Repository name on that host
+      required: true
+      schema:
+        type: string
+        example: kemal
+
   schemas:
     ShardSummary:
       type: object
       properties:
         name:
           type: string
+          description: |
+            Display name from shard.yml. NOT unique: two shards on different
+            hosts may share a name. Use canonical_slug to identify a shard.
           example: kemal
+        host:
+          type: string
+          nullable: true
+          example: github.com
+        owner:
+          type: string
+          nullable: true
+          example: kemalcr
+        repo:
+          type: string
+          nullable: true
+          example: kemal
+        canonical_slug:
+          type: string
+          nullable: true
+          description: |
+            The shard's identity, host/owner/repo, and the unique key in the
+            registry. Null only on legacy rows whose repository_url could not be
+            parsed into an identity; those carry a reason and are not indexed.
+          example: github.com/kemalcr/kemal
+        url:
+          type: string
+          description: Path to the shard in the registry
+          example: /shards/github.com/kemalcr/kemal
+        unavailable_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set when the repository could not be reached on its host
         description:
           type: string
           example: Fast, Effective, Simple web framework for Crystal

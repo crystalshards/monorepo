@@ -290,19 +290,24 @@ describe Shards::Index do
     end
 
     it "combines filters with search query" do
+      # Repository URLs are set explicitly here because search also matches the
+      # canonical identity: the factory's default URL lives under
+      # github.com/crystal-lang, which would make every shard match "crystal".
       matching = ShardFactory.create &.name("crystal-db")
+        .repository_url("https://github.com/someone/crystal-db")
         .license("MIT")
         .github_stars(100)
 
       not_matching_query = ShardFactory.create &.name("other-lib")
+        .repository_url("https://github.com/someone/other-lib")
         .description("Database library for PostgreSQL")
         .license("MIT")
         .github_stars(100)
 
       not_matching_license = ShardFactory.create &.name("crystal-http")
+        .repository_url("https://github.com/someone/crystal-http")
         .license("Apache-2.0")
         .github_stars(100)
-
       response = BrowserClient.exec(Shards::Index.with(
         query: "crystal",
         license: "MIT",

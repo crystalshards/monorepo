@@ -28,7 +28,20 @@ class Head < Lucky::BaseComponent
       tag "link", rel: "stylesheet", href: ICON_HREF
       tag "link", rel: "stylesheet", href: asset("css/app.css")
 
-      csrf_meta_tags
+      render_csrf_meta_tags
     end
+  end
+
+  # The CSRF token is seeded by a pipe that only runs when a route matched, so
+  # on an unmatched path there is no session key and `csrf_meta_tags` raises.
+  # That turned every 404 in this app into a 500: the error page extends the
+  # same layout, so rendering the "not found" page was itself an exception.
+  #
+  # A page rendered without a session has no form to protect, so omitting the
+  # tag is correct rather than a workaround.
+  private def render_csrf_meta_tags
+    return unless context.session.get?(Lucky::ProtectFromForgery::SESSION_KEY)
+
+    csrf_meta_tags
   end
 end

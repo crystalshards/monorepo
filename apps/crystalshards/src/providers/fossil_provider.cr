@@ -31,33 +31,28 @@ class FossilProvider < BaseProvider
   end
 
   def clone_repository(target_dir : String) : Bool
+    url = GitHostPolicy.normalize_url(repository_url)
+    GitHostPolicy.validate_fetch_url!(url)
+
     fossil_file = File.join(target_dir, "repo.fossil")
     work_dir = File.join(target_dir, "checkout")
 
-    clone_cmd = "fossil clone #{repository_url} #{fossil_file}"
-    clone_output = `#{clone_cmd} 2>&1`
+    return false unless run_process("fossil", ["clone", url, fossil_file])
 
-    return false unless $?.success?
-
-    open_cmd = "cd #{work_dir} && fossil open #{fossil_file}"
-    open_output = `#{open_cmd} 2>&1`
-
-    $?.success?
+    run_process("fossil", ["open", fossil_file], chdir: work_dir)
+  rescue ex : GitHostPolicy::UnsafeUrlError
+    Log.warn { "Refusing to clone #{repository_url.inspect}: #{ex.message}" }
+    false
   end
 
   def checkout_version(repo_dir : String, version : String) : Bool
+    return false unless safe_ref?(version)
+
     work_dir = File.join(repo_dir, "checkout")
 
-    cmd = "cd #{work_dir} && fossil update #{version}"
-    output = `#{cmd} 2>&1`
+    return true if run_process("fossil", ["update", version], chdir: work_dir)
 
-    if $?.success?
-      true
-    else
-      cmd = "cd #{work_dir} && fossil update tag:#{version}"
-      output = `#{cmd} 2>&1`
-      $?.success?
-    end
+    run_process("fossil", ["update", "tag:#{version}"], chdir: work_dir)
   end
 
   def supports_api? : Bool

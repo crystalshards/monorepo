@@ -17,10 +17,12 @@ class Footer < Lucky::BaseComponent
               li { a href: "/posts" do
                 text "All Posts"
               end }
-              li { a href: "https://crystalshards.org", target: "_blank" do
+              # rel=noopener goes with every target=_blank: without it the
+              # opened page can reach back through window.opener.
+              li { a href: "https://crystalshards.org", target: "_blank", rel: "noopener" do
                 text "CrystalShards"
               end }
-              li { a href: "https://crystaldocs.org", target: "_blank" do
+              li { a href: "https://crystaldocs.org", target: "_blank", rel: "noopener" do
                 text "CrystalDocs"
               end }
             end
@@ -34,7 +36,7 @@ class Footer < Lucky::BaseComponent
         end
 
         div class: "footer-bottom" do
-          para "© 2025 CrystalBits. Part of the Crystal ecosystem."
+          para "© #{Time.utc.year} CrystalBits. Part of the Crystal ecosystem."
         end
       end
     end

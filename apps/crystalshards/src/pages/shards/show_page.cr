@@ -74,7 +74,7 @@ class Shards::ShowPage < MainLayout
                     text "# Add this to your shard.yml\n"
                     text "dependencies:\n"
                     text "  #{@shard.name}:\n"
-                    text "    github: #{extract_github_path(@shard.repository_url)}\n"
+                    text "#{install_source_line}\n"
                     text "    version: ~> #{latest.version}"
                   end
                 end
@@ -175,11 +175,31 @@ class Shards::ShowPage < MainLayout
 
           section class: "sidebar-section" do
             h3 do
-              text "Provider"
+              text "Repository"
             end
 
+            # The identity, spelled out. With two shards able to share a name,
+            # this is what tells a reader which one they are looking at.
             para do
-              text @shard.provider.capitalize
+              if slug = @shard.canonical_slug
+                text slug
+              else
+                text @shard.provider.capitalize
+              end
+            end
+
+            # A row with no identity says why, here, rather than leaving
+            # somebody to wonder why the shard never indexed.
+            if reason = @shard.identity_error
+              para class: "text-muted" do
+                text "Not indexed: #{reason}"
+              end
+            end
+
+            if @shard.unavailable?
+              para class: "text-muted" do
+                text "This repository could not be reached on its host the last time we looked."
+              end
             end
           end
 
@@ -286,13 +306,27 @@ class Shards::ShowPage < MainLayout
     end
   end
 
+  # A dependency is recorded as a shard.yml name, and a name no longer
+  # identifies a shard. UpdateDependenciesWorker resolves each dependency to a
+  # specific repository when the shard.yml said which host it comes from
+  # ("github: owner/repo"), and that resolved row is the only thing worth
+  # linking to. When there is no resolved row, the name is rendered as text:
+  # the alternative is linking to whichever "router" came back first, which is
+  # how somebody installs the wrong dependency.
   private def render_dependency_item(dep : Dependency)
     li do
-      a href: Shards::Show.with(dep.name).path, class: "dependency-link" do
+      if link = dependency_link(dep)
+        a href: link, class: "dependency-link" do
+          strong do
+            text dep.name
+          end
+        end
+      else
         strong do
           text dep.name
         end
       end
+
       text " #{dep.version_requirement}"
       if dep.scope == "development"
         span class: "badge badge-dev" do
@@ -302,8 +336,23 @@ class Shards::ShowPage < MainLayout
     end
   end
 
-  private def extract_github_path(url : String) : String
-    url.gsub(%r{https?://github\.com/}, "").gsub(/\.git$/, "")
+  private def dependency_link(dep : Dependency) : String?
+    dep.dependent_shard.try(&.url_path)
+  end
+
+  # The shard.yml stanza for depending on this shard, in the spelling its own
+  # host uses. A host we have no shorthand for gets the git source, which is
+  # what "all git hosts" means for somebody copying this block.
+  private def install_source_line : String
+    path = @shard.repo_path
+
+    case @shard.host
+    when "github.com"    then "    github: #{path}"
+    when "gitlab.com"    then "    gitlab: #{path}"
+    when "bitbucket.org" then "    bitbucket: #{path}"
+    when "codeberg.org"  then "    codeberg: #{path}"
+    else                      "    git: #{@shard.repository_url}"
+    end
   end
 
   # Timestamps are UTC instants. Rendering them in the database session's

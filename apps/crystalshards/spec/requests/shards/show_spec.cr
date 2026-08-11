@@ -5,7 +5,7 @@ describe Shards::Show do
     it "renders HTML successfully for valid shard" do
       shard = ShardFactory.create &.name("test-shard")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status_code.should eq(200)
       response.headers["Content-Type"].should contain("text/html")
@@ -16,7 +16,7 @@ describe Shards::Show do
       # Since the test framework may handle this differently, we just verify
       # that accessing a non-existent shard doesn't succeed
       begin
-        response = BrowserClient.exec(Shards::Show.with(shard_name: "nonexistent-shard"))
+        response = BrowserClient.exec(Shards::Show.with(**unregistered_identity))
         # If we get here, verify it's a 404
         response.status_code.should eq(404)
       rescue Lucky::RouteNotFoundError
@@ -29,7 +29,7 @@ describe Shards::Show do
     it "shows shard name" do
       shard = ShardFactory.create &.name("awesome-shard")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "awesome-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("awesome-shard")
     end
@@ -38,7 +38,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .description("An awesome Crystal library")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("An awesome Crystal library")
     end
@@ -47,7 +47,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .repository_url("https://github.com/user/test-shard")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("https://github.com/user/test-shard")
       response.body.should contain("Repository")
@@ -57,7 +57,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .homepage_url("https://testshard.com")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("https://testshard.com")
       response.body.should contain("Homepage")
@@ -67,7 +67,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .homepage_url(nil)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should_not contain("Homepage")
     end
@@ -76,7 +76,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .documentation_url("https://docs.testshard.com")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("https://docs.testshard.com")
       response.body.should contain("Documentation")
@@ -86,7 +86,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .documentation_url(nil)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should_not contain("View Documentation")
     end
@@ -95,7 +95,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .license("MIT")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("License:")
       response.body.should contain("MIT")
@@ -105,7 +105,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .github_stars(42)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       # Assert on the count and its visible unit, not on an icon glyph: the
       # star is decorative and aria-hidden, so it carries no meaning.
@@ -117,7 +117,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .github_stars(nil)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should_not contain("stars")
       response.body.should_not contain("fa-star")
@@ -127,20 +127,20 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .total_downloads(1234)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("1234")
       response.body.should contain("downloads")
     end
 
-    it "shows provider" do
+    it "names the repository the shard comes from" do
       shard = ShardFactory.create &.name("test-shard")
-        .provider("github")
+        .repository_url("https://gitlab.com/acme/test-shard")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("Provider")
-      response.body.should contain("Github")
+      response.body.should contain("Repository")
+      response.body.should contain("gitlab.com/acme/test-shard")
     end
   end
 
@@ -151,7 +151,7 @@ describe Shards::Show do
         .version("1.2.3")
         .released_at(Time.utc)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("1.2.3")
     end
@@ -168,7 +168,7 @@ describe Shards::Show do
         .version("1.2.0")
         .released_at(1.day.ago)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("1.0.0")
       response.body.should contain("1.1.0")
@@ -184,7 +184,7 @@ describe Shards::Show do
           .released_at(Time.utc - i.days)
       end
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("and 5 more...")
     end
@@ -196,7 +196,7 @@ describe Shards::Show do
         .version("1.0.0")
         .released_at(release_time)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Jan 15, 2024")
     end
@@ -207,7 +207,7 @@ describe Shards::Show do
         .version("1.0.0")
         .yanked(true)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("version-yanked")
     end
@@ -215,7 +215,7 @@ describe Shards::Show do
     it "handles shards with no versions gracefully" do
       shard = ShardFactory.create &.name("test-shard")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status_code.should eq(200)
       response.body.should_not contain("Versions")
@@ -230,7 +230,7 @@ describe Shards::Show do
         .version("2.0.0")
         .released_at(Time.utc(2024, 6, 1))
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       version_2_position = response.body.index("2.0.0")
       version_1_position = response.body.index("1.0.0")
@@ -248,7 +248,7 @@ describe Shards::Show do
       ShardVersionFactory.create &.shard_id(shard.id)
         .version("1.0.0")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("# Add this to your shard.yml")
       response.body.should contain("dependencies:")
@@ -263,7 +263,7 @@ describe Shards::Show do
       ShardVersionFactory.create &.shard_id(shard.id)
         .version("1.0.0")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Then run:")
       response.body.should contain("shards install")
@@ -279,7 +279,7 @@ describe Shards::Show do
         .version("2.0.0")
         .released_at(1.day.ago)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       # HTML encodes '>' as '&gt;'
       response.body.should contain("version: ~&gt; 2.0.0")
@@ -292,7 +292,7 @@ describe Shards::Show do
       ShardVersionFactory.create &.shard_id(shard.id)
         .version("1.0.0")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("github: crystal-lang/awesome-shard")
       # Note: .git still appears in the repository link, but not in the github: path
@@ -305,7 +305,7 @@ describe Shards::Show do
       ShardVersionFactory.create &.shard_id(shard.id)
         .version("1.0.0")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("github: user/test-shard")
     end
@@ -313,7 +313,7 @@ describe Shards::Show do
     it "hides installation instructions when no versions exist" do
       shard = ShardFactory.create &.name("test-shard")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       # Installation section heading shows, but content doesn't
       response.body.should contain("Installation")
@@ -332,7 +332,7 @@ describe Shards::Show do
         .version_requirement("~> 1.0")
         .scope("runtime")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Dependencies")
       response.body.should contain("http-client")
@@ -347,7 +347,7 @@ describe Shards::Show do
         .name("json-lib")
         .version_requirement(">= 2.0, < 3.0")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       # HTML encodes '>' and '<' as '&gt;' and '&lt;'
       response.body.should contain("&gt;= 2.0, &lt; 3.0")
@@ -360,7 +360,7 @@ describe Shards::Show do
         .name("spec-helper")
         .scope("development")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       # Development dependencies ARE shown with a dev badge
       response.body.should contain("spec-helper")
@@ -375,7 +375,7 @@ describe Shards::Show do
         .name("runtime-lib")
         .scope("runtime")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("runtime-lib")
       response.body.should_not contain("badge-dev")
@@ -385,7 +385,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
       ShardVersionFactory.create &.shard_id(shard.id)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status_code.should eq(200)
       response.body.should_not contain("Dependencies")
@@ -401,7 +401,7 @@ describe Shards::Show do
       DependencyFactory.create &.shard_version_id(version.id)
         .name("dep-three")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("dep-one")
       response.body.should contain("dep-two")
@@ -422,13 +422,38 @@ describe Shards::Show do
       DependencyFactory.create &.shard_version_id(new_version.id)
         .name("new-dep")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("new-dep")
       response.body.should_not contain("old-dep")
     end
 
-    it "makes dependency names clickable links to their detail pages" do
+    # A dependency is recorded as a name, and a name no longer identifies a
+    # shard. So the link exists exactly when the dependency was resolved to a
+    # repository, and the name is plain text when it was not: linking to
+    # whichever "http-client" came back first is how somebody installs the
+    # wrong dependency.
+    it "links a dependency that resolves to a repository" do
+      dependency_shard = ShardFactory.create &.name("http-client")
+        .repository_url("https://github.com/someone/http-client")
+
+      shard = ShardFactory.create &.name("test-shard")
+      version = ShardVersionFactory.create &.shard_id(shard.id)
+        .version("1.0.0")
+      DependencyFactory.create &.shard_version_id(version.id)
+        .name("http-client")
+        .version_requirement("~> 1.0")
+        .scope("runtime")
+        .dependent_shard_id(dependency_shard.id)
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain("<a href=\"/shards/github.com/someone/http-client\"")
+      response.body.should contain("class=\"dependency-link\"")
+      response.body.should contain("<strong>http-client</strong>")
+    end
+
+    it "names an unresolved dependency without linking it anywhere" do
       shard = ShardFactory.create &.name("test-shard")
       version = ShardVersionFactory.create &.shard_id(shard.id)
         .version("1.0.0")
@@ -437,12 +462,11 @@ describe Shards::Show do
         .version_requirement("~> 1.0")
         .scope("runtime")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      # Should contain a link to the dependency's detail page
-      response.body.should contain("<a href=\"/shards/http-client\"")
-      response.body.should contain("class=\"dependency-link\"")
       response.body.should contain("<strong>http-client</strong>")
+      response.body.should contain("~&gt; 1.0")
+      response.body.should_not contain("class=\"dependency-link\"")
     end
   end
 
@@ -454,7 +478,7 @@ describe Shards::Show do
         .license(nil)
         .github_stars(nil)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "minimal-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status_code.should eq(200)
       response.body.should contain("minimal-shard")
@@ -463,7 +487,7 @@ describe Shards::Show do
     it "handles shard with no versions and no dependencies" do
       shard = ShardFactory.create &.name("empty-shard")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "empty-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status_code.should eq(200)
       response.body.should contain("empty-shard")
@@ -477,7 +501,7 @@ describe Shards::Show do
       long_name = "a" * 100
       shard = ShardFactory.create &.name(long_name)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: long_name))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status_code.should eq(200)
       response.body.should contain(long_name)
@@ -488,7 +512,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .description(long_description)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status_code.should eq(200)
       response.body.should contain(long_description)
@@ -498,7 +522,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .total_downloads(0)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("0")
       response.body.should contain("downloads")
@@ -508,7 +532,7 @@ describe Shards::Show do
       shard = ShardFactory.create &.name("test-shard")
         .total_downloads(9999999)
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "test-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("9999999")
     end
@@ -518,7 +542,7 @@ describe Shards::Show do
     it "uses shard name as page title" do
       shard = ShardFactory.create &.name("awesome-shard")
 
-      response = BrowserClient.exec(Shards::Show.with(shard_name: "awesome-shard"))
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("<title>")
       response.body.should contain("awesome-shard")

@@ -75,6 +75,10 @@ services:
       DATABASE_URL: postgres://postgres:password@postgres/crystalshards_development
       REDIS_URL: redis://redis:6379
       SECRET_KEY_BASE: development_secret_key_base_change_in_production
+      # The ad strip reads promotable jobs from CrystalGigs. Unset would turn
+      # the strip off rather than break the app, so it is wired here to keep
+      # development honest about what production renders.
+      JOB_ADS_URL: http://crystalgigs:3002/api/ads
       PORT: 3000
     depends_on:
       postgres:
@@ -99,6 +103,7 @@ services:
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      JOB_ADS_URL: http://crystalgigs:3002/api/ads
       PORT: 3001
     depends_on:
       postgres:
@@ -139,6 +144,7 @@ services:
       LUCKY_ENV: development
       DATABASE_URL: postgres://postgres:password@postgres/crystalbits_development
       SECRET_KEY_BASE: development_secret_key_base_change_in_production
+      JOB_ADS_URL: http://crystalgigs:3002/api/ads
       PORT: 3003
     depends_on:
       postgres:
