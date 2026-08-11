@@ -50,15 +50,30 @@ module Discovery
 
     # Where a sweep is: which workspace, and how far into it.
     #
-    # Serialised as "<slug>:<page>". A workspace slug is letters, numbers,
-    # hyphens and underscores, so a colon cannot occur in one and the split is
-    # unambiguous.
-    record Position, slug : String, page : Int32 do
+    # `follow` is the host's own `next` URL for the page after this one. Only
+    # `values` and `next` are guaranteed to be in a Bitbucket paginated body:
+    # `page` is optional, and `next` is free to carry an opaque token instead of
+    # a page number. So the next request has to be the URL the host handed back,
+    # not one reconstructed from a page counter, or a sweep silently skips
+    # whatever the counter fails to name. `page` is still tracked, but only to
+    # count pages against `max_pages`; it never builds a URL after the first.
+    #
+    # Serialised as JSON because a followed URL contains colons and slashes and
+    # cannot be split out of a delimited string safely. Cursors written before
+    # this shape existed are still read: see `parse`.
+    record Position, slug : String, page : Int32, follow : String? = nil do
       def to_cursor : String
-        "#{slug}:#{page}"
+        {slug: slug, page: page, follow: follow}.to_json
       end
 
       def self.parse(cursor : String) : Position?
+        parse_json(cursor) || parse_legacy(cursor)
+      end
+
+      # The "<slug>:<page>" form this crawler first shipped with. A cursor in
+      # that shape is mid-sweep in a database somewhere, and refusing it would
+      # restart those workspaces from the top.
+      private def self.parse_legacy(cursor : String) : Position?
         slug, separator, page = cursor.rpartition(':')
         return nil if separator.empty? || slug.empty?
 
@@ -66,6 +81,17 @@ module Discovery
         return nil unless number && number >= 1
 
         Position.new(slug, number)
+      end
+
+      private def self.parse_json(cursor : String) : Position?
+        json = JSON.parse(cursor)
+        slug = json["slug"]?.try(&.as_s?).presence
+        page = json["page"]?.try(&.as_i?)
+        return nil unless slug && page && page >= 1
+
+        Position.new(slug, page, json["follow"]?.try(&.as_s?).presence)
+      rescue JSON::ParseException
+        nil
       end
     end
 
@@ -138,7 +164,7 @@ module Discovery
       return CrawlPage.new([] of DiscoveredRepository, nil) unless position
 
       payload = begin
-        client.get_json(page_path(position))
+        client.get_json(position.follow || page_path(position))
       rescue ex : HostClient::NotFound
         # The workspace does not exist. That will not change by asking again.
         return skip_workspace(position, "no workspace with this id on #{HOST}")
@@ -164,16 +190,27 @@ module Discovery
 
       on_workspace_seen.call(position.slug, payload["size"]?.try(&.as_i?) || values.size)
 
-      # The presence of `next` is the host saying there is another page, and it
-      # is the only signal used. Its value is an absolute URL and is deliberately
-      # discarded: the next request is built here, against the base this crawler
-      # was configured with, so a response cannot choose the crawl's next
-      # destination. The gate would refuse it anyway; not reading it means there
-      # is nothing to refuse.
+      # `next` is the host saying there is another page, and its value is the
+      # only thing that reliably names that page. A Bitbucket body is only
+      # guaranteed to carry `values` and `next`; `page` may be absent entirely,
+      # and `next` may hold an opaque token rather than a page number, so
+      # rebuilding the URL from a counter can silently skip a page or re-read
+      # one forever. It is followed.
+      #
+      # Following a URL out of a response body is exactly the thing that needs a
+      # gate, so it gets two. `follow_url` pins it to the configured origin and
+      # to this workspace's own collection before it is written to the cursor,
+      # so a poisoned URL is never persisted, and `url_gate_for` checks it again
+      # at request time. A `next` that fails either is a broken page rather than
+      # a reason to trust it: the workspace is recorded and stepped over, not
+      # quietly truncated to the pages seen so far.
       more = payload["next"]?.try(&.as_s?).presence
 
       next_cursor = if more
-                      Position.new(position.slug, position.page + 1).to_cursor
+                      following = follow_url(position, more)
+                      return skip_workspace(position, "unusable next link: #{more.inspect}") unless following
+
+                      Position.new(position.slug, position.page + 1, following).to_cursor
                     else
                       advance_workspace(position).try(&.to_cursor)
                     end
@@ -236,6 +273,40 @@ module Discovery
 
       CrawlPage.new([] of DiscoveredRepository, advance_workspace(position).try(&.to_cursor))
     end
+
+    # Decides whether the host's `next` URL is one this crawl is willing to
+    # follow, and returns it when it is.
+    #
+    # Two properties, both checked before the URL reaches the cursor, because a
+    # cursor is persisted and would otherwise carry a bad destination into every
+    # later run:
+    #
+    #   the origin is the API this crawler was configured with, so the response
+    #   cannot move the crawl to another host, and
+    #
+    #   the path still addresses this workspace's own repository collection, so
+    #   a workspace cannot hand the sweep off to a different resource and have
+    #   whatever comes back recorded under its own coverage.
+    #
+    # The query string is deliberately not inspected past that. Its contents are
+    # the host's pagination mechanism, page number or opaque token alike, and
+    # having an opinion about it is what this change exists to stop doing.
+    private def follow_url(position : Position, url : String) : String?
+      uri = URI.parse(url)
+      return nil unless uri.scheme == configured_uri.scheme
+      return nil unless uri.host == configured_uri.host
+      return nil unless uri.port == configured_uri.port
+      return nil if uri.user || uri.password
+
+      collection = "#{configured_uri.path.rstrip('/')}/repositories/#{position.slug}"
+      return nil unless uri.path.rstrip('/') == collection
+
+      url
+    rescue URI::Error
+      nil
+    end
+
+    private getter configured_uri : URI { URI.parse(client.base_url) }
 
     private def page_path(position : Position) : String
       # Refuse to interpolate a slug that could leave the path it is going into.
