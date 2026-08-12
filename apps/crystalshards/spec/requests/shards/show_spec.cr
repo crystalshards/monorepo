@@ -137,24 +137,69 @@ describe Shards::Show do
       response.body.should contain("stars")
     end
 
-    it "hides GitHub stars when not available" do
+    # Stars come from a fetch against the host that may not have happened, so
+    # nil means unknown. Hiding it would make the majority of pages in this
+    # registry show no star row at all, which is indistinguishable from a
+    # render that broke.
+    it "says stars are not indexed rather than hiding the figure" do
       shard = ShardFactory.create &.name("test-shard")
         .github_stars(nil)
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should_not contain("stars")
-      response.body.should_not contain("fa-star")
+      response.body.should contain("stars")
+      response.body.should contain("not indexed")
     end
 
-    it "shows total downloads" do
+    it "shows a fetched zero as zero, which is not the same as unknown" do
+      shard = ShardFactory.create &.name("test-shard")
+        .github_stars(0)
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain("<strong>0</strong>")
+      response.body.should contain("stars")
+    end
+
+    # Nothing is downloaded from this registry: `shards` fetches from the
+    # origin repository. A download figure here could only ever be zero, and a
+    # permanent zero reads as "nobody uses this", so it is absent rather than
+    # shown.
+    it "renders no downloads figure at all" do
       shard = ShardFactory.create &.name("test-shard")
         .total_downloads(1234)
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("1234")
-      response.body.should contain("downloads")
+      response.body.should_not contain("downloads")
+      response.body.should_not contain("1234")
+    end
+
+    # Dependents are counted in our own tables, so unlike stars they can never
+    # be unknown and a zero is always the truth.
+    it "always shows a dependent count, zero included" do
+      shard = ShardFactory.create &.name("test-shard")
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain("dependents")
+      response.body.should contain("No indexed shard depends on this one yet.")
+    end
+
+    it "counts and names the shards that depend on this one" do
+      target = ShardFactory.create &.name("kemal").at("github.com", "kemalcr", "kemal")
+      depender = ShardFactory.create &.name("my-app").at("github.com", "someone", "my-app")
+      version = ShardVersionFactory.create &.shard_id(depender.id)
+      DependencyFactory.create &.shard_version_id(version.id)
+        .name("kemal")
+        .dependent_shard_id(target.id)
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(target)))
+
+      response.body.should contain("<strong>1</strong>")
+      response.body.should contain(" dependent")
+      response.body.should contain("my-app")
+      response.body.should contain("/shards/github.com/someone/my-app")
     end
 
     it "names the repository the shard comes from" do
@@ -200,7 +245,10 @@ describe Shards::Show do
       response.body.should contain("Versions")
     end
 
-    it "limits version list to 10 versions" do
+    # The picker is the release history, so it is not truncated. A shard with
+    # a hundred releases scrolls; a shard whose older releases were hidden
+    # behind "and 5 more..." gave a reader no way to reach them at all.
+    it "lists every version in the picker rather than truncating" do
       shard = ShardFactory.create &.name("test-shard")
       15.times do |i|
         ShardVersionFactory.create &.shard_id(shard.id)
@@ -210,7 +258,11 @@ describe Shards::Show do
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("and 5 more...")
+      15.times do |i|
+        response.body.should contain("1.#{i}.0")
+      end
+      response.body.should contain("15 versions")
+      response.body.should_not contain("more...")
     end
 
     it "shows version release dates" do
@@ -225,7 +277,7 @@ describe Shards::Show do
       response.body.should contain("Jan 15, 2024")
     end
 
-    it "indicates yanked versions with special styling" do
+    it "marks a yanked version in the picker" do
       shard = ShardFactory.create &.name("test-shard")
       ShardVersionFactory.create &.shard_id(shard.id)
         .version("1.0.0")
@@ -233,16 +285,22 @@ describe Shards::Show do
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("version-yanked")
+      response.body.should contain("badge-yanked")
+      response.body.should contain("yanked")
+      response.body.should contain("should not be picked for new work")
     end
 
-    it "handles shards with no versions gracefully" do
+    # A shard with no tags is the normal case in this registry, not an error,
+    # so the absence is a sentence rather than a missing control.
+    it "states that no releases are tagged instead of showing an empty picker" do
       shard = ShardFactory.create &.name("test-shard")
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status_code.should eq(200)
-      response.body.should_not contain("Versions")
+      response.body.should contain("No tagged releases")
+      response.body.should contain("resolves a version from a git tag")
+      response.body.should_not contain("version-picker-list")
     end
 
     it "orders versions by most recent first" do
@@ -334,15 +392,20 @@ describe Shards::Show do
       response.body.should contain("github: user/test-shard")
     end
 
-    it "hides installation instructions when no versions exist" do
+    # An untagged repository can still be depended on, so the snippet is still
+    # correct and still shown. What changes is what it pins to: a branch
+    # rather than a version. Withholding the snippet taught a reader nothing
+    # and left them with a page that had a heading and no content.
+    it "shows a branch-tracking snippet when no versions exist" do
       shard = ShardFactory.create &.name("test-shard")
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      # Installation section heading shows, but content doesn't
       response.body.should contain("Installation")
-      response.body.should_not contain("# Add this to your shard.yml")
-      response.body.should_not contain("shards install")
+      response.body.should contain("# Add this to your shard.yml")
+      response.body.should contain("shards install")
+      response.body.should contain("No release to pin to")
+      response.body.should_not contain("version: ~&gt;")
     end
   end
 
@@ -405,14 +468,37 @@ describe Shards::Show do
       response.body.should_not contain("badge-dev")
     end
 
-    it "handles shards with no dependencies" do
+    # "This version declares no dependencies" is a fact a reader came for. An
+    # omitted section is indistinguishable from one that failed to load, which
+    # is the whole class of bug being fixed here.
+    it "states that an indexed version declares no dependencies" do
+      shard = ShardFactory.create &.name("test-shard")
+      # indexed_at is what the indexer stamps and what indexed? now reads.
+      # Metadata alone no longer means the manifest was read: a tag with no
+      # shard.yml is indexed and empty, which is a fact, not a gap.
+      ShardVersionFactory.create &.shard_id(shard.id)
+        .indexed_at(Time.utc)
+        .metadata(JSON.parse(%({"name": "test-shard", "version": "1.0.0"})))
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.status_code.should eq(200)
+      response.body.should contain("Dependencies")
+      response.body.should contain("This version declares no dependencies.")
+    end
+
+    # Unknown and none are different answers and the page gives different
+    # ones. A version whose shard.yml has never been read has an unknown
+    # dependency list, not an empty one.
+    it "distinguishes an unread manifest from a version with no dependencies" do
       shard = ShardFactory.create &.name("test-shard")
       ShardVersionFactory.create &.shard_id(shard.id)
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.status_code.should eq(200)
-      response.body.should_not contain("Dependencies")
+      response.body.should contain("Dependencies")
+      response.body.should contain("has not been read yet")
+      response.body.should_not contain("declares no dependencies")
     end
 
     it "shows multiple dependencies" do
@@ -508,17 +594,21 @@ describe Shards::Show do
       response.body.should contain("minimal-shard")
     end
 
-    it "handles shard with no versions and no dependencies" do
+    it "renders every section for a shard with no versions and no dependencies" do
       shard = ShardFactory.create &.name("empty-shard")
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status_code.should eq(200)
       response.body.should contain("empty-shard")
-      # Installation section appears but has no content when no versions exist
       response.body.should contain("Installation")
-      response.body.should_not contain("Dependencies")
-      response.body.should_not contain("shards install")
+      response.body.should contain("shards install")
+      response.body.should contain("No tagged releases")
+      response.body.should contain("No shard.yml has been indexed")
+      response.body.should contain("No README has been indexed")
+      # No version selected, so there is no dependency list to be right or
+      # wrong about, and the section is not drawn empty.
+      response.body.should_not contain("<h2>Dependencies</h2>")
     end
 
     it "handles very long shard names" do
@@ -542,23 +632,23 @@ describe Shards::Show do
       response.body.should contain(long_description)
     end
 
-    it "handles zero downloads" do
+    it "says a licence is not declared rather than leaving the row blank" do
       shard = ShardFactory.create &.name("test-shard")
-        .total_downloads(0)
+        .license(nil)
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("0")
-      response.body.should contain("downloads")
+      response.body.should contain("License:")
+      response.body.should contain("not declared")
     end
 
-    it "handles very high download counts" do
+    it "says a description is missing rather than leaving a gap under the title" do
       shard = ShardFactory.create &.name("test-shard")
-        .total_downloads(9999999)
+        .description(nil)
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("9999999")
+      response.body.should contain("No description declared in shard.yml.")
     end
   end
 

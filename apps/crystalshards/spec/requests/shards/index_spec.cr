@@ -113,24 +113,45 @@ describe Shards::Index do
     response.body.should contain("value=\"http\"")
   end
 
-  it "displays shard metadata in cards" do
-    shard = ShardFactory.create &.name("test-shard")
+  it "displays shard metadata in cards, with dependents and no downloads" do
+    target = ShardFactory.create &.name("test-shard")
       .description("A test shard")
       .github_stars(42)
       .total_downloads(100)
       .license("MIT")
+
+    depender = ShardFactory.create &.name("depending-shard")
+    version = ShardVersionFactory.create &.shard_id(depender.id)
+    DependencyFactory.create &.shard_version_id(version.id).dependent_shard_id(target.id)
 
     response = BrowserClient.exec(Shards::Index)
 
     response.status_code.should eq(200)
     response.body.should contain("test-shard")
     response.body.should contain("A test shard")
-    response.body.should contain("42")
     # The unit is a visually-hidden label beside the figure, so assert on both
     # rather than on one contiguous string.
-    response.body.should contain("100")
-    response.body.should contain("downloads")
+    response.body.should contain("42")
+    response.body.should contain("stars")
+    response.body.should contain("dependents")
     response.body.should contain("MIT")
+
+    # Positive control for the negative assertion below: this row still
+    # carries total_downloads 100, so a renderer that had kept the figure
+    # would have had something to print and this would fail.
+    response.body.downcase.should_not contain("download")
+  end
+
+  it "distinguishes an unfetched star count from a measured zero" do
+    ShardFactory.create &.name("never-fetched")
+    ShardFactory.create &.name("measured-at-zero").github_stars(0)
+
+    response = BrowserClient.exec(Shards::Index)
+
+    response.status_code.should eq(200)
+    # The unfetched shard says so instead of claiming zero stars.
+    response.body.should contain("not indexed")
+    response.body.should contain("stat-unknown")
   end
 
   describe "sorting" do
@@ -168,26 +189,53 @@ describe Shards::Index do
       middle_index.not_nil!.should be < zulu_index.not_nil!
     end
 
-    it "sorts by total downloads" do
-      low_downloads = ShardFactory.create &.name("low-downloads").total_downloads(100)
-      high_downloads = ShardFactory.create &.name("high-downloads").total_downloads(10000)
+    it "sorts by dependents" do
+      ignored = ShardFactory.create &.name("ignored-shard")
+      depended = ShardFactory.create &.name("depended-shard")
+      depender = ShardFactory.create &.name("depender-shard")
+      version = ShardVersionFactory.create &.shard_id(depender.id)
+      DependencyFactory.create &.shard_version_id(version.id).dependent_shard_id(depended.id)
+
+      response = BrowserClient.exec(Shards::Index.with(sort: "dependents"))
+
+      response.status_code.should eq(200)
+      response.body.index("depended-shard").not_nil!
+        .should be < response.body.index("ignored-shard").not_nil!
+    end
+
+    it "keeps an old downloads sort working by falling back to popularity" do
+      quiet = ShardFactory.create &.name("quiet-shard").github_stars(2)
+      loved = ShardFactory.create &.name("loved-shard").github_stars(4000)
 
       response = BrowserClient.exec(Shards::Index.with(sort: "downloads"))
 
       response.status_code.should eq(200)
-      high_index = response.body.index("high-downloads")
-      low_index = response.body.index("low-downloads")
-
-      high_index.should_not be_nil
-      low_index.should_not be_nil
-      high_index.not_nil!.should be < low_index.not_nil!
+      response.body.index("loved-shard").not_nil!
+        .should be < response.body.index("quiet-shard").not_nil!
     end
 
-    it "defaults to sorting by recently updated" do
+    it "defaults to popularity rather than crawl order" do
+      # The crawler walks GitHub search bisected on shard.yml byte size, so
+      # every row arrived in one burst and recency is very nearly crawl order,
+      # which puts the smallest manifests on the internet first.
+      quiet = ShardFactory.create &.name("quiet-shard").github_stars(2)
+      loved = ShardFactory.create &.name("loved-shard").github_stars(4000)
+
       response = BrowserClient.exec(Shards::Index)
 
       response.status_code.should eq(200)
-      response.body.should contain("Recently Updated")
+      response.body.index("loved-shard").not_nil!
+        .should be < response.body.index("quiet-shard").not_nil!
+    end
+
+    it "offers no downloads option in the sort dropdown" do
+      response = BrowserClient.exec(Shards::Index)
+
+      response.status_code.should eq(200)
+      # Positive control: the replacement options ARE found in the same body.
+      response.body.should contain("Most Depended On")
+      response.body.should contain("Most Stars")
+      response.body.downcase.should_not contain("download")
     end
   end
 
@@ -321,21 +369,21 @@ describe Shards::Index do
     end
 
     it "combines filters with sorting" do
-      high_downloads_apache = ShardFactory.create &.name("high-apache")
+      apache = ShardFactory.create &.name("high-apache")
         .license("Apache-2.0")
-        .total_downloads(10000)
+        .github_stars(10000)
 
-      low_downloads_mit = ShardFactory.create &.name("low-mit")
+      low_mit = ShardFactory.create &.name("low-mit")
         .license("MIT")
-        .total_downloads(100)
+        .github_stars(100)
 
-      high_downloads_mit = ShardFactory.create &.name("high-mit")
+      high_mit = ShardFactory.create &.name("high-mit")
         .license("MIT")
-        .total_downloads(5000)
+        .github_stars(5000)
 
       response = BrowserClient.exec(Shards::Index.with(
         license: "MIT",
-        sort: "downloads"
+        sort: "stars"
       ))
 
       response.status_code.should eq(200)

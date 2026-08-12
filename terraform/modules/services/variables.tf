@@ -128,6 +128,38 @@ variable "discovery_max_pages" {
   }
 }
 
+variable "index_max_shards" {
+  description = <<-DESC
+    How many shards one scheduled run indexes after the crawl finishes.
+    Published to the Job as INDEX_MAX_SHARDS.
+
+    Discovery finds repositories and records identity. Indexing is the second
+    phase, and the one that turns a row into a page with stars, versions, a
+    manifest and a README. It is bounded for the same reason the crawl is: the
+    cursor is shards.index_attempted_at, stamped per shard before its fetch, so
+    a run that stops early resumes rather than restarting.
+
+    300 is sized from what the crawl leaves behind. An authenticated token gets
+    5000 core requests an hour; a 10 page sweep of github.com spends roughly
+    1010 of them, leaving about 3900. Indexing one shard costs three core
+    requests: the repository, its tags, and one commit to date the version being
+    indexed. shard.yml and README come from the raw file endpoint, which is not
+    the API and does not draw on the core pool. So 300 shards is about 900
+    requests, well inside the remainder with room for retries and for another
+    host gaining a credential.
+
+    It also clears the whole current backlog in one run and covers all 5696
+    discoverable repositories in roughly 19 runs.
+  DESC
+  type        = number
+  default     = 300
+
+  validation {
+    condition     = var.index_max_shards >= 1 && var.index_max_shards <= 2000
+    error_message = "index_max_shards must be between 1 and 2000. Below 1 the phase would index nothing and report success; above 2000 one run's three-requests-per-shard cost exceeds what remains of GitHub's 5000/hour core budget after a sweep, and the run ends throttled partway through with its cursor mid-batch."
+  }
+}
+
 variable "discovery_timeout_seconds" {
   description = <<-DESC
     Ceiling on one scheduled sweep, as the discover-shards Job's task timeout.

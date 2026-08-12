@@ -22,7 +22,7 @@ module ShardPayload
       github_stars:      shard.github_stars,
       github_forks:      shard.github_forks,
       unavailable_at:    shard.unavailable_at,
-      latest_version:    shard.shard_versions.max_by?(&.released_at).try(&.version),
+      latest_version:    VersionOrder.latest_version(shard.shard_versions).try(&.version),
       created_at:        shard.created_at,
       updated_at:        shard.updated_at,
     }
