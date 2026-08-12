@@ -50,19 +50,60 @@ module CrystalShards
       WHERE package_name = $1 AND version = $2
       SQL
 
+    # doc_versions carries its own build_status, and until now nothing on
+    # either side of the boundary ever wrote it. package_registration inserts
+    # the row with 'pending' and that is where it stayed, for every version of
+    # every package, however many builds succeeded.
+    #
+    # It is not a duplicate of the request row. A build the registry indexer
+    # commissioned has no request row at all, because nobody asked for it from
+    # a page, so the request table cannot answer "does this version have
+    # documentation" for most of the catalogue. doc_versions can: crystaldocs
+    # registers one row per published version regardless of who built it.
+    #
+    # That is why the docs site's cross-package links were silently off
+    # everywhere: DependencyIndex asks for versions whose build_status is
+    # 'success', and nothing had ever set it.
+    #
+    # The spelling differs from the request row on purpose, because the column
+    # is constrained to pending/building/success/failed and predates this.
+    VERSION_BUILDING_SQL = <<-SQL
+      UPDATE doc_versions
+      SET build_status = 'building', updated_at = $3
+      WHERE version = $2
+        AND doc_id IN (SELECT id FROM docs WHERE package_name = $1)
+      SQL
+
+    VERSION_SUCCEEDED_SQL = <<-SQL
+      UPDATE doc_versions
+      SET build_status = 'success', updated_at = $3
+      WHERE version = $2
+        AND doc_id IN (SELECT id FROM docs WHERE package_name = $1)
+      SQL
+
+    VERSION_FAILED_SQL = <<-SQL
+      UPDATE doc_versions
+      SET build_status = 'failed', updated_at = $3
+      WHERE version = $2
+        AND doc_id IN (SELECT id FROM docs WHERE package_name = $1)
+      SQL
+
     def initialize(@package_name : String, @version : String)
     end
 
     def building : Nil
       write(BUILDING_SQL)
+      write(VERSION_BUILDING_SQL)
     end
 
     def succeeded : Nil
       write(SUCCEEDED_SQL)
+      write(VERSION_SUCCEEDED_SQL)
     end
 
     def failed(reason : String?) : Nil
       write(FAILED_SQL, truncate(reason))
+      write(VERSION_FAILED_SQL)
     end
 
     # A build that cannot be reported is still a build. If the docs database
