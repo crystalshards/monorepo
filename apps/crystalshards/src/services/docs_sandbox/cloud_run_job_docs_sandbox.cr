@@ -14,9 +14,9 @@ module CrystalShards
   # database, and an access token minted for it opens nothing. Everything it
   # needs arrives as two signed URLs minted here by the launcher, each good for
   # one object and one method and expiring in minutes:
-  #
-  #   DOCS_SOURCE_URL   signed GET   the prepared source tree, going in
-  #   DOCS_UPLOAD_URL   signed PUT   the one artifact, coming out
+  #   DOCS_SOURCE_URL      signed GET   the prepared source tree, going in
+  #   DOCS_UPLOAD_URL      signed PUT   the one artifact, coming out
+  #   DOCS_LOG_UPLOAD_URL  signed PUT   why a failed build failed
   #
   # A shard macro that shells out during `crystal docs` therefore finds nothing
   # worth stealing: no key file, no metadata credential worth having, no
@@ -49,6 +49,12 @@ module CrystalShards
     # build.
     ARTIFACT_CONTENT_TYPE = "application/json"
 
+    # The Job's own account of a failure. Cloud Run tells the launcher that a
+    # task failed and nothing else, so without this the only thing anyone
+    # could say about a failed build is that it failed.
+    BUILD_LOG          = "build.log"
+    LOG_CONTENT_TYPE   = "text/plain"
+
     class Missing < Exception
       def initialize(key : String)
         super(<<-MESSAGE)
@@ -78,14 +84,14 @@ module CrystalShards
       build_id = UUID.random.to_s
       source_key = "#{SCRATCH_PREFIX}/#{build_id}/source.tar.gz"
       docs_key = "#{SCRATCH_PREFIX}/#{build_id}/#{DOCS_JSON}"
+      log_key = "#{SCRATCH_PREFIX}/#{build_id}/#{BUILD_LOG}"
 
       stage_source(source_dir, source_key)
 
       log_info "Building documentation under #{description}"
 
-      unless run_execution(build_id, source_key, docs_key)
-        log_error "Sandboxed build #{build_id} did not succeed"
-        return false
+      unless run_execution(build_id, source_key, docs_key, log_key)
+        return record_failure(diagnostic(log_key, build_id))
       end
 
       collect_docs(docs_key, output_dir)
@@ -94,8 +100,7 @@ module CrystalShards
       # artifact was produced by untrusted code, so the execution succeeding is
       # never the whole story. Nothing is published until it parses.
       unless DocsSandbox.valid_docs_json?(File.join(output_dir, DOCS_JSON))
-        log_error "Sandboxed build produced no usable #{DOCS_JSON}"
-        return false
+        return record_failure(diagnostic(log_key, build_id))
       end
 
       true
@@ -140,8 +145,8 @@ module CrystalShards
     # write to the database, so the only process that can record whether this
     # build succeeded is this one. The Cloud Tasks request that triggered it
     # stays open for the duration, which is what its dispatch deadline is for.
-    private def run_execution(build_id : String, source_key : String, docs_key : String) : Bool
-      body = execution_request(source_key, docs_key)
+    private def run_execution(build_id : String, source_key : String, docs_key : String, log_key : String) : Bool
+      body = execution_request(source_key, docs_key, log_key)
 
       operation =
         if custom = @@runner
@@ -154,7 +159,7 @@ module CrystalShards
     end
 
     # The execution overrides. Everything the build gets, it gets here.
-    def execution_request(source_key : String, docs_key : String) : String
+    def execution_request(source_key : String, docs_key : String, log_key : String) : String
       {
         overrides: {
           taskCount:          1,
@@ -169,11 +174,40 @@ module CrystalShards
                 # for. Hardcoding it in two places is how that drifts into a
                 # 403 that reads like a broken build.
                 {name: "DOCS_UPLOAD_CONTENT_TYPE", value: ARTIFACT_CONTENT_TYPE},
+                # The return path for a reason. One more object, one more
+                # method, same expiry: the Job can say why it failed and can
+                # still say nothing else and reach nowhere else.
+                {name: "DOCS_LOG_UPLOAD_URL", value: @storage.scratch_signed_url(log_key, "PUT", LOG_CONTENT_TYPE)},
+                {name: "DOCS_LOG_CONTENT_TYPE", value: LOG_CONTENT_TYPE},
               ],
             },
           ],
         },
       }.to_json
+    end
+
+    # What the Job said about its own failure.
+    #
+    # Cloud Run reports that a task failed, never why: the operation carries a
+    # status, not the container's output. Reading the Job's own diagnostic is
+    # the only way the launcher can tell a maintainer that their macro fetched
+    # at compile time rather than repeating a guess about compiler versions.
+    # The launcher reads it with its own credentials; the Job only ever had a
+    # signed PUT for this one key.
+    private def diagnostic(log_key : String, build_id : String) : String
+      @storage.download_scratch(log_key).strip.presence || no_diagnostic(build_id)
+    rescue ex
+      # A build killed hard enough never writes one, and an execution that
+      # failed to start never ran at all. Saying so beats inventing a cause.
+      log_info "Build #{build_id} left no diagnostic: #{ex.message}"
+      no_diagnostic(build_id)
+    end
+
+    private def no_diagnostic(build_id : String) : String
+      "The documentation build failed without reporting a reason. It was either stopped " \
+      "before it could write one, or it exceeded the #{DocsSandbox.timeout_seconds}s limit. " \
+      "Documentation is compiled with no network access, so a shard whose macros fetch at " \
+      "compile time is the most common cause."
     end
 
     private def start(body : String) : String

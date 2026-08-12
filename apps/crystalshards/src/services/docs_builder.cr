@@ -36,6 +36,18 @@ module CrystalShards
     def initialize(@sandbox : DocsSandbox? = nil)
     end
 
+    # What the last failed build said, for the worker to record.
+    #
+    # crystaldocs shows this text to whoever asked for the page, so it is the
+    # only channel a shard's maintainer has. Preferring the sandbox's own
+    # account over a sentence composed here is the point: the sandbox is the
+    # only party that saw the compiler.
+    def failure_reason : String?
+      @failure_reason || @sandbox.try(&.failure_reason)
+    end
+
+    @failure_reason : String? = nil
+
     private def sandbox : DocsSandbox
       @sandbox ||= DocsSandbox.build
     end
@@ -55,6 +67,12 @@ module CrystalShards
       # arrive at the same refusal.
       active = sandbox
 
+      # Read the compiler version off the sandbox before spending a clone. A
+      # misconfigured image is a configuration error, and it should say so
+      # rather than surface as a dependency resolution that quietly used the
+      # wrong compiler.
+      compiler = active.crystal_version
+
       source_dir = File.join(work_dir, "source")
       docs_dir = File.join(work_dir, "docs")
 
@@ -62,7 +80,7 @@ module CrystalShards
 
       clone_repository(repository_url, source_dir)
       checkout_version(source_dir, version, commit_sha)
-      install_dependencies(source_dir)
+      install_dependencies(source_dir, compiler)
 
       build_docs(active, source_dir, docs_dir)
     end
@@ -120,16 +138,34 @@ module CrystalShards
     # a command the shard author chose, and this phase still holds the worker's
     # environment, so running hooks here would reintroduce exactly the hole the
     # sandbox closes.
-    private def install_dependencies(repo_dir : String)
+    #
+    # CRYSTAL_VERSION is what stops shards shelling out to `crystal`. Having
+    # written the lock, shards runs the compiler once purely to read its
+    # version, and this image has no compiler in it: the whole install then
+    # exits 1 having already done its work. The value comes from the sandbox
+    # rather than from configuration of its own, because dependencies must
+    # resolve for the compiler that is going to compile them, and two
+    # settings would be two things to keep in step with nothing able to
+    # enforce it.
+    #
+    # A failed install is now fatal, where it used to be logged and stepped
+    # over. Continuing meant compiling whatever tree shards abandoned, and a
+    # partial lib/ that still compiles publishes documentation that is quietly
+    # missing whatever it could not resolve. Wrong documentation under a
+    # version's name is worse than none: nothing on the page says it is
+    # incomplete, and the failure surfaces later as a compile error nobody can
+    # trace back to a fetch.
+    private def install_dependencies(repo_dir : String, crystal_version : String)
       status = run("shards",
         ["install", "--skip-postinstall", "--skip-executables", "--ignore-crystal-version"],
-        chdir: repo_dir)
+        chdir: repo_dir,
+        env: {"CRYSTAL_VERSION" => crystal_version})
 
-      if status[:success]
-        log_info "Installed shard dependencies"
-      else
-        log_info "Could not install dependencies, continuing anyway: #{status[:output]}"
+      unless status[:success]
+        raise "Could not install dependencies, so there is no complete tree to document: #{status[:output]}"
       end
+
+      log_info "Installed shard dependencies"
     end
 
     private def build_docs(active : DocsSandbox, source_dir : String, docs_dir : String) : String?
@@ -145,6 +181,7 @@ module CrystalShards
       # silently downgrade it.
       docs_json = File.join(docs_dir, DocsSandbox::DOCS_JSON)
       unless DocsSandbox.valid_docs_json?(docs_json)
+        @failure_reason = "The documentation build reported success but left no usable #{DocsSandbox::DOCS_JSON}."
         log_error "Sandbox produced no usable #{DocsSandbox::DOCS_JSON}"
         return nil
       end
@@ -156,9 +193,12 @@ module CrystalShards
     # Arguments are passed as an array rather than interpolated into a shell
     # string. Repository URLs and version tags come from the registry, so a
     # name containing shell metacharacters must not become a command.
-    private def run(command : String, args : Array(String), chdir : String? = nil)
+    # `env` adds to this process's environment rather than replacing it: git
+    # and shards both need PATH, HOME and the ambient proxy settings to work
+    # at all, so clearing it would break the fetch this phase exists to do.
+    private def run(command : String, args : Array(String), chdir : String? = nil, env : Process::Env = nil)
       output = IO::Memory.new
-      status = Process.run(command, args, chdir: chdir, output: output, error: output)
+      status = Process.run(command, args, chdir: chdir, env: env, output: output, error: output)
       {success: status.success?, output: output.to_s}
     end
 

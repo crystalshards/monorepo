@@ -39,6 +39,16 @@ module CrystalShards
     # the log which confinement a build actually ran under.
     abstract def description : String
 
+    # The Crystal version this sandbox will compile with.
+    #
+    # An instance method, not just the class one, because it is the sandbox
+    # that knows. The launcher passes this to `shards install` so dependencies
+    # resolve for the compiler that is about to compile them, and the
+    # unsandboxed sandbox does not use the image at all.
+    def crystal_version : String
+      DocsSandbox.crystal_version
+    end
+
     # The one artifact a build is expected to leave in `output_dir`.
     DOCS_JSON = "docs.json"
 
@@ -53,6 +63,65 @@ module CrystalShards
       true
     rescue JSON::ParseException
       false
+    end
+
+    # Why the last build failed, in words the shard's maintainer can act on.
+    #
+    # `build_docs` returning false is enough for the launcher to record a
+    # failure. It is not enough to record a USEFUL one, and that gap got worse
+    # the day the compile lost its network: the reader was told "usually the
+    # shard does not compile against the Crystal version it declared" while
+    # the real cause was a macro fetching at compile time. A maintainer needs
+    # to be told that, and we are entitled to say we refused on purpose.
+    getter failure_reason : String? = nil
+
+    protected def record_failure(reason : String) : Bool
+      @failure_reason = reason
+      log_error reason
+      false
+    end
+
+    # Evidence that a compile reached for the network, as opposed to a guess.
+    #
+    # EAFNOSUPPORT is what the sandbox's seccomp filter returns for a routable
+    # socket, ENETUNREACH is what an empty network namespace returns once the
+    # socket exists, and curl's 6 and 7 are "could not resolve" and "could not
+    # connect". Nothing else in a documentation build produces any of them, so
+    # matching one is a fact rather than an inference.
+    NETWORK_REFUSED = /Address family not supported by protocol|Network is unreachable|Could not resolve host|curl: \(6\)|curl: \(7\)/
+
+    # Weaker: Crystal says this when a macro shells out and the command exits
+    # non-zero. The command may have wanted the network or may simply be
+    # broken, so this earns a different sentence.
+    MACRO_COMMAND_FAILED = /error executing command:|Error executing run:/
+
+    NO_NETWORK_EXPLANATION = <<-TEXT
+      Compiling a shard runs its macros, so a documentation build that is allowed to
+      make requests is a build any published shard can use to reach our infrastructure.
+      Documentation is therefore compiled with no network access at all: no outbound
+      connection, no name resolution, no metadata server. Refusing this is deliberate.
+
+      A macro that reads from the network at compile time has to stop doing that, or
+      tolerate the request failing. Note that a macro backtick raises when its command
+      exits non-zero, so silencing the output is not enough; the command itself has to
+      succeed, as in `curl ... || true`.
+      TEXT
+
+    # Reads the build's own output the same way the sandbox container reads
+    # its compiler log, for the sandboxes that can see it directly.
+    protected def explain(output : String) : String
+      excerpt = output.lines.last(40).join("\n")
+
+      headline =
+        if NETWORK_REFUSED.matches?(output)
+          "This shard tried to use the network while it was being compiled, and the attempt was refused."
+        elsif MACRO_COMMAND_FAILED.matches?(output)
+          "This shard did not compile. The compiler reports that a command run by one of its macros failed."
+        else
+          return "This shard did not compile.\n\ncrystal docs said:\n\n#{excerpt}"
+        end
+
+      "#{headline}\n\n#{NO_NETWORK_EXPLANATION}\n\ncrystal docs said:\n\n#{excerpt}"
     end
 
     # Test seam. When set, `build` returns this proc's result.
@@ -104,8 +173,48 @@ module CrystalShards
       UnsandboxedDocsSandbox.new
     end
 
+    IMAGE_ENV = "DOCS_SANDBOX_IMAGE"
+
     def self.image : String
-      ENV.fetch("DOCS_SANDBOX_IMAGE", DEFAULT_IMAGE)
+      ENV.fetch(IMAGE_ENV, DEFAULT_IMAGE)
+    end
+
+    # The compiler version the sandbox is going to compile with.
+    #
+    # `shards install` shells out to `crystal` once, after writing the lock,
+    # only to learn the compiler version. The launcher image has no compiler
+    # in it and no reason to grow one, so that call fails and takes the
+    # dependency install with it. Putting CRYSTAL_VERSION in the child's
+    # environment removes the call entirely.
+    #
+    # It is derived from the sandbox image and never configured separately.
+    # Dependencies have to be resolved for the compiler that is going to
+    # compile them, and a second setting would be two values that must agree
+    # with nothing in the system able to make them agree. Whoever changes the
+    # image changes the resolution, in one place, by definition.
+    # Anchored, and applied only to the final path segment. A registry host
+    # can carry a port and a repository path can carry dots, so searching the
+    # whole string finds "1.2.3" in `registry:1.2.3/crystal:latest` and
+    # reports a version this build is never going to use.
+    IMAGE_VERSION = /\A[^:@\/]+:v?(\d+\.\d+\.\d+)(?:-[A-Za-z0-9.]+)?\z/
+
+    class UnreadableImageVersion < Exception
+      def initialize(image : String)
+        super(
+          "Cannot read a Crystal version out of #{IMAGE_ENV}=#{image.inspect}. The launcher " \
+          "passes this version to `shards install` so dependencies resolve for the compiler " \
+          "that will compile them, so it is not something to guess at. Use an image tagged " \
+          "with a version, as in #{DEFAULT_IMAGE}."
+        )
+      end
+    end
+
+    def self.crystal_version : String
+      current = image
+      match = IMAGE_VERSION.match(current.rpartition('/')[2])
+      raise UnreadableImageVersion.new(current) unless match
+
+      match[1]
     end
 
     TIMEOUT_ENV = "DOCS_SANDBOX_TIMEOUT_SECONDS"

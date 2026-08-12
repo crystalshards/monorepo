@@ -70,14 +70,22 @@ struct BuildDocsWorker < BaseJob
       return
     end
 
-    key = build_and_upload_docs(shard, shard_version)
+    builder = CrystalShards::DocsBuilder.build
+    key = build_and_upload_docs(builder, shard, shard_version)
 
     if key
       docs_status.succeeded
       log_info "Successfully built docs for #{@shard_name}@#{@version}: #{key}"
     else
       log_error "Failed to build docs for #{@shard_name}@#{@version}"
-      docs_status.failed("crystal docs produced no output for #{@shard_name} #{@version}. Usually the shard does not compile against the Crystal version it declared.")
+      # The builder's account of the failure, not a standing guess. The old
+      # sentence here blamed the shard's declared Crystal version for every
+      # failure, which since the compile lost its network is often the wrong
+      # thing to send someone chasing.
+      docs_status.failed(
+        builder.failure_reason ||
+        "crystal docs produced no output for #{@shard_name} #{@version}, and the build did not say why."
+      )
     end
   rescue ex : Exception
     log_error "Failed to build docs for #{@shard_name}@#{@version}", ex
@@ -95,12 +103,12 @@ struct BuildDocsWorker < BaseJob
     CrystalShards::DocsBuildStatus.new(@shard_name, @version)
   end
 
-  private def build_and_upload_docs(shard : Shard, shard_version : ShardVersion) : String?
+  private def build_and_upload_docs(builder : CrystalShards::DocsBuilder, shard : Shard, shard_version : ShardVersion) : String?
     temp_dir = File.tempname("shard_docs")
     Dir.mkdir_p(temp_dir)
 
     begin
-      docs_json = CrystalShards::DocsBuilder.build.generate_docs(
+      docs_json = builder.generate_docs(
         shard.repository_url,
         shard_version.version,
         shard_version.commit_sha,
