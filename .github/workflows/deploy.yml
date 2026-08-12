@@ -1567,14 +1567,38 @@ jobs:
         shell: bash
         env:
           LB_IP: ${{ needs.infra.outputs.load_balancer_ip }}
-          CERTS_B64: ${{ needs.infra.outputs.managed_certificates }}
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           HOSTNAMES_B64: ${{ needs.infra.outputs.public_hostnames }}
         run: |
           set -uo pipefail
 
-          # Base64 on the wire because GitHub masks `{` and `}`; see emit_json.
-          if ! CERTS="$(printf '%s' "$CERTS_B64" | base64 -d)" || [ -z "$CERTS" ]; then
-            echo "Could not decode the managed_certificates output." >&2
+          # The certificate map is read from GCP here rather than received as a
+          # job output. It was passed across the boundary and arrived EMPTY while
+          # public_hostnames, declared and encoded identically two lines away,
+          # arrived intact, so the smoke job refused a deploy whose stack had
+          # applied cleanly and whose services were already serving.
+          #
+          # Rather than keep guessing at which values GitHub will pass, this asks
+          # the source. It is also the better check: a build-time snapshot of
+          # certificate state is stale by the time the smoke test runs, and
+          # certificate provisioning is exactly the thing that changes in that
+          # window. Same lesson as composing the registry URL per job.
+          if ! certs_json="$(gcloud compute ssl-certificates list \
+                --project "$PROJECT_ID" --global \
+                --format='json(name,managed.domains,managed.status)' 2>&1)"; then
+            echo "Could not list managed certificates: ${certs_json}" >&2
+            exit 1
+          fi
+
+          # hostname -> certificate name, built from the live list.
+          if ! CERTS="$(jq -ec '
+                [ .[] | . as $c | ($c.managed.domains // [])[] | { (.): $c.name } ]
+                | add // {}' <<< "$certs_json")"; then
+            echo "Could not read the certificate list returned by GCP." >&2
+            exit 1
+          fi
+          if [ "$(jq -r 'length' <<< "$CERTS")" -eq 0 ]; then
+            echo "GCP reports no global managed certificates. The edge is not configured." >&2
             exit 1
           fi
           if ! HOSTNAMES="$(printf '%s' "$HOSTNAMES_B64" | base64 -d)" || [ -z "$HOSTNAMES" ]; then
