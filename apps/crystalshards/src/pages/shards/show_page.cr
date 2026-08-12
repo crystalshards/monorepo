@@ -100,19 +100,7 @@ class Shards::ShowPage < MainLayout
             render_dependencies_section
           end
 
-          if docs_url = @shard.documentation_url
-            section class: "shard-section" do
-              h2 do
-                text "Documentation"
-              end
-
-              para do
-                a href: docs_url, target: "_blank", class: "button button-primary" do
-                  text "View Documentation"
-                end
-              end
-            end
-          end
+          render_documentation_section
         end
 
         div class: "shard-sidebar" do
@@ -136,9 +124,17 @@ class Shards::ShowPage < MainLayout
                 end
               end
 
-              if docs_url = @shard.documentation_url
+              if docs_url = CrystalShards::DocsSite.url_for?(@shard)
                 li do
-                  a href: docs_url, target: "_blank" do
+                  a href: docs_url do
+                    text "API Documentation"
+                  end
+                end
+              end
+
+              if declared = declared_documentation_url
+                li do
+                  a href: declared, target: "_blank", rel: "noopener" do
                     text "Documentation"
                   end
                 end
@@ -236,6 +232,65 @@ class Shards::ShowPage < MainLayout
         end
       end
     end
+  end
+
+  # Every identified shard links to its documentation, built or not.
+  #
+  # The link is not conditional on documentation existing, and that is the
+  # point rather than an oversight: crystaldocs builds a version the first time
+  # somebody asks for it, so arriving is what causes the documentation to
+  # exist. A link that waited for a build would wait forever.
+  #
+  # No version in the URL. crystaldocs holds the release list and picks the
+  # current release itself, so this link cannot go stale the next time a
+  # maintainer tags, and a shard with no release lands on a page that says so.
+  private def render_documentation_section
+    section class: "shard-section" do
+      h2 do
+        text "Documentation"
+      end
+
+      if docs_url = CrystalShards::DocsSite.url_for?(@shard)
+        para do
+          a href: docs_url, class: "button button-primary" do
+            text "Read the API documentation"
+          end
+        end
+
+        para class: "text-muted" do
+          text "Generated from the source of the current release. The first "
+          text "visit to a release that has never been documented starts its build."
+        end
+      else
+        # No identity, so there is no key to address documentation by, and
+        # guessing one from the name would point at whichever repository
+        # claimed that name. The sidebar already says why the row has none.
+        para class: "text-muted" do
+          text "This shard has no documentation URL, because its repository "
+          text "could not be identified from its registry entry."
+        end
+      end
+
+      if declared = declared_documentation_url
+        para do
+          text "The maintainer also publishes documentation at "
+          a href: declared, target: "_blank", rel: "noopener" do
+            text declared
+          end
+          text "."
+        end
+      end
+    end
+  end
+
+  # The documentation link the maintainer declared, when they declared one that
+  # is not simply this site's own.
+  private def declared_documentation_url : String?
+    url = @shard.documentation_url
+    return nil if url.nil?
+    return nil if url.starts_with?(CrystalShards::DocsSite::ORIGIN)
+
+    url
   end
 
   private def render_readme_section

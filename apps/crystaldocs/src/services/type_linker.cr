@@ -45,13 +45,13 @@ module CrystalDocs
 
       if @local_types.includes?(name)
         Link.new(
-          href: "/docs/#{@package_name}/#{@version}/#{name.gsub("::", "/")}",
+          href: PackagePaths.type_path(@package_name, @version, name.gsub("::", "/")),
           external: false,
           title: nil
         )
       elsif owner = @dependency_index[name]?
         Link.new(
-          href: "/docs/#{owner[:package]}/#{owner[:version]}/#{name.gsub("::", "/")}",
+          href: PackagePaths.type_path(owner[:package], owner[:version], name.gsub("::", "/")),
           # Still on this site, but a different package than the one being
           # read, which is worth marking so the reader knows they are moving.
           external: true,

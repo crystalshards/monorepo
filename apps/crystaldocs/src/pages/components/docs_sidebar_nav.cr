@@ -14,7 +14,7 @@ class Components::DocsSidebarNav < Lucky::BaseComponent
       nav class: "docs-nav", "aria-label": "Package contents" do
         div class: "docs-nav-group" do
           h2 class: "docs-nav-heading" do
-            a href: "/docs/#{doc.package_name}/#{doc_version.version}" do
+            a href: CrystalDocs::PackagePaths.version_path(doc.package_name, doc_version.version) do
               text doc.package_name
             end
           end
@@ -111,7 +111,7 @@ class Components::DocsSidebarNav < Lucky::BaseComponent
   # qualification, and `Kemal::Exceptions::CustomException` set solid across an
   # 18rem rail is the thing this replaces.
   private def render_type_link(type : CrystalDocs::DocType)
-    href = "/docs/#{doc.package_name}/#{doc_version.version}/#{type.url_path}"
+    href = CrystalDocs::PackagePaths.type_path(doc.package_name, doc_version.version, type.url_path)
 
     if type.full_name == current_full_name
       a(href: href, class: "docs-nav-link is-current", "aria-current": "page") do

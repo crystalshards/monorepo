@@ -26,7 +26,7 @@ class Docs::VersionNotFoundPage < MainLayout
       end
 
       div class: "error-actions" do
-        a "View Other Versions", href: "/docs/#{doc.package_name}", class: "button"
+        a "View Other Versions", href: CrystalDocs::PackagePaths.package_path(doc.package_name), class: "button"
         a "Browse All Packages", href: "/docs", class: "button button-primary"
       end
 

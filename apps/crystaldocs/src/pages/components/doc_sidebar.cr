@@ -28,7 +28,7 @@ class Components::DocSidebar < Lucky::BaseComponent
       div class: "sidebar-version" do
         span doc_version.version, class: "version-tag"
         text " "
-        a "Switch", href: "/docs/#{doc.package_name}", class: "version-switch-link"
+        a "Switch", href: CrystalDocs::PackagePaths.package_path(doc.package_name), class: "version-switch-link"
       end
 
       if published = doc_version.published_at
@@ -49,7 +49,7 @@ class Components::DocSidebar < Lucky::BaseComponent
 
       ul class: "sidebar-links" do
         li do
-          a "Overview", href: "/docs/#{doc.package_name}/#{doc_version.version}", class: link_class("index.html")
+          a "Overview", href: CrystalDocs::PackagePaths.version_path(doc.package_name, doc_version.version), class: link_class("index.html")
         end
 
         # There is no longer a "full documentation" link here. It pointed at
@@ -66,7 +66,7 @@ class Components::DocSidebar < Lucky::BaseComponent
         end
 
         li do
-          a "All Versions", href: "/docs/#{doc.package_name}"
+          a "All Versions", href: CrystalDocs::PackagePaths.package_path(doc.package_name)
         end
 
         li do

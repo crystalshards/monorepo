@@ -57,6 +57,22 @@ class ShardCard < Lucky::BaseComponent
           end
         end
 
+        # Straight to the API documentation, from any listing. Present whether
+        # or not a build has happened, because the first arrival is what starts
+        # one. Absent only for a row with no identity, which has no URL to
+        # address documentation by.
+        #
+        # Before the license, which is pinned to the right of the row.
+        if docs_url = CrystalShards::DocsSite.url_for?(@shard)
+          a href: docs_url, class: "shard-docs-link" do
+            tag "i", class: "fa-regular fa-file-lines icon", "aria-hidden": "true"
+            text "Docs"
+            span class: "visually-hidden" do
+              text " for #{@shard.name}"
+            end
+          end
+        end
+
         if license = @shard.license
           span class: "shard-license" do
             text license

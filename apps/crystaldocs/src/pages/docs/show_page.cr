@@ -47,7 +47,7 @@ class Docs::ShowPage < MainLayout
         ul class: "version-list" do
           versions.each do |version|
             li do
-              a version.version, href: "/docs/#{doc.package_name}/#{version.version}", class: "version-number"
+              a version.version, href: CrystalDocs::PackagePaths.version_path(doc.package_name, version.version), class: "version-number"
               span format_date(version.published_at), class: "version-date"
             end
           end

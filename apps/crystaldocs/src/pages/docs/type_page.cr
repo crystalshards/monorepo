@@ -202,7 +202,7 @@ class Docs::TypePage < MainLayout
         nested.sort_by(&.full_name).each do |child|
           li do
             a(
-              href: "/docs/#{doc.package_name}/#{doc_version.version}/#{child.url_path}",
+              href: CrystalDocs::PackagePaths.type_path(doc.package_name, doc_version.version, child.url_path),
               class: "docs-toc-link"
             ) do
               text child.full_name

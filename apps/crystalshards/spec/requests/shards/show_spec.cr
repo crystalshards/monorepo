@@ -72,23 +72,47 @@ describe Shards::Show do
       response.body.should_not contain("Homepage")
     end
 
-    it "shows documentation link when available" do
+    # The documentation link is not conditional on documentation existing.
+    # crystaldocs builds a release the first time somebody asks for it, so
+    # arriving is what causes the documentation to exist; a link that waited
+    # for a build would wait forever.
+    it "links to the shard's documentation whether or not any has been built" do
+      shard = ShardFactory.create &.name("test-shard")
+        .documentation_url(nil)
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain(CrystalShards::DocsSite.url_for?(shard).not_nil!)
+      response.body.should contain("Read the API documentation")
+    end
+
+    # No version in the link: crystaldocs holds the release list and picks the
+    # current one, so this cannot go stale the next time a maintainer tags.
+    it "links to the repository rather than to a version" do
+      shard = ShardFactory.create &.name("test-shard")
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain("https://crystaldocs.org/docs/_/#{shard.canonical_slug}\"")
+    end
+
+    it "shows the maintainer's own documentation link alongside it" do
       shard = ShardFactory.create &.name("test-shard")
         .documentation_url("https://docs.testshard.com")
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("https://docs.testshard.com")
-      response.body.should contain("Documentation")
+      response.body.should contain("The maintainer also publishes")
     end
 
-    it "hides documentation link when not available" do
+    it "claims no maintainer link when the maintainer declared none" do
       shard = ShardFactory.create &.name("test-shard")
         .documentation_url(nil)
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should_not contain("View Documentation")
+      response.body.should_not contain("The maintainer also publishes")
     end
 
     it "shows license information" do

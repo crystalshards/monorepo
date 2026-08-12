@@ -2,7 +2,11 @@ require "../spec_helper"
 
 describe BuildDocsWorker do
   describe "successful build" do
-    it "publishes a documentation url for the shard and version" do
+    # The artifact lands under the key the build was asked for, because that is
+    # the key crystaldocs reads back from. Storing under the shard's name
+    # instead left the reader looking somewhere the artifact was not, and gave
+    # two same-named shards one key between them.
+    it "stores the artifact under the key the build was requested with" do
       shard = ShardFactory.create &.name("doc-test")
         .repository_url("https://github.com/user/doc-test")
       ShardVersionFactory.create &.shard_id(shard.id).version("1.2.3")
@@ -14,8 +18,41 @@ describe BuildDocsWorker do
         BuildDocsWorker.new(shard_name: "doc-test", version: "1.2.3").perform
       end
 
-      ShardQuery.new.name("doc-test").first.documentation_url
-        .should eq("https://crystaldocs.org/doc-test/1.2.3")
+      storage.uploaded_docs.should eq(["doc-test/1.2.3/docs.json"])
+    end
+
+    # `documentation_url` is the link a maintainer declared. A build used to
+    # overwrite it, which destroyed what they declared and turned the has_docs
+    # filter into "we generated API docs". Every shard now has a documentation
+    # URL by virtue of having an identity, so nothing needs the write.
+    it "leaves the maintainer's declared documentation url alone" do
+      shard = ShardFactory.create &.name("declared-docs")
+        .documentation_url("https://doc-test.example.org/guide")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.2.3")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      storage = CrystalShards::MockStorageService.new
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        BuildDocsWorker.new(shard_name: "declared-docs", version: "1.2.3").perform
+      end
+
+      ShardQuery.new.name("declared-docs").first.documentation_url
+        .should eq("https://doc-test.example.org/guide")
+    end
+
+    it "writes no documentation url for a shard that declared none" do
+      shard = ShardFactory.create &.name("undeclared-docs").documentation_url(nil)
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.2.3")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      storage = CrystalShards::MockStorageService.new
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        BuildDocsWorker.new(shard_name: "undeclared-docs", version: "1.2.3").perform
+      end
+
+      ShardQuery.new.name("undeclared-docs").first.documentation_url.should be_nil
     end
 
     it "builds from the shard's repository at the recorded commit" do
@@ -100,15 +137,18 @@ describe BuildDocsWorker do
 
       builder.calls.size.should eq(3)
       ShardQuery.new.name("idempotent-docs").select_count.should eq(1)
-      ShardQuery.new.name("idempotent-docs").first.documentation_url
-        .should eq("https://crystaldocs.org/idempotent-docs/1.0.0")
+      storage.uploaded_docs.should eq([
+        "idempotent-docs/1.0.0/docs.json",
+        "idempotent-docs/1.0.0/docs.json",
+        "idempotent-docs/1.0.0/docs.json",
+      ])
     end
   end
 
   describe "failed build" do
-    it "leaves the previous documentation url in place when no docs are produced" do
+    it "publishes nothing when no docs are produced" do
       shard = ShardFactory.create &.name("build-fail")
-        .documentation_url("https://crystaldocs.org/build-fail/0.9.0")
+        .documentation_url("https://build-fail.example.org/guide")
       ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
 
       builder = CrystalShards::MockDocsBuilder.new
@@ -119,9 +159,9 @@ describe BuildDocsWorker do
         BuildDocsWorker.new(shard_name: "build-fail", version: "1.0.0").perform
       end
 
-      ShardQuery.new.name("build-fail").first.documentation_url
-        .should eq("https://crystaldocs.org/build-fail/0.9.0")
       storage.uploaded_docs.should be_empty
+      ShardQuery.new.name("build-fail").first.documentation_url
+        .should eq("https://build-fail.example.org/guide")
     end
 
     it "re-raises a clone failure and publishes nothing" do
@@ -138,7 +178,7 @@ describe BuildDocsWorker do
         end
       end
 
-      ShardQuery.new.name("clone-fail").first.documentation_url.should be_nil
+      storage.uploaded_docs.should be_empty
     end
 
     it "re-raises an upload failure, publishes nothing and still cleans up" do
@@ -155,7 +195,7 @@ describe BuildDocsWorker do
         end
       end
 
-      ShardQuery.new.name("upload-fail").first.documentation_url.should be_nil
+      storage.uploaded_docs.should be_empty
       Dir.exists?(builder.calls.first.work_dir).should be_false
     end
   end
@@ -183,7 +223,7 @@ describe BuildDocsWorker do
       end
 
       builder.calls.should be_empty
-      ShardQuery.new.name("no-version").first.documentation_url.should be_nil
+      storage.uploaded_docs.should be_empty
       ShardVersionQuery.new.shard_id(shard.id).version("99.99.99").first?.should be_nil
     end
   end

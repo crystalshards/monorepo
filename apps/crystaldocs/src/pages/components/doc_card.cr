@@ -9,7 +9,7 @@ class Components::DocCard < Lucky::BaseComponent
     article class: "doc-card" do
       div class: "doc-card-header" do
         tag "h#{heading_level}", class: "doc-name" do
-          a doc.package_name, href: "/docs/#{doc.package_name}"
+          a doc.package_name, href: CrystalDocs::PackagePaths.package_path(doc.package_name)
         end
 
         if version = doc.current_version

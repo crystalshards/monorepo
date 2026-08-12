@@ -41,8 +41,8 @@ class Docs::VersionPage < MainLayout
     mount Components::Breadcrumb, items: [
       Components::Breadcrumb::BreadcrumbItem.new("Home", "/"),
       Components::Breadcrumb::BreadcrumbItem.new("Documentation", "/docs"),
-      Components::Breadcrumb::BreadcrumbItem.new(doc.package_name, "/docs/#{doc.package_name}"),
-      Components::Breadcrumb::BreadcrumbItem.new(doc_version.version, "/docs/#{doc.package_name}/#{doc_version.version}"),
+      Components::Breadcrumb::BreadcrumbItem.new(doc.package_name, CrystalDocs::PackagePaths.package_path(doc.package_name)),
+      Components::Breadcrumb::BreadcrumbItem.new(doc_version.version, CrystalDocs::PackagePaths.version_path(doc.package_name, doc_version.version)),
     ]
 
     header class: "docs-type-header" do
@@ -91,7 +91,7 @@ class Docs::VersionPage < MainLayout
 
       tag "select", id: "version-select", onchange: "window.location.href = this.value" do
         versions.each do |candidate|
-          href = "/docs/#{doc.package_name}/#{candidate.version}"
+          href = CrystalDocs::PackagePaths.version_path(doc.package_name, candidate.version)
 
           if candidate.version == doc_version.version
             tag("option", value: href, selected: "selected") { text candidate.version }
@@ -142,7 +142,7 @@ class Docs::VersionPage < MainLayout
           types.each do |type|
             li do
               a(
-                href: "/docs/#{doc.package_name}/#{doc_version.version}/#{type.url_path}",
+                href: CrystalDocs::PackagePaths.type_path(doc.package_name, doc_version.version, type.url_path),
                 class: "docs-toc-link"
               ) do
                 text type.full_name
@@ -176,7 +176,7 @@ class Docs::VersionPage < MainLayout
       end
 
       para do
-        a "Browse the other versions", href: "/docs/#{doc.package_name}"
+        a "Browse the other versions", href: CrystalDocs::PackagePaths.package_path(doc.package_name)
       end
     end
   end

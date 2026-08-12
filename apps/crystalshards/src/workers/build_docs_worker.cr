@@ -35,6 +35,15 @@ struct BuildDocsWorker < BaseJob
   # A path that returns quietly leaves a reader watching a page that refreshes
   # forever, and leaves the retry floor with no failed_at to measure from, so
   # the version is never reconsidered either.
+  #
+  # It no longer writes `documentation_url`. That column holds the link a
+  # maintainer declared, and overwriting it on every successful build both
+  # destroyed what they declared and turned the `has_docs` filter into "we
+  # generated API docs", which is not what the column says and not what a
+  # reader filtering on it is asking for. Nothing needs the write any more:
+  # every shard now has a documentation URL by virtue of having an identity,
+  # computed by `CrystalShards::DocsSite`, so the field being set is no longer
+  # how the site knows documentation exists.
   def perform
     log_info "Building docs for: #{@shard_name}@#{@version}"
     docs_status.building
@@ -61,14 +70,11 @@ struct BuildDocsWorker < BaseJob
       return
     end
 
-    docs_url = build_and_upload_docs(shard, shard_version)
+    key = build_and_upload_docs(shard, shard_version)
 
-    if docs_url
-      operation = SaveShard.new(shard)
-      operation.documentation_url.value = docs_url
-      operation.update!
+    if key
       docs_status.succeeded
-      log_info "Successfully built docs for #{@shard_name}@#{@version}: #{docs_url}"
+      log_info "Successfully built docs for #{@shard_name}@#{@version}: #{key}"
     else
       log_error "Failed to build docs for #{@shard_name}@#{@version}"
       docs_status.failed("crystal docs produced no output for #{@shard_name} #{@version}. Usually the shard does not compile against the Crystal version it declared.")
@@ -108,12 +114,25 @@ struct BuildDocsWorker < BaseJob
     end
   end
 
+  # The artifact is stored under the key the build was ASKED for, not under the
+  # shard's name.
+  #
+  # Those were the same thing only while every requester sent a bare name. They
+  # are not now: crystaldocs addresses a package by its repository, requests
+  # the build under that key and reads the result back from it, so storing
+  # under `shard.name` would put the artifact somewhere the reader never looks
+  # and leave the version rebuilding forever. It would also give two shards
+  # called "lsp" one key between them, which is the collision the host
+  # qualified key exists to remove.
+  #
+  # `ShardQuery#resolve` has already established that this key names exactly
+  # this shard, so it is a key we own rather than free text from a request.
   private def upload_to_storage(shard : Shard, shard_version : ShardVersion, docs_json : String) : String
     storage = CrystalShards::StorageService.build
-    key = storage.upload_docs_json(shard.name, shard_version.version, docs_json)
+    key = storage.upload_docs_json(@shard_name, shard_version.version, docs_json)
 
     log_info "Uploaded #{key} (#{File.size(docs_json)} bytes) to object storage"
-    "https://crystaldocs.org/#{shard.name}/#{shard_version.version}"
+    key
   rescue ex : Exception
     log_error "Error uploading docs to object storage", ex
     raise ex
