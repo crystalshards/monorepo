@@ -39,6 +39,16 @@ module CrystalShards
     # the log which confinement a build actually ran under.
     abstract def description : String
 
+    # The Crystal version this sandbox will compile with.
+    #
+    # An instance method, not just the class one, because it is the sandbox
+    # that knows. The launcher passes this to `shards install` so dependencies
+    # resolve for the compiler that is about to compile them, and the
+    # unsandboxed sandbox does not use the image at all.
+    def crystal_version : String
+      DocsSandbox.crystal_version
+    end
+
     # The one artifact a build is expected to leave in `output_dir`.
     DOCS_JSON = "docs.json"
 
@@ -104,8 +114,49 @@ module CrystalShards
       UnsandboxedDocsSandbox.new
     end
 
+    IMAGE_ENV = "DOCS_SANDBOX_IMAGE"
+
     def self.image : String
-      ENV.fetch("DOCS_SANDBOX_IMAGE", DEFAULT_IMAGE)
+      ENV.fetch(IMAGE_ENV, DEFAULT_IMAGE)
+    end
+
+    # The compiler version the sandbox is going to compile with.
+    #
+    # `shards install` shells out to `crystal` once, after writing the lock,
+    # only to learn the compiler version. The launcher image has no compiler
+    # in it and no reason to grow one, so that call fails and takes the
+    # dependency install with it, having already installed everything.
+    # Putting CRYSTAL_VERSION in the child's environment removes the call.
+    #
+    # It is derived from the sandbox image and never configured separately.
+    # Dependencies have to be resolved for the compiler that is going to
+    # compile them, and a second setting would be two values that must agree
+    # with nothing in the system able to make them agree. Whoever changes the
+    # image changes the resolution, in one place, by definition.
+    #
+    # Anchored, and applied only to the final path segment. A registry host
+    # can carry a port and a repository path can carry dots, so searching the
+    # whole string finds "1.2.3" in `registry:1.2.3/crystal:latest` and
+    # reports a version this build is never going to use.
+    IMAGE_VERSION = /\A[^:@\/]+:v?(\d+\.\d+\.\d+)(?:-[A-Za-z0-9.]+)?\z/
+
+    class UnreadableImageVersion < Exception
+      def initialize(image : String)
+        super(
+          "Cannot read a Crystal version out of #{IMAGE_ENV}=#{image.inspect}. The launcher " \
+          "passes this version to `shards install` so dependencies resolve for the compiler " \
+          "that will compile them, so it is not something to guess at. Use an image tagged " \
+          "with a version, as in #{DEFAULT_IMAGE}."
+        )
+      end
+    end
+
+    def self.crystal_version : String
+      current = image
+      match = IMAGE_VERSION.match(current.rpartition('/')[2])
+      raise UnreadableImageVersion.new(current) unless match
+
+      match[1]
     end
 
     TIMEOUT_ENV = "DOCS_SANDBOX_TIMEOUT_SECONDS"
