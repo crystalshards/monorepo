@@ -1,8 +1,11 @@
 class Home::IndexPage < MainLayout
   needs featured_shards : Array(Shard)
   needs recent_shards : Array(Shard)
+  needs dependent_counts : Hash(Int64, Int32)
   needs total_shards : Int64
-  needs total_downloads : Int64
+  needs total_dependency_links : Int64
+  needs total_stars : Int64
+  needs shards_with_stars : Int32
 
   def page_title
     "Home"
@@ -34,23 +37,25 @@ class Home::IndexPage < MainLayout
         end
       end
 
+      # There is no downloads stat and there will not be one. Nothing is
+      # downloaded from this registry, so the counter could only ever read
+      # zero, and a permanent zero claims "nobody uses these" rather than
+      # "we do not measure this".
       dl class: "intro-stats" do
-        div do
-          tag "dt" do
-            text "Shards"
-          end
-          tag "dd" do
-            text @total_shards.to_s
-          end
+        stat "Shards", format_number(@total_shards)
+
+        # Stars are fetched from the host, so they can be genuinely unmeasured.
+        # The stat says which it is instead of printing a zero that reads as a
+        # verdict on the ecosystem.
+        if @shards_with_stars.zero?
+          stat "Stars", "not indexed yet", unknown: true
+        else
+          stat "Stars", format_number(@total_stars)
         end
-        div do
-          tag "dt" do
-            text "Downloads"
-          end
-          tag "dd" do
-            text format_number(@total_downloads)
-          end
-        end
+
+        # Dependency links are computed from tables we own, so zero is a
+        # measured fact and needs no unknown state.
+        stat "Dependency links", format_number(@total_dependency_links)
       end
     end
   end
@@ -113,7 +118,10 @@ class Home::IndexPage < MainLayout
 
         div class: "shard-grid" do
           @featured_shards.each do |shard|
-            mount ShardCard, shard: shard, heading_level: 3
+            mount ShardCard,
+              shard: shard,
+              heading_level: 3,
+              dependent_count: @dependent_counts.fetch(shard.id, 0)
           end
         end
       end
@@ -134,9 +142,23 @@ class Home::IndexPage < MainLayout
 
         div class: "shard-grid" do
           @recent_shards.each do |shard|
-            mount ShardCard, shard: shard, heading_level: 3
+            mount ShardCard,
+              shard: shard,
+              heading_level: 3,
+              dependent_count: @dependent_counts.fetch(shard.id, 0)
           end
         end
+      end
+    end
+  end
+
+  private def stat(label : String, value : String, unknown : Bool = false)
+    div do
+      tag "dt" do
+        text label
+      end
+      tag "dd", class: unknown ? "stat-unknown" : "" do
+        text value
       end
     end
   end
