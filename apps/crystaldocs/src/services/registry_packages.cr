@@ -21,11 +21,27 @@ module CrystalDocs
   # with more than one answer and a slug is the answer.
   class RegistryPackages
     # A shard, as the registry has it.
+    #
+    # `indexed_at` is here because an empty release list has two meanings and
+    # only one of them is a fact about the repository. The registry records a
+    # shard's identity when it discovers it and fetches its tags later, so a
+    # freshly discovered shard has no version rows yet. Reading that as "this
+    # repository publishes no releases" told visitors that kemal, which has 65
+    # tags, had never cut one.
+    #
+    # nil means the registry has not looked. A time means it looked, and an
+    # empty release list alongside one is then a real answer about the
+    # repository.
     record Package,
       slug : String,
       name : String,
       description : String?,
-      repository_url : String?
+      repository_url : String?,
+      indexed_at : Time? do
+      def indexed? : Bool
+        !indexed_at.nil?
+      end
+    end
 
     # One published version. Yanked is carried rather than filtered, because a
     # yanked release is still a real release somebody may hold a link to; it is
@@ -81,7 +97,8 @@ module CrystalDocs
     end
 
     PACKAGE_SQL = <<-SQL
-      SELECT shards.canonical_slug, shards.name, shards.description, shards.repository_url
+      SELECT shards.canonical_slug, shards.name, shards.description,
+             shards.repository_url, shards.indexed_at
       FROM shards
       WHERE shards.canonical_slug = $1
       LIMIT 1
@@ -126,14 +143,20 @@ module CrystalDocs
       rows = RegistryDatabase.query_all(
         PACKAGE_SQL,
         slug,
-        as: {String, String, String?, String?}
+        as: {String, String, String?, String?, Time?}
       )
 
       row = rows.first?
       return Lookup.absent unless row
 
       Lookup.found(
-        Package.new(slug: row[0], name: row[1], description: row[2], repository_url: row[3])
+        Package.new(
+          slug: row[0],
+          name: row[1],
+          description: row[2],
+          repository_url: row[3],
+          indexed_at: row[4],
+        )
       )
     rescue ex
       Log.warn { "Could not read #{slug} from the registry: #{ex.message}" }

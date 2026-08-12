@@ -83,7 +83,7 @@ describe Shards::Show do
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain(CrystalShards::DocsSite.url_for?(shard).not_nil!)
-      response.body.should contain("Read the API documentation")
+      response.body.should contain("Read the API docs")
     end
 
     # No version in the link: crystaldocs holds the release list and picks the
@@ -294,7 +294,7 @@ describe Shards::Show do
     # A shard with no tags is the normal case in this registry, not an error,
     # so the absence is a sentence rather than a missing control.
     it "states that no releases are tagged instead of showing an empty picker" do
-      shard = ShardFactory.create &.name("test-shard")
+      shard = ShardFactory.create &.name("test-shard").indexed_at(Time.utc)
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
@@ -596,7 +596,7 @@ describe Shards::Show do
     end
 
     it "renders every section for a shard with no versions and no dependencies" do
-      shard = ShardFactory.create &.name("empty-shard")
+      shard = ShardFactory.create &.name("empty-shard").indexed_at(Time.utc)
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 

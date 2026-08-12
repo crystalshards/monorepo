@@ -217,6 +217,23 @@ describe "documentation for a repository" do
       response.body.should contain("no published releases")
     end
 
+    # The bug Jason caught on crystaldocs.org. kemal has 65 tags and the page
+    # said it had no published releases, because the registry had discovered
+    # the repository and had not yet read it. An empty release list before
+    # indexing is a gap in our database, and we do not get to report it as a
+    # fact about somebody's repository.
+    it "does not claim a repository has no releases before the registry read it" do
+      StubRegistryPackages.new
+        .publish("github.com/kemalcr/kemal", "kemal", indexed: false)
+        .install
+
+      response = get.call("/docs/_/github.com/kemalcr/kemal")
+
+      response.status_code.should eq(200)
+      response.body.should contain("not been read yet")
+      response.body.should_not contain("no published releases")
+    end
+
     it "commissions nothing, because there is nothing to build" do
       StubRegistryPackages.new.publish("github.com/lbguilherme/lsp", "lsp").install
       queue = RecordingBuildQueue.install
