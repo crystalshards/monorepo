@@ -75,7 +75,37 @@ RUN apk add --no-cache \
     yaml \
     libxml2 \
     openssl \
-    gmp
+    gmp \
+    git
+
+# git and shards are not optional extras here: this image also runs
+# docs-launcher, and its fetch phase shells out to both. `git clone`,
+# `git checkout` and `git rev-parse` fix the revision being documented, then
+# `shards install` populates lib/ before the tree is handed to the sandbox that
+# compiles it. Without them the launcher raises File::NotFoundError on 'git'
+# the moment a build starts, which is exactly what production did on the first
+# dispatch that ever got past authentication.
+#
+# The fetch deliberately runs HERE rather than in the sandbox. `shards install`
+# resolves URLs out of a shard.yml the shard author wrote, so it is egress an
+# attacker chooses; it belongs in the process that runs no untrusted code, not
+# in the container that then compiles it.
+#
+# shards is copied from the builder rather than installed from apk, because the
+# apk package pulls the entire compiler in to get one binary. It is the same
+# shards the application was built with, and it is dynamically linked against
+# the libraries already listed above.
+#
+# No compiler is copied with it. Shards only wants `crystal` to learn the
+# compiler version, and that is supplied to it directly, by the sandbox that
+# knows which compiler will actually do the compiling.
+COPY --from=builder /usr/bin/shards /usr/bin/shards
+
+# Prove both actually run here, rather than discovering at the first dispatch
+# that one of them is missing or cannot resolve a library. This whole class of
+# failure was invisible until a task reached the launcher, so it is asserted at
+# build time where it costs a red build instead of a stuck queue.
+RUN git --version && shards --version
 
 # Create non-root user
 RUN addgroup -g 1000 appuser && \
