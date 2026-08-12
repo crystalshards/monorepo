@@ -33,8 +33,8 @@ end
 private def hostile_source(host_secret_path : String) : String
   <<-CRYSTAL
   {% `printenv CANARY_CREDENTIAL > /out/env.txt 2>&1 || echo unreadable > /out/env.txt` %}
-  {% `curl -s -m 3 -o /out/net.txt https://example.com || echo blocked > /out/net.txt` %}
-  {% `curl -s -m 3 -H 'Metadata-Flavor: Google' -o /out/metadata.txt http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token || echo blocked > /out/metadata.txt` %}
+  {% `wget -q -T 3 -O /out/net.txt https://example.com || echo blocked > /out/net.txt` %}
+  {% `wget -q -T 3 --header 'Metadata-Flavor: Google' -O /out/metadata.txt http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token || echo blocked > /out/metadata.txt` %}
   {% `getent hosts example.com > /out/dns.txt 2>&1 || echo blocked > /out/dns.txt` %}
   {% `id > /out/whoami.txt 2>&1` %}
   {% `cat #{host_secret_path} > /out/host_read.txt 2>&1 || echo unreachable > /out/host_read.txt` %}
@@ -59,9 +59,8 @@ end
 # "blocked" a meaning.
 private def egress_control_source : String
   <<-CRYSTAL
-  {% `curl -s -m 5 -o /out/net.txt https://example.com || echo blocked > /out/net.txt` %}
+  {% `wget -q -T 5 -O /out/net.txt https://example.com || echo blocked > /out/net.txt` %}
   {% `getent hosts example.com > /out/dns.txt 2>&1 || echo blocked > /out/dns.txt` %}
-
   module Control
     def self.greet : String
       "hello"
@@ -366,11 +365,18 @@ describe "documentation sandbox containment" do
       # AF_PACKET, AF_VSOCK, an io_uring IORING_OP_SOCKET submission, and a
       # socket requested through the x32 syscall number. --expect-closed exits
       # non-zero if any of them is open.
+      #
+      # env -i and --user are how the entrypoint calls it, and no-egress
+      # refuses to run as root, so this is the real invocation rather than a
+      # convenient one.
       status = Process.run(
         "docker",
         [
-          "run", "--rm", "--entrypoint", "/usr/local/bin/no-egress",
-          DOCS_BUILD_SPEC_IMAGE, "/usr/local/bin/egress-probe", "--expect-closed",
+          "run", "--rm", "--entrypoint", "/usr/bin/env",
+          DOCS_BUILD_SPEC_IMAGE,
+          "-i", "PATH=/usr/local/bin:/usr/bin:/bin",
+          "/usr/local/bin/no-egress", "--user", "1000:1000",
+          "/usr/local/bin/egress-probe", "--expect-closed",
         ],
         output: output,
         error: output
@@ -453,12 +459,15 @@ describe "documentation sandbox containment" do
       # HTTPS GET, to the same host, port and path, that this container
       # completed successfully in its fetch phase moments earlier.
       origin.serve("prober.tar.gz", shard_tarball("prober", <<-CRYSTAL))
-        {% `echo "PROBE samereq  : $(curl -s -m 5 -o /dev/null -w %{http_code} #{origin.source_url("prober")} 2>&1 || echo REFUSED)" 1>&2` %}
-        {% `echo "PROBE https    : $(curl -s -m 5 -o /dev/null -w %{http_code} https://example.com 2>&1 || echo REFUSED)" 1>&2` %}
-        {% `echo "PROBE metadata : $(curl -s -m 5 -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token 2>&1 || echo REFUSED)" 1>&2` %}
-        {% `echo "PROBE dns      : $(getent hosts example.com 2>&1 || echo REFUSED)" 1>&2` %}
-        {% `echo "PROBE ownenv   : $(printenv DOCS_UPLOAD_URL 2>&1 || echo REFUSED)" 1>&2` %}
-        {% `echo "PROBE procenv  : $(grep -ac DOCS_UPLOAD_URL /proc/1/environ 2>&1 || echo REFUSED)" 1>&2` %}
+        {% `if curl -s -m 5 -o /dev/null #{origin.source_url("prober")} 2>/dev/null; then echo "PROBE samereq  : REACHABLE"; else echo "PROBE samereq  : REFUSED"; fi 1>&2` %}
+        {% `if head -c1 /proc/1/environ >/dev/null 2>&1; then echo "PROBE proc1env : READABLE"; else echo "PROBE proc1env : REFUSED"; fi 1>&2` %}
+        {% `if curl -s -m 5 -o /dev/null -H 'Metadata-Flavor: Google' http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token 2>/dev/null; then echo "PROBE metadata : REACHABLE"; else echo "PROBE metadata : REFUSED"; fi 1>&2` %}
+        {% `if getent hosts example.com >/dev/null 2>&1; then echo "PROBE dns      : RESOLVED"; else echo "PROBE dns      : REFUSED"; fi 1>&2` %}
+        {% `if printenv DOCS_UPLOAD_URL >/dev/null 2>&1; then echo "PROBE ownenv   : PRESENT"; else echo "PROBE ownenv   : REFUSED"; fi 1>&2` %}
+        {% `if grep -aq DOCS_UPLOAD_URL /proc/1/environ 2>/dev/null; then echo "PROBE proc1url : FOUND"; else echo "PROBE proc1url : REFUSED"; fi 1>&2` %}
+        {% `if dd if=/proc/1/mem bs=1 count=1 >/dev/null 2>&1; then echo "PROBE proc1mem : READABLE"; else echo "PROBE proc1mem : REFUSED"; fi 1>&2` %}
+        {% `if printf x >> /usr/bin/curl 2>/dev/null; then echo "PROBE curlbin  : OVERWROTE"; else echo "PROBE curlbin  : REFUSED"; fi 1>&2` %}
+        {% `echo "PROBE caps     : $(grep -E '^(CapEff|NoNewPrivs|Seccomp):' /proc/self/status | tr -s ' \n' ' ')" 1>&2` %}
         {% `echo "PROBE whoami   : $(id)" 1>&2` %}
 
         module Prober
@@ -493,15 +502,17 @@ describe "documentation sandbox containment" do
         prober[:status].should eq(0)
         origin.uploaded["prober-docs.json"].should contain("Prober")
 
-        # The same HTTPS GET this container completed in its fetch phase. It
-        # is the one assertion here that cannot be satisfied by a broken
-        # probe, a missing curl, or a machine with no network, because the
-        # identical request demonstrably worked minutes earlier in the same
-        # process tree.
+        # The same outbound HTTPS GET this container completed in its fetch
+        # phase: same scheme, host, port and path. It is the one assertion
+        # here that cannot be satisfied by a broken probe, a missing curl or a
+        # machine with no network, because the identical request demonstrably
+        # worked seconds earlier in the same container.
+        #
+        # Deliberately not example.com. This run's CA bundle trusts only the
+        # spec's own origin, so a public host would fail on the certificate
+        # whether or not egress was blocked, and the assertion would pass
+        # while proving nothing.
         prober[:output].should contain("PROBE samereq  : REFUSED")
-
-        # An outbound HTTPS request to the public internet.
-        prober[:output].should contain("PROBE https    : REFUSED")
 
         # The link-local metadata server, which mints tokens for this Job's
         # own service account and is not reached over any VPC, so no egress
@@ -511,29 +522,39 @@ describe "documentation sandbox containment" do
         # Name resolution is egress too: the name looked up is data, and the
         # lookup reaches a resolver.
         prober[:output].should contain("PROBE dns      : REFUSED")
-        # env -i, so the capabilities are not in the compile's environment.
+
+        # The compile's own environment holds no capability: `env -i` runs as
+        # root, before any privilege is dropped, so no unprivileged process
+        # ever holds a signed url.
         prober[:output].should contain("PROBE ownenv   : REFUSED")
 
-        # THE ONE THING THAT IS NOT CLOSED, pinned here so nobody reads the
-        # silence above as safety.
+        # And it cannot read them back out of the process that does.
         #
-        # The compile runs as the same uid as the entrypoint, so it can read
-        # that process's environment out of /proc and find the three signed
-        # urls. Nothing available to an unprivileged, single uid container
-        # closes this: PR_SET_DUMPABLE is reset by execve, a pid namespace
-        # needs CLONE_NEWUSER which runtimes deny without CAP_SYS_ADMIN, and
-        # hidepid needs a mount namespace. entrypoint.sh explains why the
-        # reachable damage is bounded to this build's own scratch objects
-        # inside a signature that expires in minutes.
+        # This is what the uid split buys. The entrypoint holds all three urls
+        # for the whole build because it needs the upload one afterwards, and
+        # a SAME uid child may read another process's environ, memory and
+        # descriptors out of /proc. PR_SET_DUMPABLE cannot fix that, because
+        # execve resets it, and a pid namespace cannot, because CLONE_NEWUSER
+        # is denied to a container without CAP_SYS_ADMIN. Running the
+        # supervisor as root and the compile as 1000 can, and needs nothing
+        # the platform withholds.
         #
-        # This asserts the leak rather than pretending it is shut. If someone
-        # closes it, with a broker or a second container, this line fails and
-        # they get to delete it on purpose.
-        prober[:output].should contain("PROBE procenv  : 1")
-        prober[:output].should contain("PROBE ownenv   : REFUSED")
+        # Permission is asserted separately from content, because "no url
+        # found" reads the same whether the file was unreadable or simply did
+        # not contain one.
+        prober[:output].should contain("PROBE proc1env : REFUSED")
+        prober[:output].should contain("PROBE proc1url : REFUSED")
+        prober[:output].should contain("PROBE proc1mem : REFUSED")
 
-        # Unprivileged, so it cannot overwrite curl or the compiler that the
-        # phase after it runs.
+        # No capabilities, no route back to privilege, and the filter is in
+        # force in the compiler's own process rather than an ancestor's.
+        prober[:output].should match(/CapEff:\s+0{16}/)
+        prober[:output].should match(/NoNewPrivs:\s+1/)
+        prober[:output].should match(/Seccomp:\s+2/)
+
+        # Unprivileged, so it cannot overwrite the curl that the phase after
+        # it runs.
+        prober[:output].should contain("PROBE curlbin  : REFUSED")
         prober[:output].should contain("uid=1000")
 
         greedy = origin.build("greedy")

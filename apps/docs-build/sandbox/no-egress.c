@@ -361,19 +361,81 @@ static int drop_to(const char *spec) {
   return 0;
 }
 
+/* Refuses to continue if this process was handed a capability.
+ *
+ * This reads /proc/self/environ, not the libc environment, and the
+ * difference is the whole point. /proc/<pid>/environ reports the region the
+ * kernel recorded at execve, on the initial stack. clearenv() and unsetenv()
+ * edit libc's pointer array on the heap and leave that region untouched, so a
+ * process that "cleared" its environment still hands the original strings to
+ * anyone who can read its /proc entry. Checking the same surface an attacker
+ * would read is the only version of this check that means anything.
+ *
+ * The caller is therefore expected to have made this process clean at exec
+ * time, with `env -i`, BEFORE any privilege is dropped. Clearing after the
+ * drop would be a window in which an unprivileged process holds the signed
+ * urls in a place another process at that uid can read. */
+static int refuse_leaked_capabilities(void) {
+  int fd = open("/proc/self/environ", O_RDONLY);
+  if (fd < 0) {
+    fprintf(stderr, "no-egress: cannot read /proc/self/environ, refusing to guess what was inherited\n");
+    return -1;
+  }
+
+  char buffer[8192];
+  ssize_t got;
+  int leaked = 0;
+
+  /* Entries are NUL separated. A name can straddle a read boundary, so the
+   * scan restarts from the last separator each time round. */
+  size_t held = 0;
+  while ((got = read(fd, buffer + held, sizeof(buffer) - held - 1)) > 0) {
+    size_t total = held + (size_t)got;
+    buffer[total] = '\0';
+
+    size_t start = 0;
+    for (size_t i = 0; i < total; i++) {
+      if (buffer[i] != '\0') continue;
+      if (strncmp(buffer + start, "DOCS_", 5) == 0) leaked = 1;
+      start = i + 1;
+    }
+
+    held = total - start;
+    if (held >= sizeof(buffer) - 1) held = 0;
+    memmove(buffer, buffer + start, held);
+  }
+
+  close(fd);
+
+  if (leaked) {
+    fprintf(stderr,
+            "no-egress: refusing to run, this process was started holding DOCS_ variables. "
+            "The caller must wrap it in `env -i` so the confined side never inherits a signed url.\n");
+    return -1;
+  }
+
+  return 0;
+}
+
 int main(int argc, char **argv) {
   int first = 1;
   const char *become = NULL;
 
-  if (argc > 2 && strcmp(argv[1], "--user") == 0) {
-    become = argv[2];
-    first = 3;
+  while (first < argc) {
+    if (strcmp(argv[first], "--user") == 0 && first + 1 < argc) {
+      become = argv[first + 1];
+      first += 2;
+    } else {
+      break;
+    }
   }
 
   if (argc <= first) {
     fprintf(stderr, "usage: no-egress [--user UID:GID] <command> [args...]\n");
     return EXIT_EXEC;
   }
+
+  if (refuse_leaked_capabilities() != 0) return EXIT_PRIVILEGE;
 
   if (become != NULL && drop_to(become) != 0) return EXIT_PRIVILEGE;
 

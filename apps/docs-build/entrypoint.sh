@@ -232,15 +232,22 @@ fi
 # network and no environment either: tar parses hostile bytes, so it is the
 # other process in this container that should not be holding a signed url
 # while it works.
-no-egress --user "$BUILD_USER" env -i PATH="$PATH" \
-  tar -xzf "$WORK_DIR/source.tar.gz" -C "$SOURCE_DIR"
+#
+# `env -i` goes OUTSIDE no-egress, not inside, and the order is the whole
+# point. env runs as root, so nothing unprivileged ever sees the urls, and
+# no-egress is created by execve with a clean environment, so the region
+# /proc/<pid>/environ reports never held them. Clearing inside no-egress
+# instead would leave them readable there: clearenv edits libc's table on the
+# heap and the kernel keeps reporting the strings recorded at exec.
+env -i PATH="$PATH" \
+  no-egress --user "$BUILD_USER" tar -xzf "$WORK_DIR/source.tar.gz" -C "$SOURCE_DIR"
 rm -f "$WORK_DIR/source.tar.gz"
 
 # -------------------------------------------------------------- compile ----
 # Past this point the shard's own code runs.
 #
-# env -i, so nothing this process holds is inherited, and a HOME of its own so
-# the compiler's cache does not need this script's scratch directory.
+# A clean environment and a HOME of its own, so nothing this process holds is
+# inherited and the compiler's cache does not need this script's scratch.
 #
 # --format=json emits one document on stdout instead of writing an HTML tree.
 # That single file is the entire artifact: documentation is rendered by our own
@@ -257,7 +264,7 @@ echo "docs-build: compile phase, egress is removed before the compiler starts" >
 # proves the filter in-process, after installing it and before exec, on the
 # invocation below as well as this one.
 set +e
-no-egress --user "$BUILD_USER" env -i PATH="$PATH" egress-probe --expect-closed
+env -i PATH="$PATH" no-egress --user "$BUILD_USER" egress-probe --expect-closed
 probe_status=$?
 set -e
 
@@ -267,12 +274,12 @@ if [ "$probe_status" -ne 0 ]; then
 fi
 
 set +e
-no-egress --user "$BUILD_USER" env -i \
+env -i \
   PATH="$PATH" \
   HOME="$COMPILE_HOME" \
   TERM=dumb \
   SOURCE_DIR="$SOURCE_DIR" \
-  /bin/sh -c '
+  no-egress --user "$BUILD_USER" /bin/sh -c '
     cd "$SOURCE_DIR" || exit 61
     crystal docs --format=json || exit 62
   ' >"$DOCS_JSON" 2>>"$COMPILER_LOG"

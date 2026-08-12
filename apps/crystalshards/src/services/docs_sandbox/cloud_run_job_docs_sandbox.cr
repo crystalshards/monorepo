@@ -52,8 +52,8 @@ module CrystalShards
     # The Job's own account of a failure. Cloud Run tells the launcher that a
     # task failed and nothing else, so without this the only thing anyone
     # could say about a failed build is that it failed.
-    BUILD_LOG          = "build.log"
-    LOG_CONTENT_TYPE   = "text/plain"
+    BUILD_LOG        = "build.log"
+    LOG_CONTENT_TYPE = "text/plain"
 
     class Missing < Exception
       def initialize(key : String)
