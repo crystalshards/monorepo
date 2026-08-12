@@ -1308,10 +1308,38 @@ jobs:
             # runs the image this run built rather than asserting on spelling.
             expected_repo="${expected_image%:*}"
             expected_tag="${expected_image##*:}"
-            if ! expected_digest="$(gcloud artifacts docker images describe \
-                  "$expected_image" --format='value(image_summary.digest)' 2>/dev/null)" \
-               || [ -z "$expected_digest" ]; then
-              echo "  ${service}: could not resolve ${expected_image} to a digest" >&2
+            # Resolving that tag fails in two ways that must not be reported as
+            # one. The image can be genuinely absent, which is a real failure
+            # worth stopping a release for, or the Artifact Registry call can
+            # fail, which says nothing at all about the image. This step
+            # collapsed both into "could not resolve" with the actual error
+            # discarded by 2>/dev/null, and failed a release over a transient
+            # API error while the image it claimed was missing was present and
+            # already serving. The build job asserted this exact reference
+            # resolvable before the deploy started, so a failure here is far
+            # more likely to be the call than the image.
+            #
+            # Retry the call, keep its stderr, and only stop early when the
+            # registry actually says the image is not there.
+            describe_err="${RUNNER_TEMP}/describe-${service}.err"
+            expected_digest=""
+            for attempt in 1 2 3; do
+              if expected_digest="$(gcloud artifacts docker images describe \
+                    "$expected_image" --format='value(image_summary.digest)' 2>"$describe_err")" \
+                 && [ -n "$expected_digest" ]; then
+                break
+              fi
+
+              expected_digest=""
+              if grep -qiE 'not found|NOT_FOUND|does not exist' "$describe_err"; then
+                break
+              fi
+
+              sleep $((attempt * 5))
+            done
+
+            if [ -z "$expected_digest" ]; then
+              echo "  ${service}: could not resolve ${expected_image} to a digest: $(tr '\n' ' ' < "$describe_err" | head -c 300)" >&2
               return 1
             fi
 
