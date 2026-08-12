@@ -22,6 +22,13 @@ module Discovery
 
     record Result, outcome : Outcome, shard : Shard? = nil, detail : String? = nil
 
+    # `name` and `description` come from the manifest the crawler just read;
+    # everything else, including the star and fork counts, is whatever the
+    # host's enumeration handed back with the candidate. Repository search
+    # carries both counts, code search carries neither, and nil is passed
+    # through as nil rather than as zero: `upsert` leaves a stored count alone
+    # when the enumeration did not measure one, so the exhaustive sweep meeting
+    # a row this pass created does not blank its stars.
     def self.register(repository : DiscoveredRepository, name : String, description : String?) : Result
       identity = ShardIdentity.build(repository.host, repository.owner, repository.repo)
 
@@ -42,6 +49,8 @@ module Discovery
         name: name,
         description: description || repository.description,
         homepage_url: repository.homepage_url,
+        stars: repository.stars,
+        forks: repository.forks,
       )
 
       Result.new(existed ? Outcome::Updated : Outcome::Created, shard)

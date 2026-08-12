@@ -23,8 +23,18 @@ module Discovery
   # the process does not. Adding GITHUB_TOKEN is the whole switch, and no code
   # changes with it.
   module Sweep
-    MAX_PAGES_VARIABLE = "DISCOVERY_MAX_PAGES"
-    FRESH_VARIABLE     = "DISCOVERY_FRESH"
+    MAX_PAGES_VARIABLE        = "DISCOVERY_MAX_PAGES"
+    FRESH_VARIABLE            = "DISCOVERY_FRESH"
+    HIGH_VALUE_PAGES_VARIABLE = "DISCOVERY_HIGH_VALUE_PAGES"
+
+    # Which rate-limit bucket a page of the seeding pass comes out of. Measured
+    # live against an authenticated token: GET /search/repositories reports
+    # x-ratelimit-resource: search with a limit of 30 a minute, while
+    # GET /search/code, which the exhaustive sweep is obliged to use, reports
+    # code_search with a limit of 10. Naming the bucket in the Job's log is the
+    # difference between an operator reading the seed as "eating the crawl's
+    # search budget" and reading what is true.
+    SEARCH_LIMIT = "30 a minute search"
 
     # Pages per host per run when DISCOVERY_MAX_PAGES is unset.
     #
@@ -62,31 +72,59 @@ module Discovery
     end
 
     # How one run is bounded, and whether it honours the saved cursors.
-    record Options, max_pages : Int32, fresh : Bool do
+    #
+    # Two bounds, because the run has two shapes of work. `max_pages` bounds the
+    # exhaustive per-host sweep, which walks a size partition and must eventually
+    # cover it. `high_value_pages` bounds the star-ranked seeding pass, which
+    # walks a ranking that has 20 pages in total and then starts again. They are
+    # separate numbers because raising one to cover a host faster should not
+    # silently spend the other's share of the same core budget.
+    record Options,
+      max_pages : Int32,
+      fresh : Bool,
+      high_value_pages : Int32 = HighValueCrawler::DEFAULT_MAX_PAGES do
       def self.from_env : Options
-        parse(ENV[MAX_PAGES_VARIABLE]?, ENV[FRESH_VARIABLE]?)
+        parse(ENV[MAX_PAGES_VARIABLE]?, ENV[FRESH_VARIABLE]?, ENV[HIGH_VALUE_PAGES_VARIABLE]?)
       end
 
       # Split from `from_env` so the parsing rules can be exercised without a spec
       # mutating the process environment out from under every other spec.
-      def self.parse(max_pages : String?, fresh : String?) : Options
-        new(max_pages: parse_max_pages(max_pages), fresh: parse_fresh(fresh))
+      def self.parse(max_pages : String?, fresh : String?, high_value_pages : String? = nil) : Options
+        new(
+          max_pages: parse_max_pages(max_pages),
+          fresh: parse_fresh(fresh),
+          high_value_pages: parse_high_value_pages(high_value_pages),
+        )
       end
 
       private def self.parse_max_pages(raw : String?) : Int32
-        value = raw.try(&.strip).presence
-        return DEFAULT_MAX_PAGES unless value
-
-        pages = value.to_i?
-        return pages if pages && pages > 0
-
-        # Refused rather than defaulted. A typo in the Job's environment silently
-        # becoming the default bound is how an operator ends up certain they
-        # changed the budget and unable to see any effect.
-        raise ConfigurationError.new(
-          "#{MAX_PAGES_VARIABLE} must be a positive whole number of pages, got #{value.inspect}. " \
+        pages(raw) do |value|
+          "#{MAX_PAGES_VARIABLE} must be a positive whole number of pages, got #{value}. " \
           "It bounds one run; each host resumes from its saved cursor on the next one."
-        )
+        end || DEFAULT_MAX_PAGES
+      end
+
+      private def self.parse_high_value_pages(raw : String?) : Int32
+        pages(raw) do |value|
+          "#{HIGH_VALUE_PAGES_VARIABLE} must be a positive whole number of pages, got #{value}. " \
+          "It bounds the star-ranked seeding pass, which walks its own cursor through the " \
+          "ranking and is separate from the exhaustive per-host sweep."
+        end || HighValueCrawler::DEFAULT_MAX_PAGES
+      end
+
+      # A page count, or nil when the variable is unset so the caller's default
+      # applies. A variable that IS set and unusable is refused rather than
+      # defaulted: a typo in the Job's environment silently becoming the default
+      # bound is how an operator ends up certain they changed the budget and
+      # unable to see any effect.
+      private def self.pages(raw : String?, &complaint : String -> String) : Int32?
+        value = raw.try(&.strip).presence
+        return nil unless value
+
+        count = value.to_i?
+        return count if count && count > 0
+
+        raise ConfigurationError.new(complaint.call(value.inspect))
       end
 
       private def self.parse_fresh(raw : String?) : Bool
@@ -117,12 +155,23 @@ module Discovery
     # What one sweep did. Skips are carried alongside the reports rather than
     # folded into them, because there is no honest `CrawlReport` for a host that
     # was never asked anything.
+    #
+    # `seed` is the high-value pass and is deliberately not one of `reports`. It
+    # is a second enumeration of github.com rather than another host, so folding
+    # it in would make the registry look like it crawls five hosts and would put
+    # two rows called github.com in every summary.
     class Result
       getter reports : Array(CrawlReport)
       getter skips : Array(Skip)
       getter options : Options
+      getter seed : CrawlReport?
 
-      def initialize(@reports : Array(CrawlReport), @skips : Array(Skip), @options : Options)
+      def initialize(
+        @reports : Array(CrawlReport),
+        @skips : Array(Skip),
+        @options : Options,
+        @seed : CrawlReport? = nil,
+      )
       end
 
       # A host counts as failed when its sweep failed outright, and also when it
@@ -134,7 +183,16 @@ module Discovery
       # run that exits 0 through either of them has reported a clean sweep over
       # an access problem.
       def failures : Array(CrawlReport)
-        reports.select { |report| report.failed? || report.failed > 0 }
+        # The seed is held to the same standard as a host. It runs with the same
+        # credential against the same API, so a seed that failed outright, or
+        # that identified shards the registry then refused to store, is the same
+        # kind of problem and must not exit 0.
+        candidates = reports.dup
+        if pass = seed
+          candidates << pass
+        end
+
+        candidates.select { |report| report.failed? || report.failed > 0 }
       end
 
       # A sweep succeeded when every host it actually crawled came back without
@@ -158,9 +216,29 @@ module Discovery
       CrawlRunner.run(host, fresh: fresh, max_pages: max_pages)
     }
 
+    # Test seam for the high-value pass, separate from `runner` because it takes
+    # the whole options rather than a host. A spec that replaces `runner` MUST
+    # replace this too: the pass is credential-gated on github.com exactly as
+    # CrawlRunner is, so a spec that sets GITHUB_TOKEN and leaves this alone
+    # sends a real request to api.github.com with a fake token.
+    class_property seeder : Proc(Options, CrawlReport) = ->(options : Options) {
+      CrawlRunner.run_high_value(fresh: options.fresh, max_pages: options.high_value_pages)
+    }
+
+    # The high-value pass runs FIRST, and the order is the point of it.
+    #
+    # Both phases spend the same core budget on reading shard.yml files, so
+    # whichever runs second is the one that gets cut short when a run is
+    # throttled or the Job's timeout lands. Putting the star ranking first means
+    # a run that only half completes has still added the shards people have
+    # heard of. The exhaustive sweep loses nothing by going second: its cursor
+    # advances monotonically, so a page it does not reach this run is the page
+    # the next run starts on.
     def self.run(options : Options, hosts : Array(String) = CrawlRunner::HOSTS) : Result
       reports = [] of CrawlReport
       skips = [] of Skip
+
+      seed = seed_high_value(options, hosts)
 
       hosts.each do |host|
         unless Credentials.configured?(host)
@@ -173,7 +251,32 @@ module Discovery
         reports << sweep_host(host, options)
       end
 
-      Result.new(reports, skips, options)
+      Result.new(reports, skips, options, seed)
+    end
+
+    # Nil when this run was never going to reach github.com: the pass reads
+    # GitHub's repository search with GitHub's credential, so a run without that
+    # host or without that token has nothing to seed from. The host's own skip
+    # line already names the variable, so there is nothing further to say here.
+    private def self.seed_high_value(options : Options, hosts : Array(String)) : CrawlReport?
+      return nil unless hosts.includes?(HighValueCrawler::HOST)
+      return nil unless Credentials.configured?(HighValueCrawler::HOST)
+
+      Log.info do
+        "Discovery seeding from GitHub's star ranking, bounded to #{options.high_value_pages} " \
+        "pages of 100#{options.fresh ? ", from the top" : ""}"
+      end
+      @@seeder.call(options)
+    rescue ex : Exception
+      # Same reasoning as a host that raised: the seed is one phase, and losing
+      # the sweep behind it, plus the printed summary, would be worse than a
+      # recorded failure.
+      Log.error(exception: ex) { "Discovery high-value seeding raised" }
+      report = CrawlReport.new(HighValueCrawler::STATE_KEY)
+      report.status = CrawlState::Status::FAILED
+      report.stop_reason = CrawlState::StopReason::ERROR
+      report.error = ex.message.presence || ex.class.name
+      report
     end
 
     # Every variable a host needs, not only its token. Bitbucket authenticates
@@ -214,6 +317,7 @@ module Discovery
       io.puts "  Cursors: #{result.options.fresh ? "discarded, every host swept from the beginning" : "kept, every host resumes where its last run stopped"}."
       io.puts
 
+      render_seed(result, io)
       render_crawled(result, io)
       render_skipped(result, io)
 
@@ -221,6 +325,47 @@ module Discovery
       io.puts CrawlRunner.coverage_summary
       io.puts
       io.puts verdict(result)
+    end
+
+    # The seeding pass, printed above the hosts because it ran above them.
+    #
+    # It gets its own block rather than a line among the hosts because what it
+    # covers is a different claim: not "this much of github.com", but "the top
+    # of the star ranking, which is where the shards anyone has heard of are".
+    private def self.render_seed(result : Result, io : IO) : Nil
+      seed = result.seed
+      return unless seed
+
+      io.puts "High-value seed (before the exhaustive sweep):"
+      io.puts "  #{seed}"
+      io.puts "  Seeds: #{HighValueCrawler::SEEDS.join(", ")} on GitHub's repository search, ranked by stars."
+      io.puts "  Bound: #{result.options.high_value_pages} pages of #{HighValueCrawler::PER_PAGE} this run, " \
+              "one search request each from the #{SEARCH_LIMIT} bucket, plus one contents request per candidate."
+      io.puts "  Cursor: its own crawl_states row, #{HighValueCrawler::STATE_KEY}, so the exhaustive sweep's position is untouched."
+      if note = seed_note(seed)
+        io.puts "  #{note}"
+      end
+      io.puts
+    end
+
+    private def self.seed_note(report : CrawlReport) : String?
+      return "Failed, so this run failed. Nothing was seeded from the ranking." if report.failed?
+
+      if (count = report.failed) > 0
+        return "#{count} #{count == 1 ? "thing" : "things"} the ranking turned up could not be recorded, so this run failed."
+      end
+
+      case report.stop_reason
+      when CrawlState::StopReason::COMPLETED_RANK_CAPPED
+        "Walked every page both seeds will return, which is their top #{HighValueCrawler::RESULT_CAP} and not the host. " \
+        "The cursor is cleared, so the next run starts the ranking again and picks up whatever has since climbed into it."
+      when CrawlState::StopReason::INTERRUPTED
+        "Stopped at this run's page budget, cursor saved. The next run continues down the ranking."
+      when CrawlState::StopReason::RATE_LIMITED
+        "Paused by GitHub's rate limit, cursor saved. The next run continues down the ranking."
+      when CrawlState::StopReason::TOKEN_MISSING
+        "Refused to start without GitHub's token, so nothing was seeded."
+      end
     end
 
     private def self.render_crawled(result : Result, io : IO) : Nil

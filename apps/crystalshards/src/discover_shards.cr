@@ -1,11 +1,13 @@
 # Discovery and indexing entrypoint for the discover-shards Cloud Run Job.
 #
-# Two phases, one process, one schedule.
+# Three phases, one process, one schedule.
 #
-#   1. sweep    find repositories nobody has told us about
-#   2. index    turn the ones already found into pages with content
+#   1. seed     read the top of GitHub's star ranking, so the shards people have
+#               heard of are in the registry rather than behind the long tail
+#   2. sweep    find repositories nobody has told us about, exhaustively
+#   3. index    turn the ones already found into pages with content
 #
-# Nothing else in this repo invokes either. The registry indexes a shard when
+# Nothing else in this repo invokes any of them. The registry indexes a shard when
 # somebody posts it, uploads it, or pushes to a repository we already hold a
 # webhook for; none of those find a shard nobody has told us about, and none of
 # them fill in a shard discovery found six months ago. This binary is what does,
@@ -15,6 +17,13 @@
 # Jobs they would each hold half a budget they cannot see the other spending, and
 # the crawl would starve the indexer on exactly the runs where discovery found
 # the most to index.
+#
+# Seeding goes first for the same reason. All three phases read shard.yml files
+# out of the same core budget, so whichever runs last is the one a throttled run
+# cuts short, and a half-finished run that has seeded the ranking is worth more
+# than one that has read another hundred small manifests. The exhaustive sweep
+# loses nothing by going second: its cursor advances monotonically, so a page it
+# does not reach this run is the page the next run starts on.
 #
 # It is a Job rather than an HTTP route because a sweep of thousands of
 # repositories is a task, not a request: it runs for minutes, it needs no caller
@@ -80,16 +89,18 @@ result = Discovery::Sweep.run(options)
 Discovery::Sweep.render(result, STDOUT)
 STDOUT.puts
 
-# Indexing runs even when the crawl failed. The two phases fail for unrelated
-# reasons: a host refusing a search says nothing about whether the 217 shards
-# already in the table can be read, and skipping the second phase because the
-# first had a bad night is how the registry stays empty through an outage that
-# never touched it.
+# Indexing runs even when the crawl failed. Discovery and indexing fail for
+# unrelated reasons: a host refusing a search says nothing about whether the 217
+# shards already in the table can be read, and skipping the last phase because
+# the ones before it had a bad night is how the registry stays empty through an
+# outage that never touched it.
 index_report = IndexSweep.run(index_options)
 IndexSweep.render(index_report, STDOUT)
 STDOUT.flush
 
-# Either phase failing fails the Job. A run that crawled nothing and a run that
+# Either half failing fails the Job. `Discovery::Sweep` already folds its own two
+# phases into one exit code, so a seeding pass that could not run fails the Job
+# through the same path a host does. A run that crawled nothing and a run that
 # indexed nothing are both worth a red mark, and collapsing them to the worse of
 # the two is what lets one alert cover the Job rather than one per phase.
 exit [result.exit_code, index_report.exit_code].max

@@ -128,6 +128,41 @@ variable "discovery_max_pages" {
   }
 }
 
+variable "discovery_high_value_pages" {
+  description = <<-DESC
+    How many pages of GitHub's star-ranked repository search one scheduled run
+    seeds from before the exhaustive sweep starts. Published to the Job as
+    DISCOVERY_HIGH_VALUE_PAGES.
+
+    This is the pass that puts the shards people have heard of in the registry
+    early. The exhaustive sweep partitions code search on shard.yml file size
+    ascending, which is the only quantity that endpoint will partition on, and
+    that order reaches trivial repositories first: measured on github.com, about
+    3000 manifests are smaller than kemal's 363 byte one. Repository search
+    accepts sort=stars, which code search does not, so a small slice of it read
+    first fixes the order without touching the sweep that guarantees coverage.
+
+    Three pages is 300 candidates, and the binding cost is core rather than
+    search. A page is one search request plus up to 100 contents requests to
+    confirm a root shard.yml, so three pages is up to 300 core requests against
+    the 5000 an hour a token gets, on top of about 1000 for the sweep and 900
+    for indexing. The three search requests are not part of that figure and must
+    not be added to it: measured live, GET /search/repositories reports
+    x-ratelimit-resource: search at 30 a minute, a different bucket from both
+    core and the 10 a minute code_search the exhaustive sweep uses.
+
+    Three is also enough to matter on the first run. Every Crystal shard with
+    more than 500 stars is inside the first three pages of language:Crystal.
+  DESC
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.discovery_high_value_pages >= 1 && var.discovery_high_value_pages <= 20
+    error_message = "discovery_high_value_pages must be between 1 and 20. Below 1 the pass would read no pages and report success; above 20 there is nothing left to read, because both seeds together are 20 pages of GitHub's 1000 result cap and the pass starts the ranking again rather than going deeper."
+  }
+}
+
 variable "index_max_shards" {
   description = <<-DESC
     How many shards one scheduled run indexes after the crawl finishes.

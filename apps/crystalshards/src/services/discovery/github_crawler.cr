@@ -1,6 +1,6 @@
 require "json"
-require "base64"
 require "./base_crawler"
+require "./github_api"
 
 module Discovery
   # Finds shards on GitHub by looking for the file that makes a repository a
@@ -19,7 +19,15 @@ module Discovery
   # that silently truncates. The sweep therefore partitions the search by file
   # size, which is disjoint and total (every shard.yml has exactly one size), and
   # splits any window whose total_count exceeds the cap until each window fits.
+  #
+  # That partition is exhaustive and it is also ordered by manifest size
+  # ascending, which reaches the smallest projects first and the well known ones
+  # last. HighValueCrawler is the answer to that, not a change here: it reads
+  # repository search ranked by stars, which code search cannot sort by, keeps
+  # its own cursor, and leaves this sweep's monotonic walk alone.
   class GithubCrawler < BaseCrawler
+    include GithubApi
+
     HOST = "github.com"
 
     # GitHub returns at most this many results per query however many matched.
@@ -38,19 +46,6 @@ module Discovery
       max_pages : Int32? = nil,
     )
       super(host: HOST, base_url: base_url, token: token, sleeper: sleeper, max_pages: max_pages)
-    end
-
-    def default_base_url : String
-      "https://api.github.com"
-    end
-
-    def auth_headers(token : String?) : HTTP::Headers
-      headers = HTTP::Headers{
-        "Accept"               => "application/vnd.github+json",
-        "X-GitHub-Api-Version" => "2022-11-28",
-      }
-      headers["Authorization"] = "Bearer #{token}" if token
-      headers
     end
 
     # Whether this sweep partitioned the host finely enough that every root
@@ -116,26 +111,6 @@ module Discovery
                       end
 
       CrawlPage.new(repositories, next_position.to_cursor)
-    end
-
-    # Code search already told us there is a shard.yml at the root, but it is a
-    # search index and can be stale, and the contents are needed anyway for the
-    # shard's name. This is the authoritative check.
-    def fetch_shard_yml(repository : DiscoveredRepository) : String?
-      path = "/repos/#{repository.owner}/#{repository.repo}/contents/shard.yml"
-      payload = client.get_json(path)
-
-      return nil unless payload["type"]?.try(&.as_s?) == "file"
-
-      encoded = payload["content"]?.try(&.as_s?)
-      return nil unless encoded
-
-      String.new(Base64.decode(encoded.gsub(/\s/, "")))
-    rescue HostClient::NotFound
-      nil
-    rescue ex : Base64::Error
-      Log.info { "#{repository.slug} shard.yml did not decode: #{ex.message}" }
-      nil
     end
 
     # GitHub's code search rejects a query made only of qualifiers with 422, so

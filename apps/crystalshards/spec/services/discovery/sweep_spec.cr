@@ -42,11 +42,26 @@ end
 
 private alias SweptCall = {String, Bool, Int32?}
 
+private def default_seeder : Proc(Discovery::Sweep::Options, Discovery::CrawlReport)
+  ->(options : Discovery::Sweep::Options) do
+    Discovery::CrawlRunner.run_high_value(fresh: options.fresh, max_pages: options.high_value_pages)
+  end
+end
+
 # Replaces the per-host sweep with `answer` and records every call in `swept`, so a
 # spec can assert what the driver asked for as well as what it did with the reply.
+#
+# The high-value seeding pass is swapped at the same time, and it has to be. It is
+# gated on github.com's credential exactly as CrawlRunner is, so a spec that sets
+# GITHUB_TOKEN and leaves the seeder alone sends a real request to api.github.com
+# with a fake token. `seed` records the options it was handed and answers with
+# `seeded`, which defaults to nothing so the existing expectations about `reports`
+# and `failures` describe hosts only.
 private def with_runner(
   answer : Proc(String, Discovery::CrawlReport),
   swept : Array(SweptCall) = [] of SweptCall,
+  seed : Array(Discovery::Sweep::Options) = [] of Discovery::Sweep::Options,
+  seeded : Discovery::CrawlReport? = nil,
   &
 )
   Discovery::Sweep.runner = ->(host : String, fresh : Bool, max_pages : Int32?) do
@@ -54,10 +69,20 @@ private def with_runner(
     answer.call(host)
   end
 
+  Discovery::Sweep.seeder = ->(options : Discovery::Sweep::Options) do
+    seed << options
+    seeded || report_for(
+      Discovery::HighValueCrawler::STATE_KEY,
+      status: CrawlState::Status::PARTIAL,
+      stop_reason: CrawlState::StopReason::INTERRUPTED,
+    )
+  end
+
   begin
     yield
   ensure
     Discovery::Sweep.runner = default_runner
+    Discovery::Sweep.seeder = default_seeder
   end
 end
 
@@ -385,9 +410,26 @@ describe Discovery::Sweep do
       end
     end
 
+    it "bounds the seeding pass separately from the per-host sweep" do
+      # Two bounds because the run has two shapes of work drawing on one core
+      # budget. Raising the per-host bound to finish a host sooner must not
+      # silently spend the seeding pass's share of the same 5000 an hour.
+      parsed = Discovery::Sweep::Options.parse("20", nil, "5")
+      parsed.max_pages.should eq(20)
+      parsed.high_value_pages.should eq(5)
+
+      Discovery::Sweep::Options.parse(nil, nil, nil).high_value_pages
+        .should eq(Discovery::HighValueCrawler::DEFAULT_MAX_PAGES)
+
+      expect_raises(Discovery::Sweep::ConfigurationError, /DISCOVERY_HIGH_VALUE_PAGES/) do
+        Discovery::Sweep::Options.parse(nil, nil, "0")
+      end
+    end
+
     it "names the variables it reads, so terraform and this file cannot drift" do
       Discovery::Sweep::MAX_PAGES_VARIABLE.should eq("DISCOVERY_MAX_PAGES")
       Discovery::Sweep::FRESH_VARIABLE.should eq("DISCOVERY_FRESH")
+      Discovery::Sweep::HIGH_VALUE_PAGES_VARIABLE.should eq("DISCOVERY_HIGH_VALUE_PAGES")
     end
   end
 
@@ -446,6 +488,162 @@ describe Discovery::Sweep do
       end
 
       rendered(result).should contain("Zero found here means zero places looked, not an empty host.")
+    end
+  end
+
+  describe "the high-value seeding pass" do
+    it "runs before the hosts, so a run cut short has still seeded the ranking" do
+      order = [] of String
+      swept = [] of SweptCall
+      seed = [] of Discovery::Sweep::Options
+
+      recording = ->(host : String) do
+        order << host
+        report_for(host)
+      end
+
+      with_tokens({"GITHUB_TOKEN" => "gh"}) do
+        Discovery::Sweep.runner = ->(host : String, _fresh : Bool, _max_pages : Int32?) do
+          swept << {host, false, nil}
+          recording.call(host)
+        end
+        Discovery::Sweep.seeder = ->(options : Discovery::Sweep::Options) do
+          order << "seed"
+          seed << options
+          report_for(Discovery::HighValueCrawler::STATE_KEY, status: CrawlState::Status::PARTIAL,
+            stop_reason: CrawlState::StopReason::INTERRUPTED)
+        end
+
+        begin
+          Discovery::Sweep.run(options)
+        ensure
+          Discovery::Sweep.runner = default_runner
+          Discovery::Sweep.seeder = default_seeder
+        end
+      end
+
+      # Both phases spend the same core budget reading shard.yml files, so
+      # whichever goes second is the one a throttled run cuts short. The
+      # exhaustive sweep loses nothing by being that one: its cursor advances,
+      # so a page it does not reach is where the next run starts.
+      order.should eq(["seed", "github.com"])
+      seed.map(&.high_value_pages).should eq([Discovery::HighValueCrawler::DEFAULT_MAX_PAGES])
+    end
+
+    it "is not one of the hosts, however the summary is read" do
+      seed = [] of Discovery::Sweep::Options
+
+      result = with_tokens({"GITHUB_TOKEN" => "gh"}) do
+        with_runner(completing, seed: seed) { Discovery::Sweep.run(options) }
+      end
+
+      # A second enumeration of github.com, not a fifth host. Folding it into
+      # reports would put two rows called github.com in every summary and make
+      # the registry look like it crawls somewhere it does not.
+      seed.size.should eq(1)
+      result.reports.map(&.host).should eq(["github.com"])
+      result.seed.not_nil!.host.should eq("github.com/high-value")
+    end
+
+    it "does not seed a run that was never going to reach github" do
+      seed = [] of Discovery::Sweep::Options
+
+      with_tokens({"BITBUCKET_USERNAME" => "account", "BITBUCKET_APP_PASSWORD" => "secret"}) do
+        with_runner(completing, seed: seed) { Discovery::Sweep.run(options, hosts: ["bitbucket.org"]) }
+      end
+
+      # The pass reads GitHub's repository search with GitHub's credential. A
+      # run that excludes the host has nothing to seed from, and one without the
+      # token is already told so by the host's own skip line.
+      seed.should be_empty
+
+      without_tokens do
+        with_runner(completing, seed: seed) { Discovery::Sweep.run(options) }
+      end
+
+      seed.should be_empty
+    end
+
+    it "hands the operator the bound, the cursor and the bucket it spends" do
+      result = with_tokens({"GITHUB_TOKEN" => "gh"}) do
+        with_runner(completing) { Discovery::Sweep.run(options) }
+      end
+
+      output = rendered(result)
+      output.should contain("High-value seed (before the exhaustive sweep):")
+      output.should contain("language:Crystal, topic:crystal")
+      output.should contain("ranked by stars")
+      # Which budget this costs. /search/repositories is the 30 a minute search
+      # bucket and /search/code is the 10 a minute code_search one, so the seed
+      # is not competing with the exhaustive sweep for search quota.
+      output.should contain("30 a minute search")
+      output.should contain("github.com/high-value")
+
+      # And the seed is printed above the hosts, in the order they ran.
+      output.index("High-value seed").not_nil!
+        .should be < output.index("Crawled:").not_nil!
+    end
+
+    it "says the ranking was walked to its cap, without calling it a whole host" do
+      capped = report_for(
+        Discovery::HighValueCrawler::STATE_KEY,
+        status: CrawlState::Status::PARTIAL,
+        stop_reason: CrawlState::StopReason::COMPLETED_RANK_CAPPED,
+      )
+
+      result = with_tokens({"GITHUB_TOKEN" => "gh"}) do
+        with_runner(completing, seeded: capped) { Discovery::Sweep.run(options) }
+      end
+
+      rendered(result).should contain("which is their top 1000 and not the host")
+      result.exit_code.should eq(0)
+    end
+
+    it "fails the run when the seeding pass fails" do
+      failing = report_for(
+        Discovery::HighValueCrawler::STATE_KEY,
+        status: CrawlState::Status::FAILED,
+        stop_reason: CrawlState::StopReason::ERROR,
+        error: "502 from the search API",
+      )
+
+      result = with_tokens({"GITHUB_TOKEN" => "gh"}) do
+        with_runner(completing, seeded: failing) { Discovery::Sweep.run(options) }
+      end
+
+      # Same credential, same API, same core budget as a host. A seed that could
+      # not run is a phase of this Job that did not do its job.
+      result.ok?.should be_false
+      result.exit_code.should eq(1)
+      result.failures.map(&.host).should eq(["github.com/high-value"])
+      rendered(result).should contain("Nothing was seeded from the ranking.")
+    end
+
+    it "keeps sweeping the hosts after a seeding pass that raised" do
+      swept = [] of SweptCall
+
+      result = with_tokens({"GITHUB_TOKEN" => "gh"}) do
+        Discovery::Sweep.runner = ->(host : String, fresh : Bool, max_pages : Int32?) do
+          swept << {host, fresh, max_pages}
+          report_for(host)
+        end
+        Discovery::Sweep.seeder = ->(_options : Discovery::Sweep::Options) do
+          raise "connection reset"
+        end
+
+        begin
+          Discovery::Sweep.run(options)
+        ensure
+          Discovery::Sweep.runner = default_runner
+          Discovery::Sweep.seeder = default_seeder
+        end
+      end
+
+      # Letting it out would lose every host behind it and the printed summary
+      # with them, which is the same reasoning that catches a host that raises.
+      swept.map(&.[0]).should eq(["github.com"])
+      result.exit_code.should eq(1)
+      rendered(result).should contain("connection reset")
     end
   end
 end
