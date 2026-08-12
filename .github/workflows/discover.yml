@@ -1,0 +1,137 @@
+# On-demand shard discovery. MANUAL ONLY.
+#
+# The recurring schedule lives in Google Cloud Scheduler, in
+# terraform/modules/scheduler, and runs the discover-shards Cloud Run Job every
+# six hours. That is the cron. It is not here and must not move here: the
+# scheduler sits next to the thing it runs, inside the same project and IAM
+# boundary, and does not depend on GitHub being reachable or on a workflow token
+# to keep the registry current.
+#
+# **Never add a `schedule:` trigger to this file.** A second cron would run
+# sweeps GitHub cannot see from GCP and GCP cannot see from GitHub, against one
+# shared cursor.
+#
+# This exists for the first run after enabling a host, and for the times someone
+# needs an answer now rather than at the next tick.
+#
+# Cloud Run Jobs do not serialise executions, so two sweeps started close
+# together run against the same cursor and each undoes the other's progress,
+# silently. This job refuses to start one while another is in flight.
+name: Run Shard Discovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_pages:
+        description: "Pages per host for this run. Blank uses the Job's configured bound."
+        required: false
+        type: string
+      fresh:
+        description: "Ignore the saved cursor and restart every host from the beginning."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shard-discovery
+  cancel-in-progress: false
+
+env:
+  GCP_REGION: us-central1
+  JOB_NAME: discover-shards
+
+jobs:
+  discover:
+    name: Sweep the git hosts
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Refuse to race a sweep already running
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+
+          # Two executions on one cursor is the failure this guards. Each writes
+          # its position after every page, so they interleave and the frontier
+          # goes backwards while both runs report success.
+          active="$(gcloud run jobs executions list \
+            --job "$JOB_NAME" --region "$GCP_REGION" --project "$PROJECT_ID" \
+            --format='value(name,status.runningCount)' 2>/dev/null \
+            | awk '$2 != "" && $2 != "0" { print $1 }')"
+
+          if [ -n "$active" ]; then
+            echo "A sweep is already running:" >&2
+            printf '  %s\n' $active >&2
+            echo "Refusing to start a second against the same cursor." >&2
+            exit 1
+          fi
+          echo "No sweep in flight."
+
+      - name: Run the sweep
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          MAX_PAGES: ${{ inputs.max_pages }}
+          FRESH: ${{ inputs.fresh }}
+        run: |
+          set -euo pipefail
+
+          envs=()
+          [ -n "${MAX_PAGES}" ] && envs+=("DISCOVERY_MAX_PAGES=${MAX_PAGES}")
+          [ "${FRESH}" = "true" ] && envs+=("DISCOVERY_FRESH=true")
+
+          overrides=()
+          if [ "${#envs[@]}" -gt 0 ]; then
+            overrides=(--update-env-vars "$(IFS=,; echo "${envs[*]}")")
+            echo "Overrides for this run only: ${envs[*]}"
+          fi
+
+          # --wait blocks until the execution finishes and returns its exit code,
+          # so a failed sweep fails this workflow rather than reporting a
+          # successful dispatch of something that then died.
+          gcloud run jobs execute "$JOB_NAME" \
+            --region "$GCP_REGION" --project "$PROJECT_ID" \
+            --wait ${overrides[@]+"${overrides[@]}"}
+
+      - name: What the sweep found
+        if: always()
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set -uo pipefail
+
+          execution="$(gcloud run jobs executions list \
+            --job "$JOB_NAME" --region "$GCP_REGION" --project "$PROJECT_ID" \
+            --limit=1 --format='value(name)' --sort-by=~metadata.creationTimestamp)"
+
+          if [ -z "$execution" ]; then
+            echo "No execution to read. The run never started."
+            exit 0
+          fi
+
+          echo "::group::Sweep log (${execution})"
+          # The Job prints the coverage summary, per host counts and stop
+          # reasons. That is the operator-facing answer to "what did it do", so
+          # it is surfaced here rather than left in Cloud Logging.
+          gcloud logging read \
+            "resource.type=cloud_run_job AND labels.\"run.googleapis.com/execution_name\"=\"${execution}\"" \
+            --project "$PROJECT_ID" --limit=300 --format='value(textPayload)' \
+            --order=asc 2>/dev/null || echo "(no entries yet; Cloud Logging lags a few seconds)"
+          echo "::endgroup::"
+
+          echo "Reload https://crystalshards.org/shards to see what landed."
