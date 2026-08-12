@@ -741,3 +741,183 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   .job-ad { padding: 1rem 1.1rem 1.15rem; }
   .job-ad-list { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+/* ============================================================================
+   Shard page: version picker, manifest, notices
+
+   The detail page has to make emptiness legible. Most of this registry is
+   minimal repositories, so "no tags", "no README", "no manifest yet" are the
+   normal states and each one is a rendered sentence rather than a gap. The
+   rules below are therefore mostly about giving those sentences a shape that
+   reads as deliberate.
+
+   Palette is the existing tokens, unchanged. Every surface keeps the one cut
+   corner. Icons are Font Awesome glyphs, decorative and aria-hidden, with the
+   meaning always carried by adjacent text.
+   ========================================================================= */
+
+/* The repository a shard is, under its name. Mono because it is an
+   identifier, not prose, and two shards called "router" are told apart by
+   exactly this line. */
+.shard-identity {
+  margin: 0.45rem 0 0;
+  font: 400 0.82rem/1.4 var(--mono);
+  color: var(--ink-faint);
+  word-break: break-all;
+}
+
+.stat-item { display: inline-flex; align-items: baseline; gap: 0.3rem; }
+.stat-item strong { font-weight: 600; color: var(--ink); }
+
+/* ---- version picker ----------------------------------------------------- */
+
+/* A disclosure, not a select: the options are links, so every release has its
+   own URL and the control works with no script at all. */
+.version-picker { position: relative; }
+
+.version-picker-summary {
+  --facet: 10px;
+  display: inline-flex; align-items: center; gap: 0.6rem;
+  min-height: var(--tap); padding: 0.35rem 0.7rem;
+  border: 1px solid var(--edge-strong);
+  background: var(--surface);
+  cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+}
+/* The default triangle is replaced by the caret below, which can be positioned
+   and rotated. Both vendor spellings, or Safari keeps drawing its own. */
+.version-picker-summary { list-style: none; }
+.version-picker-summary::-webkit-details-marker { display: none; }
+.version-picker-summary::marker { content: ""; }
+.version-picker-summary:hover { border-color: var(--beryl); }
+
+.version-picker-current { font: 500 0.95rem/1 var(--mono); color: var(--ink); }
+.version-picker-count { font: 400 0.75rem/1 var(--mono); color: var(--ink-muted); }
+.version-picker-caret { font-size: 0.7rem; color: var(--ink-muted); transition: transform 120ms ease; }
+.version-picker[open] .version-picker-caret { transform: rotate(180deg); }
+
+/* Overlaid rather than inline: opening the list must not shove the page
+   contents down, or the reader loses their place every time they check what
+   versions exist. Capped and scrollable because a mature shard has hundreds. */
+.version-picker-list {
+  --facet: 12px;
+  position: absolute; z-index: 20;
+  top: calc(100% + 0.35rem); left: 0;
+  min-width: 17rem; max-width: min(26rem, 90vw);
+  max-height: 22rem; overflow-y: auto;
+  margin: 0; padding: 0; list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--edge-strong);
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+}
+
+.version-picker-item { border-bottom: 1px solid var(--edge); }
+.version-picker-item:last-child { border-bottom: 0; }
+
+.version-picker-option {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.45rem;
+  min-height: var(--tap); padding: 0.5rem 0.8rem;
+  font: 400 0.85rem/1.4 var(--sans);
+  color: var(--ink); text-decoration: none;
+}
+a.version-picker-option:hover { background: var(--surface-sunk); color: var(--beryl); }
+
+/* The row already on screen, and any row on a shard we could never identify.
+   Not a link, so it gets the muted treatment that says so without needing a
+   label to explain it. */
+.version-picker-option-static { color: var(--ink-muted); cursor: default; }
+.version-picker-item[aria-current="true"] {
+  background: var(--beryl-wash);
+  border-left: 3px solid var(--beryl);
+}
+
+.version-picker-label { font: 500 0.85rem/1.4 var(--mono); }
+
+/* Stands in for the picker when there is nothing to pick. Same size and
+   position, so the header does not reflow between a shard with releases and
+   one without. */
+.version-pill {
+  --facet: 10px;
+  display: inline-flex; align-items: center;
+  min-height: var(--tap); padding: 0.35rem 0.7rem;
+  font: 400 0.8rem/1 var(--mono);
+  border: 1px dashed var(--edge-strong);
+  color: var(--ink-muted); background: var(--surface-sunk);
+}
+
+.badge-latest { color: var(--beryl); background: var(--beryl-wash); border: 1px solid var(--beryl); }
+.badge-yanked { color: var(--danger); background: var(--surface-sunk); border: 1px solid var(--danger); }
+.badge-unindexed { color: var(--ink-muted); background: var(--surface-sunk); border: 1px dashed var(--edge-strong); }
+
+/* ---- notices ------------------------------------------------------------ */
+
+/* What is wrong or missing, said before the reader scrolls looking for it.
+   The rule down the left is the whole treatment: no tinted panel, because a
+   sparse shard is not an error and must not be dressed as one. */
+.shard-notice {
+  display: flex; align-items: flex-start; gap: 0.7rem;
+  padding: 0.85rem 1rem;
+  margin: 0 0 var(--gap);
+  background: var(--surface-sunk);
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--edge-strong);
+  font-size: 0.92rem;
+}
+.shard-notice p { margin: 0; }
+.shard-notice-icon { margin-top: 0.2rem; color: var(--ink-muted); }
+.shard-notice-info { border-left-color: var(--beryl); }
+.shard-notice-info .shard-notice-icon { color: var(--beryl); }
+.shard-notice-warn { border-left-color: var(--warn); }
+.shard-notice-warn .shard-notice-icon { color: var(--warn); }
+
+/* ---- manifest and metadata --------------------------------------------- */
+
+.shard-subhead {
+  font: 500 0.72rem/1 var(--mono);
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 1.4rem 0 0.5rem;
+}
+.shard-subhead:first-of-type { margin-top: 0.35rem; }
+
+/* Label and value, side by side while there is room to read them that way. */
+.manifest-facts, .meta-facts {
+  display: grid; grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+  gap: 0.4rem 1rem;
+  margin: 0;
+}
+.manifest-facts dt, .meta-facts dt {
+  font: 500 0.72rem/1.6 var(--mono);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.manifest-facts dd, .meta-facts dd { margin: 0; min-width: 0; word-break: break-word; }
+.meta-facts { gap: 0.3rem 0.8rem; font-size: 0.9rem; }
+
+.manifest-facts code, .meta-facts code {
+  font: 400 0.82rem/1.5 var(--mono);
+  background: var(--surface-sunk); border: 1px solid var(--edge);
+  padding: 0.05rem 0.35rem;
+}
+
+.manifest-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.25rem; }
+
+/* ---- dependency rows --------------------------------------------------- */
+
+.dependency-requirement { font: 400 0.8rem/1 var(--mono); color: var(--ink-muted); }
+/* The source shorthand, which is what says whether a requirement tracks a
+   release or somebody's branch. Pushed right so the names stay scannable. */
+.dependency-source {
+  margin-left: auto;
+  font: 400 0.75rem/1.4 var(--mono);
+  color: var(--ink-faint);
+  text-align: right; word-break: break-all;
+}
+
+@media (max-width: 40rem) {
+  .manifest-facts, .meta-facts { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+  .manifest-facts dt, .meta-facts dt { margin-top: 0.55rem; }
+  .version-picker-list { min-width: min(17rem, 88vw); }
+  .dependency-source { margin-left: 0; text-align: left; flex-basis: 100%; }
+}

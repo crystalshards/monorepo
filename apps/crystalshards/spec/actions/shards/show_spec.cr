@@ -18,10 +18,10 @@ describe Shards::Show do
       response.status.should eq(HTTP::Status::OK)
       response.body.should contain("awesome-shard")
       response.body.should contain("An awesome Crystal shard")
-      response.body.should contain("v1.2.3")
+      response.body.should contain("1.2.3")
       response.body.should contain("MIT")
       response.body.should contain("100")
-      response.body.should contain("5000")
+      response.body.should_not contain("5000")
     end
 
     it "displays installation instructions" do
@@ -116,9 +116,9 @@ describe Shards::Show do
       response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Metadata")
-      response.body.should contain("Created:")
-      response.body.should contain("Updated:")
-      response.body.should contain("Crystal:")
+      response.body.should contain("Created")
+      response.body.should contain("Updated")
+      response.body.should contain("Crystal")
       response.body.should contain("&gt;= 1.10.0")
       response.body.should contain("Repository")
       response.body.should contain(shard.canonical_slug.not_nil!)
@@ -181,14 +181,16 @@ describe Shards::Show do
       response.body.should contain("0.9.0")
     end
 
-    it "handles shard with no dependencies" do
+    it "states that an indexed version declares no dependencies" do
       shard = ShardFactory.create &.name("independent-shard")
       ShardVersionFactory.create &.shard_id(shard.id)
+        .metadata(JSON.parse(%({"name": "independent-shard"})))
 
       response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.status.should eq(HTTP::Status::OK)
-      response.body.should_not contain("Dependencies")
+      response.body.should contain("Dependencies")
+      response.body.should contain("This version declares no dependencies.")
     end
 
     it "handles shard with no versions gracefully" do
@@ -212,13 +214,18 @@ describe Shards::Show do
       end
     end
 
-    it "displays current version badge in header" do
+    # No "v" prefix. Half this registry has no tags at all and is recorded by
+    # tracking a default branch, so the selector has to be able to render
+    # "master" without calling it "vmaster".
+    it "names the selected version in the picker without a v prefix" do
       shard = ShardFactory.create &.name("badged-shard")
       ShardVersionFactory.create &.shard_id(shard.id).version("3.1.4")
 
       response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("v3.1.4")
+      response.body.should contain("version-picker-current")
+      response.body.should contain("3.1.4")
+      response.body.should_not contain("v3.1.4")
     end
 
     it "sorts versions by release date in descending order" do
@@ -239,10 +246,10 @@ describe Shards::Show do
       response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
       # Latest version should be shown in badge
-      response.body.should contain("v2.0.0")
+      response.body.should contain("version-picker-current\">2.0.0")
     end
 
-    it "limits version list to 10 versions and shows count of remaining" do
+    it "lists every version in the picker" do
       shard = ShardFactory.create &.name("many-versions-shard")
 
       15.times do |i|
@@ -253,7 +260,8 @@ describe Shards::Show do
 
       response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("and 5 more")
+      response.body.should contain("15 versions")
+      15.times { |i| response.body.should contain("1.0.#{i}") }
     end
   end
 end
