@@ -105,7 +105,20 @@ class Docs::VersionPage < MainLayout
 
   # A failed or pending build is the explanation for a thin page, so it is
   # stated rather than left for the reader to infer.
+  #
+  # Two things were wrong here. Nothing ever wrote doc_versions.build_status
+  # after registration, so it said "pending" for every version forever; that
+  # is fixed where the outcome is known, in the builder. And this ran even
+  # when the page had the document in hand, so a page rendering an API section
+  # sat under a badge insisting nothing had been built. That is what "still no
+  # docs" looked like: documentation on screen, over a badge calling it
+  # pending.
+  #
+  # If the document is here, the build plainly finished. Saying so needs no
+  # status at all.
   private def render_build_status
+    return if document
+
     para class: "docs-build-status" do
       text "Build: "
       strong doc_version.build_status.to_s
