@@ -55,12 +55,33 @@ describe "shard listing query budget" do
     queries.size.should eq(4)
   end
 
-  it "counts dependents for the whole page in a single statement" do
-    20.times { |i| ShardFactory.create &.name("shard-#{i}") }
+  # The listing sorts by popularity, and that ORDER BY is a correlated subquery
+  # over dependencies, so `dependent_shard_id` legitimately appears in the
+  # pagination count and in the page query as well as in the bulk count. Three
+  # mentions is correct; what must never happen is that number growing with the
+  # page, which is what an N+1 looks like from here.
+  #
+  # The bulk count is the one statement that aggregates, so it is identified by
+  # its GROUP BY rather than by a total that would change if the default sort
+  # ever did.
+  it "counts dependents for the whole page in a single aggregate, whatever the page size" do
+    2.times { |i| ShardFactory.create &.name("few-#{i}") }
+    few = QueryCounter.record { BrowserClient.exec(Shards::Index) }
 
-    queries = QueryCounter.record { BrowserClient.exec(Shards::Index) }
+    18.times { |i| ShardFactory.create &.name("many-#{i}") }
+    many = QueryCounter.record { BrowserClient.exec(Shards::Index) }
 
-    queries.count(&.includes?("dependent_shard_id")).should eq(1)
+    aggregate = ->(queries : Array(String)) do
+      queries.count { |q| q.includes?("dependent_shard_id") && q.includes?("GROUP BY") }
+    end
+
+    aggregate.call(few).should eq(1)
+    aggregate.call(many).should eq(1)
+
+    # And the total number of statements touching the edge table is flat too, so
+    # a per-card lookup added later cannot hide behind the aggregate assertion.
+    mentions = ->(queries : Array(String)) { queries.count(&.includes?("dependent_shard_id")) }
+    mentions.call(many).should eq(mentions.call(few))
   end
 
   it "keeps the homepage flat across both card sections" do
