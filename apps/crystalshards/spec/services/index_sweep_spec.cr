@@ -299,9 +299,20 @@ describe IndexSweep do
     it "names a raise with no message by its class rather than blank" do
       queued("acme/one")
 
-      report = with_indexer(->(shard : Shard) { raise IO::Error.new }) do
-        IndexSweep.run(options)
-      end
+      # The proc type is declared rather than inferred, and it has to be.
+      #
+      # A proc literal whose body always raises infers Proc(Shard, NoReturn).
+      # Passing that where Proc(Shard, ShardIndexer::Result) is expected and
+      # then calling it through with_indexer's closure miscompiles on Linux
+      # x86_64: the process dies with SIGSEGV inside print_backtrace, with no
+      # usable stack. It passes on macOS arm64, which is how it reached CI.
+      #
+      # Bisected in a linux/amd64 container on the CI compiler: every raising
+      # variant crashed while the proc type was inferred, and the same bodies
+      # passed with the type declared or with one branch returning a Result.
+      answer = Proc(Shard, ShardIndexer::Result).new { |_shard| raise IO::Error.new }
+
+      report = with_indexer(answer) { IndexSweep.run(options) }
 
       report.failures.first.should contain("IO::Error")
     end
