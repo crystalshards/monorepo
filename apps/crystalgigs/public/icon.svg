@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>CrystalGigs</title>
+  <!-- The mark is the header's `.logo::before`: the same six-point crystal
+       section, polygon(50% 0, 100% 27%, 100% 73%, 50% 100%, 0 73%, 0 27%), at
+       the same 1.32:1.55 proportion, in this app's accent token. It sits on a
+       paper-token plate cut with the facet bevel because the rasters derived
+       from this file cannot answer prefers-color-scheme, and dark ink on
+       transparent disappears in dark browser chrome. The vector can answer,
+       so it swaps both fills below. -->
+  <style>
+    .plate { fill: #f4f6f6; }
+    .mark  { fill: #7a5312; }
+    @media (prefers-color-scheme: dark) {
+      .plate { fill: #070a0b; }
+      .mark  { fill: #e0aa4e; }
+    }
+  </style>
+  <path class="plate" d="M0 0H50L64 14V64H0Z"/>
+  <path class="mark" d="M32 8L52.44 20.96L52.44 43.04L32 56L11.56 43.04L11.56 20.96Z"/>
+</svg>
