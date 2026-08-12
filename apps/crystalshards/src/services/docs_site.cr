@@ -39,11 +39,44 @@ module CrystalShards
       end
     end
 
+    # A value that is set but is not an origin.
+    #
+    # This exists because of a real production incident, not as defensive
+    # decoration. The terraform composed "https://${app_domains["crystaldocs"]}"
+    # while that map already held full origins, so the variable arrived as
+    # "https://https://crystaldocs.org" and every documentation link on the site
+    # was broken. Nothing failed: the app rendered, the links were clickable,
+    # and the only symptom was a doubled scheme in an href.
+    #
+    # A malformed origin cannot produce a working link, so it fails here rather
+    # than being interpolated into thousands of them.
+    class MalformedOrigin < Exception
+      def initialize(raw : String, reason : String)
+        super(
+          "#{ENV_KEY} is #{raw.inspect}, which #{reason}. It must be a scheme " \
+          "and host with no path, for example https://crystaldocs.org. Every " \
+          "documentation link this app renders is built from it."
+        )
+      end
+    end
+
     def self.origin : String
       raw = ENV[ENV_KEY]?
       raise MissingOrigin.new if raw.nil? || raw.blank?
 
-      raw.rstrip('/')
+      value = raw.strip.rstrip('/')
+      uri = URI.parse(value)
+
+      raise MalformedOrigin.new(value, "has no scheme") if uri.scheme.nil?
+      unless {"http", "https"}.includes?(uri.scheme)
+        raise MalformedOrigin.new(value, "is not http or https")
+      end
+      # A doubled scheme parses with the second one as the path, which is how
+      # https://https://crystaldocs.org reached production looking valid.
+      raise MalformedOrigin.new(value, "has no host") if uri.host.nil? || uri.host.try(&.blank?)
+      raise MalformedOrigin.new(value, "has a path") unless uri.path.blank?
+
+      value
     end
 
     # Repository keys are nested under a static segment so they cannot be

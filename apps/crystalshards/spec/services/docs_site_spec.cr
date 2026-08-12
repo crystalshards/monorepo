@@ -73,6 +73,40 @@ describe CrystalShards::DocsSite do
         end
       end
     end
+
+    # The production incident this validation exists for.
+    #
+    # terraform composed "https://${app_domains["crystaldocs"]}" while that map
+    # already held full origins, so the variable arrived doubled and every
+    # documentation link on crystalshards.org rendered as
+    # https://https://crystaldocs.org/docs/_/... Nothing raised, the page
+    # rendered, the link was clickable, and it went nowhere.
+    it "refuses a doubled scheme rather than rendering it into every link" do
+      with_origin("https://https://crystaldocs.org") do
+        message = expect_raises(CrystalShards::DocsSite::MalformedOrigin) do
+          CrystalShards::DocsSite.origin
+        end.message.to_s
+
+        message.should contain(CrystalShards::DocsSite::ENV_KEY)
+      end
+    end
+
+    it "refuses a bare hostname with no scheme" do
+      with_origin("crystaldocs.org") do
+        expect_raises(CrystalShards::DocsSite::MalformedOrigin) do
+          CrystalShards::DocsSite.origin
+        end
+      end
+    end
+
+    # A path would be silently prepended to every documentation URL.
+    it "refuses an origin carrying a path" do
+      with_origin("https://crystaldocs.org/docs") do
+        expect_raises(CrystalShards::DocsSite::MalformedOrigin) do
+          CrystalShards::DocsSite.origin
+        end
+      end
+    end
   end
 
   describe ".url_for?" do
