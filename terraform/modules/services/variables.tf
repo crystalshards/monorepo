@@ -71,6 +71,80 @@ variable "mail_enabled_apps" {
   default     = []
 }
 
+variable "discovery_enabled_hosts" {
+  description = <<-DESC
+    Git hosts whose discovery credentials CI has actually populated with a
+    version. The matching token environment variable is attached to the
+    discover-shards Job only for these, because an execution referencing a
+    versionless secret never starts.
+
+    Names only, never a token value. Intersected with
+    local.discovery_host_credentials, so a host the crawler does not support is
+    dropped rather than wired. Empty is the normal case until the tokens exist,
+    and it is a supported state rather than a broken one: the sweep runs, reports
+    every host as skipped naming the variable that would enable it, and exits
+    successfully having indexed nothing.
+
+    Use the host names Discovery::CrawlRunner::HOSTS uses, so "github.com" and
+    not "github". bitbucket.org needs BOTH halves of its credential populated
+    before it may appear here, because HTTP Basic carries the account as well as
+    the password.
+  DESC
+  type        = set(string)
+  default     = []
+}
+
+variable "discovery_max_pages" {
+  description = <<-DESC
+    How many pages of each host's search API one scheduled sweep walks before it
+    stops. Published to the Job as DISCOVERY_MAX_PAGES.
+
+    A sweep is bounded on purpose. The crawler persists its cursor after every
+    page, so a run that stops early is a run that resumes, and the next scheduled
+    execution continues from the same place. An unbounded sweep has the opposite
+    property: it runs until the Job timeout kills it, mid page, having spent the
+    host's whole rate limit budget in one window.
+
+    Ten pages is sized against the tightest limiter in the set. GitHub's code
+    search API, the only way to ask which repositories have a shard.yml at their
+    root, allows 10 authenticated requests per minute and caps any one query at
+    1000 results, so ten pages is both a full query's worth of results and about
+    a minute of search budget. The other three hosts are looser, and all four
+    back off on their own rate limit headers regardless of this number.
+  DESC
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.discovery_max_pages >= 1 && var.discovery_max_pages <= 50
+    error_message = "discovery_max_pages must be between 1 and 50. Below 1 the sweep would walk no pages at all and report success; above 50 a single run exceeds what GitHub's code search will return for one query (1000 results) and spends the rest of the run being throttled."
+  }
+}
+
+variable "discovery_timeout_seconds" {
+  description = <<-DESC
+    Ceiling on one scheduled sweep, as the discover-shards Job's task timeout.
+
+    Not the 600s Cloud Run defaults to. Four hosts are swept in sequence, and a
+    host that hits its rate limit sleeps for as long as its own headers ask,
+    which for GitHub's search API is up to a minute at a time. At 600s a sweep
+    that is merely being throttled gets killed for it.
+
+    Not unbounded either, and 3600s is the ceiling rather than a preference:
+    Cloud Scheduler's own attempt is irrelevant here because the :run call
+    returns as soon as the execution is created, but a sweep still has to finish
+    before the next one starts or two executions crawl the same cursor. At the
+    6 hour cadence in modules/scheduler that leaves a wide margin.
+  DESC
+  type        = number
+  default     = 1800
+
+  validation {
+    condition     = var.discovery_timeout_seconds >= 600 && var.discovery_timeout_seconds <= 3600
+    error_message = "discovery_timeout_seconds must be between 600 and 3600. Below 600 a sweep that is merely backing off on a host's rate limit headers is killed for it; above 3600 it exceeds the maximum task timeout Cloud Run accepts."
+  }
+}
+
 variable "docs_bucket_name" {
   description = "Built documentation bucket"
   type        = string

@@ -4,6 +4,7 @@ output "enabled_services" {
     google_project_service.artifactregistry.service,
     google_project_service.certificatemanager.service,
     google_project_service.cloudresourcemanager.service,
+    google_project_service.cloudscheduler.service,
     google_project_service.cloudtasks.service,
     google_project_service.compute.service,
     google_project_service.dns.service,

@@ -8,6 +8,17 @@ require "../services/discovery/crawl_runner"
 # max_pages continues where it stopped instead of starting the host over. That is
 # what makes a host with more shards than one job's worth of pages reachable at
 # all.
+#
+# This is NOT what runs on a schedule. The scheduled sweep is the discover-shards
+# Cloud Run Job, which runs the ./discover-shards binary built from
+# src/discover_shards.cr and drives every configured host through
+# `Discovery::Sweep`. Nothing enqueues this job today.
+#
+# It is kept because its contract is genuinely different from the Job's, in the
+# one place that matters: a refused sweep is not a failed job here, because a
+# queue would retry a missing token until it gave up, while the Job must exit
+# non-zero so an operator finds out. Anything that wants one host swept through
+# the normal dispatch path wants this; a schedule wants the Job.
 struct DiscoverShardsWorker < BaseJob
   # Test seam. The sweep is performed through this proc, which defaults to the
   # real runner. Specs replace it to observe the job without touching a host, and

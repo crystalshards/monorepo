@@ -158,6 +158,7 @@ jobs:
             sqladmin.googleapis.com \
             secretmanager.googleapis.com \
             cloudtasks.googleapis.com \
+            cloudscheduler.googleapis.com \
             compute.googleapis.com \
             --project "$PROJECT_ID"
           terraform init
@@ -321,14 +322,21 @@ jobs:
   # nothing else, specifically not the Cloud Run services, which the full apply in
   # the next job creates once the values are in place.
   #
-  # Four values, not one per service, and they are not all mandatory. crystalgigs
+  # Nine values, not one per service, and only two are mandatory. crystalgigs
   # needs its Stripe keys in order to serve, so those stop the deploy when absent.
-  # The two mail keys do not: a missing mail key disables mail on that one service
-  # and the deploy carries on, because serving is the primary function and mail is
-  # a feature. crystalshards and crystaldocs require no mail key at all, and
-  # docs-launcher runs the crystalshards image so it inherits that. Which mail
-  # secrets ended up populated is published as a job output and handed to the stack
-  # apply, so the mail env var is wired only where a version actually exists.
+  # Nothing else here does. The two mail keys disable mail on one service each and
+  # the deploy carries on, because serving is the primary function and mail is a
+  # feature. The five discovery credentials switch one git host on each, and a host
+  # without one is skipped and reported as skipped while the sweep still succeeds.
+  # crystalshards and crystaldocs require no mail key at all, and docs-launcher
+  # runs the crystalshards image so it inherits that.
+  #
+  # Which mail secrets and which hosts ended up populated are published as two job
+  # outputs and handed to the stack apply, so an env var is wired only where a
+  # version actually exists. With none of the five discovery credentials set the
+  # sweep runs, skips all four hosts naming the variable that would enable each,
+  # exits successfully, and the registry stays empty. Adding one repository secret
+  # is the entire act of turning a host on: no code change, no terraform change.
   # ---------------------------------------------------------------------------
   secrets:
     name: Populate Secret Manager versions
@@ -338,6 +346,7 @@ jobs:
     environment: production
     outputs:
       mail_enabled_apps: ${{ steps.populate.outputs.mail_enabled_apps }}
+      discovery_enabled_hosts: ${{ steps.populate.outputs.discovery_enabled_hosts }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -372,6 +381,7 @@ jobs:
             -target=module.services.google_secret_manager_secret.resend_key \
             -target=module.services.google_secret_manager_secret.stripe_secret_key \
             -target=module.services.google_secret_manager_secret.stripe_publishable_key \
+            -target=module.services.google_secret_manager_secret.discovery_credentials \
             -var="project_id=${PROJECT_ID}" \
             -var="region=${REGION}" \
             -var="image_tag=${IMAGE_TAG}"
@@ -385,15 +395,59 @@ jobs:
           CRYSTALBITS_RESEND_KEY: ${{ secrets.CRYSTALBITS_RESEND_KEY }}
           CRYSTALGIGS_STRIPE_SECRET_KEY: ${{ secrets.CRYSTALGIGS_STRIPE_SECRET_KEY }}
           CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY: ${{ secrets.CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY }}
+          # Discovery host credentials. One per git host, except Bitbucket, which
+          # authenticates over HTTP Basic and so needs the account as well as the
+          # app password.
+          #
+          # DISCOVERY_GITHUB_TOKEN, not GITHUB_TOKEN, and this is the one name in
+          # the file that must not be tidied. GitHub reserves the GITHUB_ prefix
+          # for secret names, so an operator cannot create a repository secret
+          # called GITHUB_TOKEN at all, and a secrets.GITHUB_TOKEN expression
+          # resolves instead to the token GitHub Actions mints for this run.
+          # (Written without the interpolation braces on purpose. This is a YAML
+          # comment so nothing evaluates it here, but the same words moved into a
+          # run: block would interpolate, and pasting the runner's token into a
+          # shell script as a comment is not something to leave one edit away.)
+          # That token exists, is non empty, and passes every check below, so
+          # reading it here would not fail: it would ship a GitHub credential
+          # scoped to this repository that expires in an hour, and the sweep would
+          # authenticate happily and find nothing on github.com. The Secret
+          # Manager container is still github-token and the variable the crawler
+          # reads is still GITHUB_TOKEN; only this input is aliased.
+          DISCOVERY_GITHUB_TOKEN: ${{ secrets.DISCOVERY_GITHUB_TOKEN }}
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+          CODEBERG_TOKEN: ${{ secrets.CODEBERG_TOKEN }}
+          BITBUCKET_USERNAME: ${{ secrets.BITBUCKET_USERNAME }}
+          BITBUCKET_APP_PASSWORD: ${{ secrets.BITBUCKET_APP_PASSWORD }}
         run: |
           set -uo pipefail
 
           failures=0
           mail_enabled=()
           mail_skipped=()
+          discovery_populated=()
+          discovery_skipped=()
+
+          # Records that $secret_id now holds the value the caller asked for. Reads
+          # populate's own locals, so it must only be called from inside it.
+          #
+          # Two families, because "which capability did this switch on" is not the
+          # same question for both. A mail secret maps one to one onto the app slug
+          # that may then reference it. A discovery secret maps onto a credential
+          # NAME, and a host is enabled only once every credential it needs is
+          # present, which for bitbucket.org is two of them. So this records the
+          # credential and the host list is computed afterwards.
+          record_populated() {
+            [ -n "$slug" ] || return 0
+            case "$family" in
+              discovery) discovery_populated+=("$slug") ;;
+              *) mail_enabled+=("$slug") ;;
+            esac
+          }
 
           # $1 Secret Manager secret_id, $2 the GitHub secret name holding the value,
-          # $3 required|optional, $4 the app slug, for optional mail secrets only.
+          # $3 required|optional, $4 the tag recorded on success, for optional
+          # secrets only, $5 which family that tag belongs to: mail or discovery.
           # The value is read out of the environment by name, so it is never an
           # argument and never reaches a process listing.
           #
@@ -406,13 +460,16 @@ jobs:
           # A present but broken value is an error in both modes. Only a genuine
           # absence is skippable.
           populate() {
-            local secret_id="$1" var_name="$2" mode="$3" slug="${4-}"
+            local secret_id="$1" var_name="$2" mode="$3" slug="${4-}" family="${5-mail}"
             local value="${!2-}" current had_version access_err readback
 
             if [ -z "$value" ]; then
               if [ "$mode" = "optional" ]; then
                 echo "  ${secret_id}: ${var_name} is not set, skipping."
-                mail_skipped+=("${slug}|${var_name}")
+                case "$family" in
+                  discovery) discovery_skipped+=("${slug}|${var_name}") ;;
+                  *) mail_skipped+=("${slug}|${var_name}") ;;
+                esac
                 return
               fi
               echo "  ${secret_id}: GitHub secret ${var_name} is not set." >&2
@@ -452,7 +509,7 @@ jobs:
 
             if [ "$had_version" -eq 1 ] && [ "$current" = "$value" ]; then
               echo "  ${secret_id}: already current"
-              if [ -n "$slug" ]; then mail_enabled+=("$slug"); fi
+              record_populated
               return
             fi
 
@@ -477,7 +534,7 @@ jobs:
             fi
 
             echo "  ${secret_id}: new version added"
-            if [ -n "$slug" ]; then mail_enabled+=("$slug"); fi
+            record_populated
           }
 
           # The third party credentials this system consumes, grounded in the app code
@@ -508,6 +565,38 @@ jobs:
           populate crystalbits-resend-key             CRYSTALBITS_RESEND_KEY             optional crystalbits
           populate crystalgigs-stripe-secret-key      CRYSTALGIGS_STRIPE_SECRET_KEY      required
           populate crystalgigs-stripe-publishable-key CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY required
+
+          # The discovery host credentials. Every one is optional and every one is
+          # independent, which is the difference between this block and the one
+          # above: mail is a feature of two services, while discovery is the entire
+          # purpose of the registry and is switched on one host at a time.
+          #
+          # A host without a token is skipped and reported as skipped, and the sweep
+          # still succeeds. That is not a degraded mode papering over a mistake:
+          # Discovery::Credentials refuses to start a host without a token on
+          # purpose, because an unauthenticated sweep of github.com gets 401 on code
+          # search and 60 requests an hour on everything else, which would index a
+          # handful of repositories and leave the registry looking like a host with
+          # almost no Crystal on it.
+          #
+          # The fourth column is a CREDENTIAL name, not a host, and it is the
+          # environment variable the crawler reads: Discovery::Credentials::TOKEN_ENV
+          # and USERNAME_ENV verbatim. Host names are derived from these below,
+          # because bitbucket.org needs two of them.
+          #
+          # DISCOVERY_GITHUB_TOKEN in the second column is deliberate and is the one
+          # name here that must not be made to match its neighbours. GitHub reserves
+          # the GITHUB_ prefix for secret names, so no repository secret can be
+          # called GITHUB_TOKEN, and that expression resolves instead to the
+          # installation token GitHub mints for this run: present, non empty, wrong
+          # scopes, one hour long. Populating github-token from it would pass every
+          # check in this step and produce a crawl that authenticates and finds
+          # nothing. See the comment on the env block above.
+          populate github-token           DISCOVERY_GITHUB_TOKEN optional GITHUB_TOKEN           discovery
+          populate gitlab-token           GITLAB_TOKEN           optional GITLAB_TOKEN           discovery
+          populate codeberg-token         CODEBERG_TOKEN         optional CODEBERG_TOKEN         discovery
+          populate bitbucket-username     BITBUCKET_USERNAME     optional BITBUCKET_USERNAME     discovery
+          populate bitbucket-app-password BITBUCKET_APP_PASSWORD optional BITBUCKET_APP_PASSWORD discovery
 
           if [ "$failures" -ne 0 ]; then
             echo "${failures} secret(s) could not be populated. Not applying the stack: a revision referencing an empty secret will not start." >&2
@@ -540,6 +629,83 @@ jobs:
           echo
           echo "Mail enabled for: ${mail_json}"
           echo "Stripe: both keys hold a current version."
+
+          # Which hosts are actually crawlable, derived from the credentials that
+          # now hold a version rather than from what was asked for.
+          #
+          # bitbucket.org needs BOTH halves. Its API takes an app password over HTTP
+          # Basic, and Basic carries the account the password belongs to, so the
+          # password alone authenticates nothing. This is also the one place where
+          # getting it wrong is expensive rather than merely wrong: naming a host
+          # here makes terraform attach that host's env vars to the Job, and an env
+          # var pointing at a container with no versions stops the whole execution
+          # from ever starting. Not just Bitbucket. The sweep.
+          #
+          # So the rule is all of a host's credentials or none of it, and it is
+          # spelled out per host rather than inferred.
+          has_credential() {
+            local wanted="$1" entry
+            for entry in "${discovery_populated[@]}"; do
+              [ "$entry" = "$wanted" ] && return 0
+            done
+            return 1
+          }
+
+          discovery_hosts=()
+          discovery_hosts_off=()
+
+          # $1 host, then every credential name that host needs.
+          host_status() {
+            local host="$1" missing=() name
+            shift
+            for name in "$@"; do
+              has_credential "$name" || missing+=("$name")
+            done
+            if [ "${#missing[@]}" -eq 0 ]; then
+              discovery_hosts+=("$host")
+            else
+              discovery_hosts_off+=("${host}|${missing[*]}")
+            fi
+          }
+
+          host_status github.com    GITHUB_TOKEN
+          host_status gitlab.com    GITLAB_TOKEN
+          host_status codeberg.org  CODEBERG_TOKEN
+          host_status bitbucket.org BITBUCKET_USERNAME BITBUCKET_APP_PASSWORD
+
+          if [ "${#discovery_hosts_off[@]}" -ne 0 ]; then
+            echo
+            echo "Discovery is NOT configured for:"
+            for entry in "${discovery_hosts_off[@]}"; do
+              echo "  ${entry%%|*}: missing ${entry#*|}."
+            done
+            echo "  The sweep still runs and still succeeds. It reports each of those hosts as"
+            echo "  skipped, naming the variable that would enable it, and does not treat an"
+            echo "  absent token as a crawl that found nothing."
+            echo "  Add the repository secret and re-run this workflow to switch a host on. No"
+            echo "  code change and no terraform change is needed."
+          fi
+
+          # Hand terraform the hosts whose credentials actually hold a version, so it
+          # attaches those token env vars and only those. Same hazard as the mail
+          # list, one step worse: a Cloud Run EXECUTION referencing a versionless
+          # secret never starts at all, so one wrong name here disables discovery
+          # entirely rather than one host.
+          discovery_json='[]'
+          if [ "${#discovery_hosts[@]}" -ne 0 ]; then
+            discovery_json="$(printf '%s\n' "${discovery_hosts[@]}" \
+              | jq -Rsc 'split("\n") | map(select(length > 0)) | unique')"
+          fi
+          echo "discovery_enabled_hosts=${discovery_json}" >> "$GITHUB_OUTPUT"
+
+          echo
+          echo "Discovery enabled for: ${discovery_json}"
+          if [ "$discovery_json" = '[]' ]; then
+            echo "  No host credentials are set, so the scheduled sweep will succeed having"
+            echo "  crawled nothing and the registry will stay empty. That is configuration,"
+            echo "  not an empty ecosystem: the Job's log names the variable for each host."
+            echo "  DISCOVERY_GITHUB_TOKEN alone covers most of the ecosystem."
+          fi
 
   # ---------------------------------------------------------------------------
   # Apply the Cloud Run stack.
@@ -607,6 +773,11 @@ jobs:
           REGION: ${{ env.GCP_REGION }}
           IMAGE_TAG: ${{ needs.gate.outputs.sha }}
           MAIL_ENABLED_APPS: ${{ needs.secrets.outputs.mail_enabled_apps }}
+          # Same shape, one step stricter. A Cloud Run EXECUTION referencing a
+          # versionless secret never starts, so a host named here without both of
+          # its credentials populated does not break that host, it stops the sweep.
+          # The secrets job derives this from the containers it verified.
+          DISCOVERY_ENABLED_HOSTS: ${{ needs.secrets.outputs.discovery_enabled_hosts }}
         run: |
           set -euo pipefail
           terraform init
@@ -614,12 +785,15 @@ jobs:
           # empty -var value is a parse error while [] is a valid empty set.
           mail_enabled_apps="${MAIL_ENABLED_APPS:-[]}"
           [ -n "$mail_enabled_apps" ] || mail_enabled_apps='[]'
+          discovery_enabled_hosts="${DISCOVERY_ENABLED_HOSTS:-[]}"
+          [ -n "$discovery_enabled_hosts" ] || discovery_enabled_hosts='[]'
 
           terraform apply -auto-approve \
             -var="project_id=${PROJECT_ID}" \
             -var="region=${REGION}" \
             -var="image_tag=${IMAGE_TAG}" \
-            -var="mail_enabled_apps=${mail_enabled_apps}"
+            -var="mail_enabled_apps=${mail_enabled_apps}" \
+            -var="discovery_enabled_hosts=${discovery_enabled_hosts}"
 
       - name: Read stack outputs
         id: outputs
