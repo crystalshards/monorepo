@@ -19,6 +19,28 @@
 # Gen2 execution environment because a Crystal compile wants a full Linux
 # filesystem, and the resources are the largest thing in this module because
 # compilation is the only genuinely heavy workload here.
+#
+# THERE IS DELIBERATELY NO vpc_access BLOCK, AND NO EGRESS SETTING.
+#
+# The compile phase has no network, but that is not arranged here and could
+# not be. A Cloud Run egress setting is a property of the whole task, and this
+# task genuinely needs egress: its source arrives over a signed GET and its
+# artifact leaves over a signed PUT. Routing it through a VPC would break the
+# phase that has to work and would not constrain the phase that must not.
+#
+# It would also miss the target. 169.254.169.254 mints access tokens for this
+# Job's service account, and link-local traffic is answered inside the sandbox
+# without ever touching a VPC, so no egress setting covers it. A control that
+# stops the public internet and leaves the metadata server reachable has shut
+# the cheap half of the hole.
+#
+# The confinement is inside the image instead: apps/docs-build runs the
+# compile behind a seccomp filter it installs on itself, which is inherited,
+# survives execve and cannot be removed, and it drops to an unprivileged uid
+# so the compile cannot read the signed urls out of the supervisor. See
+# apps/docs-build/sandbox/no-egress.c. If a future edit adds a VPC connector
+# here, it is defence in depth and not the boundary; do not remove anything
+# from the image on the strength of it.
 resource "google_cloud_run_v2_job" "docs_build" {
   project  = var.project_id
   name     = "docs-build"

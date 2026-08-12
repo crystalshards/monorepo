@@ -42,15 +42,16 @@ module CrystalShards
       )
 
       unless status.success?
-        log_error "Sandboxed docs build failed: #{output.to_s.lines.last(20).join("\n")}"
-        return false
+        return record_failure(explain(output.to_s))
       end
 
       # The compiler can exit 0 without writing anything useful, so the exit
       # status is never the whole story: the artifact has to parse.
       unless DocsSandbox.valid_docs_json?(File.join(output_dir, DOCS_JSON))
-        log_error "Sandboxed docs build produced no usable #{DOCS_JSON}"
-        return false
+        return record_failure(
+          "This shard compiled but produced no usable documentation.\n\n" \
+          "crystal docs said:\n\n#{output.to_s.lines.last(40).join("\n")}"
+        )
       end
 
       true
@@ -65,7 +66,7 @@ module CrystalShards
         "run", "--rm",
         # No network namespace at all. A compile-time macro cannot reach the
         # internet, the cluster, or the host.
-        "--network", "none",
+        "--network", network_mode,
         # Nothing on the container filesystem is writable except /tmp, the
         # scratch mount, and the output mount.
         "--read-only",
@@ -106,6 +107,16 @@ module CrystalShards
     # Kubernetes spelling everywhere so one setting configures both.
     private def docker_memory : String
       DocsSandbox.memory.downcase.sub(/i$/, "")
+    end
+
+    # Named rather than inlined above so the containment spec can run the very
+    # same container with the network left in place. A spec that only shows
+    # every probe failing proves nothing on its own, because a broken probe
+    # and a working sandbox look identical from outside; the comparison is
+    # what makes the word "blocked" a measurement. Production has no reason to
+    # ever override this.
+    protected def network_mode : String
+      "none"
     end
 
     WORK_DIR = "/work"

@@ -10,6 +10,14 @@ module CrystalShards
       "NO SANDBOX, untrusted code runs in this process"
     end
 
+    # This one runs `crystal` off PATH rather than out of the sandbox image,
+    # so the image tag would be the wrong answer. The version this binary was
+    # built with is the right one on a development machine, which is the only
+    # place this class is allowed to run.
+    def crystal_version : String
+      Crystal::VERSION
+    end
+
     def build_docs(source_dir : String, output_dir : String) : Bool
       log_error "Building documentation with no sandbox. Shard macros execute " \
                 "with this process's environment and network. Never do this " \
