@@ -33,10 +33,44 @@ module VersionOrder
   # Newest first. Ties and unparseable tags keep their input order, so the
   # result is stable and a caller can rely on it.
   def self.sort(refs : Array(RepositorySnapshot::Ref)) : Array(RepositorySnapshot::Ref)
-    indexed = refs.each_with_index.to_a
+    sort_by_name(refs, &.ref)
+  end
+
+  # The same ordering over rows already in the database.
+  #
+  # Persisted versions cannot be ordered by `released_at`. Only the version that
+  # actually got indexed carries a real commit date; every other row falls back
+  # to the repository's pushed_at, so a shard with 65 tags has 64 rows claiming
+  # the same instant and a date sort returns them in whatever order Postgres
+  # feels like. Measured on kemal: ordering by date put 1.9.0 above 1.11.0.
+  #
+  # This matters beyond the version dropdown. The indexer picks `latest_version`
+  # by semver, so any consumer that picks "latest" by date disagrees with the
+  # column on the same row, and the API and the page would name different
+  # versions for the same shard.
+  def self.sort_versions(versions : Array(ShardVersion)) : Array(ShardVersion)
+    sort_by_name(versions, &.version)
+  end
+
+  # The row a page defaults to, by the same rule the indexer used to choose
+  # `shards.latest_version`: highest stable release, falling back to a
+  # prerelease only when nothing stable was ever tagged.
+  def self.latest_version(versions : Array(ShardVersion)) : ShardVersion?
+    releases = versions.select(&.release?)
+    candidates = releases.empty? ? versions : releases
+    return nil if candidates.empty?
+
+    ordered = sort_versions(candidates)
+    ordered.find { |version| stable_name?(version.version) } || ordered.first?
+  end
+
+  # Newest first over anything that can name its version, with input order
+  # preserved on ties so the result is stable.
+  private def self.sort_by_name(items : Array(T), &name : T -> String) : Array(T) forall T
+    indexed = items.each_with_index.to_a
 
     indexed.sort! do |(left, left_index), (right, right_index)|
-      comparison = compare(left, right)
+      comparison = compare_names(name.call(left), name.call(right))
       comparison.zero? ? left_index <=> right_index : comparison
     end
 
@@ -58,16 +92,22 @@ module VersionOrder
   end
 
   def self.stable?(ref : RepositorySnapshot::Ref) : Bool
-    parsed = parse(ref.ref)
+    stable_name?(ref.ref)
+  end
+
+  # A released version rather than a prerelease. An unparseable tag is not a
+  # release: defaulting a page to "nightly" over 1.9.0 is the failure here.
+  def self.stable_name?(name : String) : Bool
+    parsed = parse(name)
     return false unless parsed
 
     parsed.prerelease.empty?
   end
 
   # Negative when `left` is newer, so a plain sort puts newest first.
-  private def self.compare(left : RepositorySnapshot::Ref, right : RepositorySnapshot::Ref) : Int32
-    left_parsed = parse(left.ref)
-    right_parsed = parse(right.ref)
+  private def self.compare_names(left : String, right : String) : Int32
+    left_parsed = parse(left)
+    right_parsed = parse(right)
 
     # A tag that is not a version sorts below every tag that is, rather than
     # being compared as a string against one.

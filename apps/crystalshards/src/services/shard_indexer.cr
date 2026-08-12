@@ -1,4 +1,5 @@
-require "../providers/github_repository_api"
+require "../providers/repository_source_factory"
+require "../workers/update_dependencies_worker"
 require "./shard_manifest"
 require "./version_order"
 
@@ -49,7 +50,8 @@ class ShardIndexer
     shard : Shard,
     versions : Int32 = 0,
     indexed_version : String? = nil,
-    detail : String? = nil do
+    detail : String? = nil,
+    dependencies : Int32 = 0 do
     def indexed? : Bool
       outcome == Outcome::Indexed
     end
@@ -57,17 +59,10 @@ class ShardIndexer
 
   README_FILENAMES = %w[README.md readme.md README.markdown Readme.md README.rst README]
 
-  # Test seam. Specs install a builder returning an api driven from fixtures, so
-  # the whole class runs with no network, and must restore it in an `ensure`.
-  class_property api_builder : Proc(String, GithubRepositoryApi)? = nil
-
-  def self.build_api(repo_path : String) : GithubRepositoryApi
-    if builder = @@api_builder
-      return builder.call(repo_path)
-    end
-
-    GithubRepositoryApi.new(repo_path, token: GithubRepositoryApi.token_from_env)
-  end
+  # No test seam of its own. RepositorySourceFactory already has one, and two
+  # seams for one job is how a spec ends up proving a path production does not
+  # take. Specs install RepositorySourceFactory.builder and restore it in an
+  # `ensure`.
 
   def self.index(shard : Shard) : Result
     new(shard).call
@@ -77,12 +72,17 @@ class ShardIndexer
   end
 
   def call : Result
-    # Only GitHub is readable this way today. Everything else is recorded as
-    # unsupported rather than left looking un-indexed forever, so the sweep's
-    # numbers describe reality.
-    unless @shard.host == "github.com"
+    # Every host the crawler can find, indexing can read. Discovery enumerates
+    # github.com, gitlab.com, codeberg.org and bitbucket.org, and three of those
+    # answer unauthenticated, so gating on GitHub alone would leave shards the
+    # crawler had already found permanently blank for want of a credential none
+    # of them need. Anything outside that list is recorded as unsupported rather
+    # than left looking un-indexed forever, so the sweep's numbers describe
+    # reality.
+    host = @shard.host
+    unless RepositorySourceFactory.supports?(host)
       claim
-      detail = "#{@shard.host} is not a host this indexer can read yet"
+      detail = "#{host || "This row's host"} is not a host the registry can read"
       finish(error: detail)
       return Result.new(Outcome::Unsupported, @shard, detail: detail)
     end
@@ -96,13 +96,20 @@ class ShardIndexer
     end
 
     claim
-    api = ShardIndexer.build_api(repo_path)
+
+    begin
+      api = RepositorySourceFactory.for(host.not_nil!, repo_path)
+    rescue ex : RepositorySourceFactory::UnsupportedHostError
+      detail = ex.message || "This host has no reader"
+      finish(error: detail)
+      return Result.new(Outcome::Unsupported, @shard, detail: detail)
+    end
 
     begin
       snapshot = api.fetch_snapshot
-    rescue ex : GithubRepositoryApi::NotFound
+    rescue ex : RepositorySource::NotFound
       return mark_unavailable(ex.message || "The repository is no longer reachable")
-    rescue ex : GithubRepositoryApi::Error
+    rescue ex : RepositorySource::Error
       detail = ex.message || "The repository could not be read"
       finish(error: detail)
       return Result.new(Outcome::Failed, @shard, detail: detail)
@@ -111,13 +118,18 @@ class ShardIndexer
     latest = VersionOrder.latest(snapshot.refs)
     content = latest ? fetch_content(api, latest, snapshot) : nil
 
-    store(snapshot, latest, content)
+    # Stored first, then resolved: the graph is written from a manifest that is
+    # already committed, so a dependency failure cannot cost the shard the
+    # content this pass just fetched.
+    indexed_version = store(snapshot, latest, content)
+    dependencies = resolve_dependencies(indexed_version)
 
     Result.new(
       Outcome::Indexed,
       @shard,
       versions: snapshot.refs.size,
       indexed_version: latest.try(&.version),
+      dependencies: dependencies,
     )
   end
 
@@ -132,7 +144,7 @@ class ShardIndexer
     committed_at : Time? = nil
 
   private def fetch_content(
-    api : GithubRepositoryApi,
+    api : RepositorySource,
     ref : RepositorySnapshot::Ref,
     snapshot : RepositorySnapshot,
   ) : Content
@@ -141,18 +153,18 @@ class ShardIndexer
     manifest_error = nil
 
     case result = api.fetch_file(ref.ref, "shard.yml")
-    in GithubRepositoryApi::FileResult::Found
+    in RepositorySource::FileResult::Found
       spec_yaml = result.content
       case parsed = ShardManifest.parse(result.content)
       in ShardManifest then manifest = parsed
       in String        then manifest_error = parsed
       end
-    in GithubRepositoryApi::FileResult::Absent
+    in RepositorySource::FileResult::Absent
       # A real fact about the repository, not a gap in the registry. Discovery
       # found this repository BY its shard.yml, so an absent one at a tag means
       # the manifest was added after that tag was cut.
       manifest_error = ref.tag? ? "No shard.yml at tag #{ref.ref}." : "No shard.yml on branch #{ref.ref}."
-    in GithubRepositoryApi::FileResult::Failed
+    in RepositorySource::FileResult::Failed
       manifest_error = "shard.yml could not be fetched at #{ref.ref}: #{result.reason}."
     end
 
@@ -169,13 +181,13 @@ class ShardIndexer
     )
   end
 
-  private def fetch_readme(api : GithubRepositoryApi, ref : RepositorySnapshot::Ref) : String?
+  private def fetch_readme(api : RepositorySource, ref : RepositorySnapshot::Ref) : String?
     README_FILENAMES.each do |filename|
       case result = api.fetch_file(ref.ref, filename)
-      in GithubRepositoryApi::FileResult::Found then return result.content
-      in GithubRepositoryApi::FileResult::Absent
+      in RepositorySource::FileResult::Found then return result.content
+      in RepositorySource::FileResult::Absent
         next
-      in GithubRepositoryApi::FileResult::Failed
+      in RepositorySource::FileResult::Failed
         # A failed README fetch is not worth failing the shard over, and not
         # worth trying five more filenames against a host that just errored.
         Log.debug { "README fetch failed for #{@shard.canonical_slug} at #{ref.ref}: #{result.reason}" }
@@ -188,10 +200,39 @@ class ShardIndexer
 
   # Claimed before any fetch and committed on its own, so a crash cannot leave
   # the queue pointing at a shard it already spent requests on.
+  #
+  # Written with a targeted UPDATE rather than through SaveShard, and that is
+  # the whole point. SaveShard requires host, owner, repo and canonical_slug,
+  # which a legacy row predating host-qualified identity does not have, so
+  # claiming through it raised before the row could be stamped. The row then
+  # returned to the head of the queue on every single run: the exact poison
+  # shard the claim-first ordering exists to prevent, caused by the claim.
+  #
+  # These three columns are the indexer's bookkeeping ABOUT a row, not the
+  # shard's own data. They have to be writable even when the row itself is
+  # malformed, because a row we cannot read is precisely the one that most needs
+  # recording as attempted.
   private def claim : Nil
-    operation = SaveShard.new(@shard)
-    operation.index_attempted_at.value = Time.utc
-    @shard = operation.update!
+    stamp(index_attempted_at: Time.utc)
+  end
+
+  # Same reasoning as claim: recording why a shard could not be indexed must not
+  # require the shard to be well-formed enough to save.
+  private def stamp(
+    index_attempted_at : Time? = nil,
+    index_error : String? = nil,
+  ) : Nil
+    AppDatabase.exec(<<-SQL, index_attempted_at, index_error, @shard.id)
+      UPDATE shards
+      SET index_attempted_at = COALESCE($1, index_attempted_at),
+          index_error = $2,
+          updated_at = NOW()
+      WHERE id = $3
+      SQL
+
+    if reloaded = ShardQuery.new.id(@shard.id).first?
+      @shard = reloaded
+    end
   end
 
   # Everything this pass learned, written together. Either the shard has its new
@@ -201,12 +242,39 @@ class ShardIndexer
     snapshot : RepositorySnapshot,
     latest : RepositorySnapshot::Ref?,
     content : Content?,
-  ) : Nil
+  ) : ShardVersion?
+    indexed_version = nil
+
     AppDatabase.transaction do
-      store_versions(snapshot, latest, content)
+      indexed_version = store_versions(snapshot, latest, content)
       store_repository(snapshot, latest, content)
       true
     end
+
+    indexed_version
+  end
+
+  # The dependency graph, written from the manifest this pass just stored.
+  #
+  # Deliberately after that transaction commits, and deliberately unable to
+  # fail the shard. An edge naming a shard the registry has never seen is
+  # normal and is stored with a null dependent_shard_id rather than skipped;
+  # anything worse than that is a graph problem, and throwing away a shard's
+  # freshly fetched content over one would be a poor trade. The whole set is
+  # recomputed on the next pass regardless.
+  #
+  # Bounded three ways. Only the one version whose manifest was fetched is
+  # resolved, so a shard with 65 tags is still one unit of work rather than 65.
+  # The resolver caps how many entries a single manifest may contribute. And
+  # nothing here reads a host: a dependency is matched against shards already
+  # in this database, so the graph spends no GitHub rate limit.
+  private def resolve_dependencies(shard_version : ShardVersion?) : Int32
+    return 0 unless shard_version
+
+    UpdateDependenciesWorker.resolve_for(shard_version)
+  rescue ex : Exception
+    Log.warn(exception: ex) { "Dependencies for #{@shard.canonical_slug} could not be resolved" }
+    0
   end
 
   private def store_repository(
@@ -259,27 +327,34 @@ class ShardIndexer
   # only the newest. Only the latest gets its manifest fetched; the rest carry
   # ref, sha and a nil indexed_at, which is the signal a page uses to offer
   # fetching an older version on demand.
+  # Answers the row for the version whose manifest was fetched, because that is
+  # the one whose dependency edges are resolved once this transaction commits.
   private def store_versions(
     snapshot : RepositorySnapshot,
     latest : RepositorySnapshot::Ref?,
     content : Content?,
-  ) : Nil
+  ) : ShardVersion?
     shard_id = @shard.id
     existing = ShardVersionQuery.new.shard_id(shard_id).to_a.index_by(&.version)
+    indexed_version = nil
 
     snapshot.refs.each do |ref|
       is_latest = latest && ref.version == latest.version
       row = existing[ref.version]?
 
-      if row
-        update_version(row, ref, is_latest ? content : nil)
-      else
-        create_version(shard_id, ref, is_latest ? content : nil)
-      end
+      saved = if row
+                update_version(row, ref, is_latest ? content : nil)
+              else
+                create_version(shard_id, ref, is_latest ? content : nil)
+              end
+
+      indexed_version = saved if is_latest
     end
+
+    indexed_version
   end
 
-  private def create_version(shard_id : Int64, ref : RepositorySnapshot::Ref, content : Content?) : Nil
+  private def create_version(shard_id : Int64, ref : RepositorySnapshot::Ref, content : Content?) : ShardVersion?
     operation = SaveShardVersion.new
     operation.shard_id.value = shard_id
     operation.version.value = ref.version
@@ -294,9 +369,10 @@ class ShardIndexer
     # One bad ref must not cost a shard its other versions. A tag whose name
     # collides with a row written by an older code path is the realistic case.
     Log.warn { "Skipped #{@shard.canonical_slug}@#{ref.version}: #{ex.message}" }
+    nil
   end
 
-  private def update_version(row : ShardVersion, ref : RepositorySnapshot::Ref, content : Content?) : Nil
+  private def update_version(row : ShardVersion, ref : RepositorySnapshot::Ref, content : Content?) : ShardVersion?
     operation = SaveShardVersion.new(row)
     operation.ref.value = ref.ref
     operation.source.value = ref.source
@@ -310,6 +386,7 @@ class ShardIndexer
     operation.update!
   rescue ex : Avram::InvalidOperationError
     Log.warn { "Could not update #{@shard.canonical_slug}@#{ref.version}: #{ex.message}" }
+    nil
   end
 
   # Only the version that was actually fetched gets manifest fields written.
@@ -347,8 +424,6 @@ class ShardIndexer
   end
 
   private def finish(error : String?) : Nil
-    operation = SaveShard.new(@shard)
-    operation.index_error.value = error
-    @shard = operation.update!
+    stamp(index_error: error)
   end
 end

@@ -81,7 +81,7 @@ abstract class HostRepositorySource < RepositorySource
     )
   end
 
-  def fetch_file(ref : String, path : String) : RepositorySource::FileResult
+  def fetch_file(ref : String, path : String) : RepositorySource::FileOutcome
     response = perform(raw_url(ref, path), authenticated: false)
 
     case response.status

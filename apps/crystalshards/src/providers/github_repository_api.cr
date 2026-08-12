@@ -170,7 +170,7 @@ class GithubRepositoryApi < RepositorySource
     raise RepositorySource::Error.new("#{repo_path} tags were not JSON: #{ex.message}")
   end
 
-  def fetch_file(ref : String, path : String) : RepositorySource::FileResult
+  def fetch_file(ref : String, path : String) : RepositorySource::FileOutcome
     response = perform("#{RAW_BASE}/#{repo_path}/#{ref}/#{path}", authenticated: false)
 
     case response.status

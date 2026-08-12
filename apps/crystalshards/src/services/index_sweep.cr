@@ -91,7 +91,9 @@ module IndexSweep
     getter indexed = 0
     getter unavailable = 0
     getter failed = 0
+    getter unsupported = 0
     getter versions = 0
+    getter dependencies = 0
     getter failures = [] of String
     getter options : Options
 
@@ -100,10 +102,18 @@ module IndexSweep
 
     def record(result : ShardIndexer::Result) : Nil
       @versions += result.versions
+      @dependencies += result.dependencies
 
       case result.outcome
       in ShardIndexer::Outcome::Indexed     then @indexed += 1
       in ShardIndexer::Outcome::Unavailable then @unavailable += 1
+      in ShardIndexer::Outcome::Unsupported
+        # Counted separately from failed. A GitLab shard the indexer cannot read
+        # yet is not a fault and must not fail the run, but it also must not
+        # vanish from the arithmetic: a sweep reporting "attempted 300, indexed
+        # 40" with 260 unaccounted for is how a whole host stays empty without
+        # anyone noticing.
+        @unsupported += 1
       in ShardIndexer::Outcome::Failed
         @failed += 1
         # Capped: a run where everything fails should not produce a summary
@@ -113,7 +123,7 @@ module IndexSweep
     end
 
     def attempted : Int32
-      indexed + unavailable + failed
+      indexed + unavailable + failed + unsupported
     end
 
     # A pass fails when everything it tried failed. One repository being deleted
@@ -130,7 +140,9 @@ module IndexSweep
     def to_s(io : IO) : Nil
       io << "indexed " << indexed
       io << ", " << versions << " version" << ("s" unless versions == 1)
+      io << ", " << dependencies << " dependency edge" << ("s" unless dependencies == 1)
       io << ", unavailable " << unavailable if unavailable > 0
+      io << ", unsupported host " << unsupported if unsupported > 0
       io << ", failed " << failed if failed > 0
     end
   end
@@ -179,7 +191,7 @@ module IndexSweep
     ShardQuery.new
       .index_attempted_at.lte(now - options.min_age)
       .or(&.index_attempted_at.is_nil)
-      .index_attempted_at.asc_order(nulls: :first)
+      .index_attempted_at.asc_order(:nulls_first)
       .id.asc_order
       .limit(options.max_shards)
       .to_a

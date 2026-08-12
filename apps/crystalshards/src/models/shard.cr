@@ -23,7 +23,9 @@ class Shard < BaseModel
     # Every one of these is nilable and NULL means "not fetched yet", never
     # zero and never false. A permanent 0 star count reads as "nobody uses
     # this", which is a different and wrong claim from "we have not looked".
-    column topics : Array(String)
+    # An empty array is a real answer meaning the repository declares no topics,
+    # so it cannot double as "we have not looked". Hence nilable, like the rest.
+    column topics : Array(String)?
     column default_branch : String?
     column pushed_at : Time?
     column archived : Bool?

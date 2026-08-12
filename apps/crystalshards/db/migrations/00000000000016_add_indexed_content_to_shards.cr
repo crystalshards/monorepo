@@ -6,7 +6,11 @@ class AddIndexedContentToShards::V00000000000016 < Avram::Migrator::Migration::V
       # Repository facts. All nilable, and NULL means "not fetched", never zero
       # or false. A permanent 0 star count reads as "nobody uses this", which is
       # a different and wrong claim from "we have not looked yet".
-      add topics : Array(String), default: [] of String
+      #
+      # topics is nilable for exactly that reason and deliberately carries no
+      # default: an empty array is a real answer meaning the repository has no
+      # topics, so defaulting to one would make every un-indexed row assert it.
+      add topics : Array(String)?
       add default_branch : String?
       add pushed_at : Time?
       add archived : Bool?

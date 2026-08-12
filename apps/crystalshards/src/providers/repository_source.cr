@@ -21,24 +21,45 @@ abstract class RepositorySource
   # thin. `Failed` is a fact about the fetch and is retried on a later pass.
   # Collapsing both to nil is what left the old provider unable to tell a
   # library with no manifest from a host having a bad second.
-  abstract struct FileResult
-    struct Found < FileResult
+  #
+  # A namespace module rather than an abstract struct with three subtypes, and
+  # the difference is load-bearing. Under a common ancestor Crystal normalises
+  # `Found | Absent | Failed` to that ancestor's virtual type, so a `case ... in`
+  # over the union reports the abstract parent as an unhandled case and can
+  # never be satisfied. Three unrelated structs in a module stay three types,
+  # the union stays a union, and exhaustiveness means what it says.
+  module FileResult
+    struct Found
       getter content : String
 
       def initialize(@content : String)
       end
     end
 
-    struct Absent < FileResult
+    struct Absent
     end
 
-    struct Failed < FileResult
+    struct Failed
       getter reason : String
 
       def initialize(@reason : String)
       end
     end
   end
+
+  # The three concrete results, as a union.
+  #
+  # `fetch_file` is restricted to this rather than to the abstract parent so a
+  # `case ... in` over it is genuinely exhaustive. Restricted to `FileResult`
+  # the compiler cannot see past the abstract type, every caller has to carry a
+  # branch for a value that can never exist, and the exhaustiveness check stops
+  # meaning anything. This way a fourth outcome added here breaks every caller
+  # that has not handled it, which is the entire point of matching with `in`.
+  #
+  # Named FileOutcome rather than File on purpose: `File` is a stdlib class, and
+  # an alias that shadows one inside a class body is a name two readers will
+  # resolve differently.
+  alias FileOutcome = FileResult::Found | FileResult::Absent | FileResult::Failed
 
   # The repository is gone, renamed, or private to this credential. A final
   # answer: retrying spends quota to be told no again, so the caller marks the
@@ -55,7 +76,7 @@ abstract class RepositorySource
   # assumed. Raises NotFound or Error.
   abstract def fetch_snapshot : RepositorySnapshot
 
-  abstract def fetch_file(ref : String, path : String) : FileResult
+  abstract def fetch_file(ref : String, path : String) : FileOutcome
 
   # The committed date for one ref, or nil when the host will not cheaply say.
   # Called once per shard, for the version actually being indexed.
