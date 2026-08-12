@@ -211,9 +211,11 @@ describe IndexShardWorker do
         WorkerSeams.capturing_followups do |followups|
           IndexShardWorker.new(shard_name: "github.com/someone/chain-test", version: "2.1.0").perform
 
+          # Documentation is not chained here on purpose. It is built when a
+          # reader asks for it, so indexing a shard must not queue a compile
+          # for a version nobody has opened.
           followups.should eq([
             {IndexShardWorker::Followup::UpdateDependencies, "github.com/someone/chain-test", "2.1.0"},
-            {IndexShardWorker::Followup::BuildDocs, "github.com/someone/chain-test", "2.1.0"},
           ])
         end
       end
@@ -232,7 +234,6 @@ describe IndexShardWorker do
 
           followups.map(&.[0]).should eq([
             IndexShardWorker::Followup::UpdateDependencies,
-            IndexShardWorker::Followup::BuildDocs,
           ])
         end
       end
