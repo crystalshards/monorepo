@@ -241,4 +241,47 @@ describe UpdateDependenciesWorker do
       ShardVersionQuery.new.shard_id(shard.id).version("99.99.99").first?.should be_nil
     end
   end
+
+  describe "a manifest that declares an absurd number of dependencies" do
+    it "stores exactly the cap and no more" do
+      # An unpinned bound is a comment, not a bound. A shard.yml comes from a
+      # repository anyone can publish, so without this one manifest turns a
+      # single indexed shard into as many rows and twice as many lookups as it
+      # feels like, inside a sweep whose whole design is a fixed cost per shard.
+      declared = UpdateDependenciesWorker::MAX_DEPENDENCIES + 25
+      dependencies = Hash(String, String).new
+      declared.times { |index| dependencies["dep-#{index}"] = "~> 1.0" }
+
+      shard = ShardFactory.create &.name("absurd")
+      version = version_with_metadata(
+        shard,
+        {name: "absurd", dependencies: dependencies}.to_json
+      )
+
+      UpdateDependenciesWorker.new(shard_name: "absurd", version: "1.0.0").perform
+
+      DependencyQuery.new.shard_version_id(version.id).select_count
+        .should eq(UpdateDependenciesWorker::MAX_DEPENDENCIES)
+    end
+
+    it "counts development dependencies against the same cap" do
+      # Runtime first, then development, one budget between them. Reading the
+      # two keys against separate caps would let a manifest spend the bound
+      # twice.
+      runtime = Hash(String, String).new
+      UpdateDependenciesWorker::MAX_DEPENDENCIES.times { |index| runtime["run-#{index}"] = "~> 1.0" }
+
+      shard = ShardFactory.create &.name("absurd-dev")
+      version = version_with_metadata(
+        shard,
+        {name: "absurd-dev", dependencies: runtime, development_dependencies: {"ameba" => "~> 1.0"}}.to_json
+      )
+
+      UpdateDependenciesWorker.new(shard_name: "absurd-dev", version: "1.0.0").perform
+
+      deps = DependencyQuery.new.shard_version_id(version.id)
+      deps.select_count.should eq(UpdateDependenciesWorker::MAX_DEPENDENCIES)
+      deps.name("ameba").first?.should be_nil
+    end
+  end
 end

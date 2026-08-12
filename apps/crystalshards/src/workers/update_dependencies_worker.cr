@@ -8,9 +8,12 @@ struct UpdateDependenciesWorker < BaseJob
   # manifest declaring fifty thousand dependencies turns a single indexed shard
   # into fifty thousand rows and twice that many lookups, inside a sweep whose
   # whole design is a fixed cost per shard. The largest honest manifest in this
-  # corpus declares well under fifty, so this bounds the pathological case
-  # without touching a real one, and the truncation is logged rather than
-  # silently changing what a shard appears to depend on.
+  # corpus declares well under fifty.
+  #
+  # 200 is a sanity bound, not a measurement. It is deliberately far above
+  # anything real so that hitting it means the manifest is absurd rather than
+  # large, and the truncation is logged rather than silently changing what a
+  # shard appears to depend on.
   MAX_DEPENDENCIES = 200
 
   # One entry read out of a manifest, before it becomes a row.
