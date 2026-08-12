@@ -4,9 +4,9 @@ require "./shard_indexer"
 #
 # HOW INDEXING IS TRIGGERED, and why this way.
 #
-# The discover-shards Cloud Run Job runs both phases: it sweeps for new
-# repositories, then indexes the stalest shards it can afford. Nothing needs a
-# human, and nothing waits for a submission.
+# The discover-shards Cloud Run Job runs three phases: it seeds from GitHub's
+# star ranking, sweeps for new repositories, then indexes the stalest shards it
+# can afford. Nothing needs a human, and nothing waits for a submission.
 #
 # The alternatives were a second Job and enqueuing from discovery. A second Job
 # would need its own schedule, its own terraform and its own token, and would
@@ -17,8 +17,8 @@ require "./shard_indexer"
 # never index a shard discovered before the enqueue existed, which is all 217 of
 # the ones that are empty today.
 #
-# One process, two bounded phases, one budget, and every shard reachable whether
-# it was discovered this run or six months ago.
+# One process, three bounded phases, one budget, and every shard reachable
+# whether it was discovered this run or six months ago.
 #
 # HOW A RUN IS BOUNDED AND RESUMED.
 #
@@ -33,10 +33,16 @@ module IndexSweep
 
   # Shards per run when INDEX_MAX_SHARDS is unset.
   #
-  # Sized from the budget the crawl leaves behind. GitHub gives an authenticated
-  # token 5000 core requests an hour. A discovery sweep bounded to 10 pages
-  # costs roughly 1010 of them per host, and github.com is the only host with a
-  # token today, so a run leaves on the order of 3900 core requests unspent.
+  # Sized from the budget the other two phases leave behind. GitHub gives an
+  # authenticated token 5000 core requests an hour, and github.com is the only
+  # host with a token today.
+  #
+  # A discovery sweep bounded to 10 pages reads up to 100 shard.yml files a page,
+  # so about 1000 core requests, and the high-value seeding pass bounded to 3
+  # pages reads up to 300 more. Their search requests are not in this arithmetic
+  # and must not be added to it: code search bills the code_search bucket at 10 a
+  # minute and repository search bills the search bucket at 30, neither of which
+  # is core. So a run leaves on the order of 3700 core requests unspent.
   #
   # Indexing one shard costs three core requests: the repository, its tag list,
   # and one commit to date the version being indexed. shard.yml and README come

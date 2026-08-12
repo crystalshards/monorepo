@@ -43,6 +43,12 @@ class CrawlState < BaseModel
     # Ran to the end, but a search window held more results than the host would
     # return and could not be narrowed further, so some are unreachable.
     RESULT_CAP_TRUNCATED = "result_cap_truncated"
+    # Walked every page a ranked seed will return, which is the top 1000 of each
+    # query rather than the host. GitHub caps any search at 1000 results and a
+    # star ranking cannot be partitioned into disjoint windows the way a file
+    # size can, so everything below the cap is unreachable by that pass and is
+    # left to the exhaustive size-window sweep.
+    COMPLETED_RANK_CAPPED = "completed_rank_capped"
     # Paused by the host. The cursor is saved and the next run continues.
     RATE_LIMITED = "rate_limited"
     # Stopped because this run hit its page budget, not because it ran out.

@@ -178,7 +178,11 @@ module ShardIdentity
   # Called for every repository on every sweep, so it updates the existing row
   # rather than creating a second one, and it never overwrites a stored value
   # with nothing: a crawler that cannot see a description this time around
-  # leaves the description we already have alone.
+  # leaves the description we already have alone. `stars` and `forks` follow the
+  # same rule and need it more: only some enumerations measure them, so nil is
+  # "this crawler did not look" and is never written over a count somebody else
+  # did measure. Zero is written, because a repository nobody has starred is a
+  # measurement and the ranking depends on telling it apart from unknown.
   #
   # Raises Avram::InvalidOperationError when the identity or URL is rejected.
   # A crawler should rescue that and skip the repository: failing loudly is the
@@ -192,6 +196,8 @@ module ShardIdentity
     description : String? = nil,
     homepage_url : String? = nil,
     license : String? = nil,
+    stars : Int32? = nil,
+    forks : Int32? = nil,
   ) : Shard
     identity = build(host, owner, repo)
 
@@ -210,6 +216,8 @@ module ShardIdentity
       operation.description.value = description if description
       operation.homepage_url.value = homepage_url if homepage_url
       operation.license.value = license if license
+      operation.github_stars.value = stars unless stars.nil?
+      operation.github_forks.value = forks unless forks.nil?
       # A repository we can see again is not missing any more.
       operation.unavailable_at.value = nil
       operation.update!
@@ -220,6 +228,8 @@ module ShardIdentity
         repository_url: repository_url,
         homepage_url: homepage_url,
         license: license,
+        github_stars: stars,
+        github_forks: forks,
         host: identity.host,
         owner: identity.owner,
         repo: identity.repo,

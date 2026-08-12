@@ -1,5 +1,6 @@
 require "./base_crawler"
 require "./github_crawler"
+require "./high_value_crawler"
 require "./gitlab_crawler"
 require "./codeberg_crawler"
 require "./bitbucket_crawler"
@@ -149,19 +150,7 @@ module Discovery
         return report
       end
 
-      state = begin_crawl(host, fresh)
-      cursor = fresh ? nil : state.cursor
-
       crawler = crawler_for(host, base_url: base_url, token: token, sleeper: sleeper, max_pages: max_pages)
-
-      # Persisting after every page is what makes an interrupted sweep resumable
-      # rather than restartable. A crawl that only saved at the end would, on a
-      # rate-limited host, do the first pages over and over and never reach the
-      # last one.
-      crawler.on_page = ->(page_cursor : String?) do
-        persist_cursor(host, page_cursor)
-        nil
-      end
 
       # Which registered workspaces answered, and which did not, recorded where
       # an operator manages them rather than only in the host's single error
@@ -173,6 +162,68 @@ module Discovery
         bitbucket.on_workspace_seen = ->(slug : String, count : Int32) do
           note_workspace_seen(slug, count)
         end
+      end
+
+      drive(host, crawler, fresh)
+    end
+
+    # The high-value seeding pass: the top of GitHub's star ranking, read before
+    # the exhaustive sweep so the shards people have heard of are in the registry
+    # rather than three thousand small manifests behind it.
+    #
+    # It is not a host and does not appear in HOSTS, because it is a second way
+    # of enumerating one that is already there. What makes it separable is the
+    # cursor: it resumes from its own crawl_states row, keyed on
+    # HighValueCrawler::STATE_KEY, so walking the ranking never moves the size
+    # window the exhaustive sweep is partway through.
+    #
+    # The credential is github.com's, so a deployment that can crawl GitHub can
+    # run this with no further configuration, and one that cannot is refused
+    # here with the same message rather than half-crawling.
+    def self.run_high_value(
+      fresh : Bool = false,
+      base_url : String? = nil,
+      token : String? = nil,
+      sleeper : Proc(Time::Span, Nil)? = nil,
+      max_pages : Int32 = HighValueCrawler::DEFAULT_MAX_PAGES,
+    ) : CrawlReport
+      key = HighValueCrawler::STATE_KEY
+
+      unless token || Credentials.configured?(HighValueCrawler::HOST)
+        report = CrawlReport.new(key)
+        report.status = CrawlState::Status::FAILED
+        report.stop_reason = CrawlState::StopReason::TOKEN_MISSING
+        report.error = Credentials.missing_message(HighValueCrawler::HOST)
+        Log.error { report.error }
+        record(report, cursor: existing_cursor(key))
+        return report
+      end
+
+      crawler = HighValueCrawler.new(
+        base_url: base_url,
+        token: token,
+        sleeper: sleeper,
+        max_pages: max_pages,
+      )
+
+      drive(key, crawler, fresh)
+    end
+
+    # Runs a crawler against the crawl_states row that remembers it, whatever
+    # that row is keyed on. A host has one; the high-value pass has its own,
+    # because two enumerations of the same host sharing a cursor would each
+    # reset the other's position on every run.
+    private def self.drive(key : String, crawler : BaseCrawler, fresh : Bool) : CrawlReport
+      state = begin_crawl(key, fresh)
+      cursor = fresh ? nil : state.cursor
+
+      # Persisting after every page is what makes an interrupted sweep resumable
+      # rather than restartable. A crawl that only saved at the end would, on a
+      # rate-limited host, do the first pages over and over and never reach the
+      # last one.
+      crawler.on_page = ->(page_cursor : String?) do
+        persist_cursor(key, page_cursor)
+        nil
       end
 
       report = crawler.run(cursor)

@@ -86,6 +86,68 @@ module Discovery::Fixtures
       JSON
   end
 
+  # VERIFIED LIVE. GET /search/repositories?q=language:Crystal&sort=stars&order=desc
+  # returned exactly this envelope and this item shape, both unauthenticated and
+  # with a token. The values below are trimmed from the real kemalcr/kemal item
+  # in that response: 3903 stars, 199 forks, homepage https://kemalcr.com,
+  # default branch master.
+  #
+  # Two details are load-bearing rather than decorative.
+  #
+  # The item IS the repository. Code search returns a file with a nested
+  # `repository` object; repository search returns the repository itself, which
+  # is why the star count arrives with the candidate and why the two crawlers
+  # cannot share a parser.
+  #
+  # `homepage` is null on most items and a string on some. It is nullable here
+  # for that reason, and the crawler treats an empty string as absent, because
+  # the live response uses both spellings for "no homepage".
+  def self.github_repository_search(
+    repositories : Array({String, Int32}),
+    total : Int32,
+    description : String = "Fast, Effective, Simple Web Framework",
+    homepage : String? = "https://kemalcr.com",
+  ) : String
+    entries = repositories.map do |(full_name, stars)|
+      owner, _, repo = full_name.partition('/')
+      <<-JSON
+        {
+          "id": 44826364,
+          "name": "#{repo}",
+          "full_name": "#{full_name}",
+          "private": false,
+          "owner": {"login": "#{owner}", "id": 15321198, "type": "Organization"},
+          "html_url": "https://github.com/#{full_name}",
+          "description": #{description.empty? ? "null" : description.to_json},
+          "fork": false,
+          "url": "https://api.github.com/repos/#{full_name}",
+          "homepage": #{homepage.to_json},
+          "size": 999,
+          "stargazers_count": #{stars},
+          "watchers_count": #{stars},
+          "language": "Crystal",
+          "forks_count": 199,
+          "open_issues_count": 5,
+          "license": {"key": "mit", "name": "MIT License", "spdx_id": "MIT"},
+          "archived": false,
+          "disabled": false,
+          "topics": ["crystal", "web-framework"],
+          "visibility": "public",
+          "default_branch": "master",
+          "score": 1.0
+        }
+        JSON
+    end
+
+    <<-JSON
+      {
+        "total_count": #{total},
+        "incomplete_results": false,
+        "items": [#{entries.join(",")}]
+      }
+      JSON
+  end
+
   # VERIFIED LIVE. GET /repos/{owner}/{repo}/contents/shard.yml against
   # kemalcr/kemal returned exactly this shape with 200, and the same path on
   # torvalds/linux returned 404. Content is base64 with newlines, which is why

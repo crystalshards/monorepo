@@ -152,11 +152,19 @@ locals {
       LUCKY_ENV           = "production"
       DISCOVERY_MAX_PAGES = tostring(var.discovery_max_pages)
 
-      # The Job runs two bounded phases against one rate limit: it sweeps for
-      # new repositories, then indexes the stalest shards it can still afford.
-      # Both bounds are published, because tuning one without seeing the other
-      # is how a crawl starves the indexer on exactly the runs that discovered
-      # the most to index.
+      # The Job runs three bounded phases against one rate limit: it seeds from
+      # GitHub's star ranking, then sweeps for new repositories, then indexes the
+      # stalest shards it can still afford. Every bound is published, because
+      # tuning one without seeing the others is how a crawl starves the indexer
+      # on exactly the runs that discovered the most to index.
+      #
+      # The seeding bound is separate from DISCOVERY_MAX_PAGES rather than folded
+      # into it because the two pages cost different things. A page of the
+      # exhaustive sweep spends one request from GitHub's 10 a minute code_search
+      # bucket; a page of the seeding pass spends one from the 30 a minute search
+      # bucket. They share only the core budget both draw on to read shard.yml.
+      DISCOVERY_HIGH_VALUE_PAGES = tostring(var.discovery_high_value_pages)
+
       INDEX_MAX_SHARDS = tostring(var.index_max_shards)
     }
     secret_env = merge({
