@@ -271,11 +271,14 @@ locals {
         PACKAGES_BUCKET = var.packages_bucket_name
 
         # Every documentation link the registry renders is built from this.
-        # Derived from the same app_domains map that produces crystaldocs's own
-        # APP_DOMAIN, so the two cannot disagree about where that site is: one
-        # value, used by the service that answers there and by the service that
-        # links to it.
-        DOCS_SITE_ORIGIN = "https://${var.app_domains["crystaldocs"]}"
+        # The same value crystaldocs gets as its own APP_DOMAIN, so the two
+        # cannot disagree about where that site is.
+        #
+        # Passed through, not composed. app_domains already holds full origins
+        # ("https://crystaldocs.org"), built in module.services.tf from
+        # local.sites. Prefixing a scheme here produced
+        # https://https://crystaldocs.org on every shard page in production.
+        DOCS_SITE_ORIGIN = var.app_domains["crystaldocs"]
       })
       secret_env = {
         DATABASE_URL    = var.database_url_secret_ids["crystalshards"]

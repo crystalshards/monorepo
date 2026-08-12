@@ -239,10 +239,22 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
    exactly the pages that unclamp their content, keyed off the same .docs-shell
    marker main.container uses further down, so the two can never disagree.
    Where :has() is unsupported the masthead simply stays clamped, which is the
-   same graceful outcome the content rule already accepts. */
+   same graceful outcome the content rule already accepts.
+
+   The field also stops being centred here, and that is the point rather than a
+   side effect. Viewport centring is right on a page whose content is one
+   centred column, because the field sits over the thing it searches. A
+   documentation page is a left rail and a reading column, so a field floating
+   in the middle of the bar lines up with nothing at all. It belongs at the
+   left, over the rail, which is what it filters into.
+
+   auto auto 1fr: brand and field take their own widths at the left edge, and
+   the remaining track pushes the menu to the right. */
 body:has(.docs-shell) .navbar {
   max-width: none;
   margin: 0;
+  grid-template-columns: auto minmax(0, 26rem) 1fr;
+  gap: 1.5rem;
 }
 
 .navbar-brand { display: flex; align-items: center; justify-self: start; }
@@ -832,10 +844,21 @@ a.version-number:hover { text-decoration: underline; }
    the container is unclamped only when it actually holds a docs shell. The
    rail and the reading column carry their own padding, so the gutter goes too.
    Where :has() is unsupported the page simply stays clamped: narrower than
-   intended, never broken. */
+   intended, never broken.
+
+   margin-inline and width are here because removing the clamp was not enough,
+   and the reason is worth writing down. `.container` sets `margin: 0 auto`, and
+   `body` is a flex column for the sticky footer. An auto margin on the cross
+   axis of a flex container cancels the default stretch, so with the clamp gone
+   main stopped filling the viewport and fell back to the grid's intrinsic
+   width: measured at 1440, a 970px shell centred with 228px of dead space on
+   each side, with the masthead above it correctly running edge to edge. The
+   page looked like a bug in the sidebar and was a bug in the margins. */
 main.container:has(.docs-shell) {
   max-width: none;
   padding-inline: 0;
+  margin-inline: 0;
+  width: 100%;
 }
 
 .docs-shell {
