@@ -100,7 +100,7 @@ describe Api::Internal::Docs::Build do
     # the queue acts as.
     it "is refused when the subject is not the build invoker" do
       with_claims({
-        aud:   "https://docs-launcher.example.run.app",
+        aud:   "https://docs-launcher.docs.example.internal",
         email: "someone-else@example.iam.gserviceaccount.com",
       }) do
         with_cloud_tasks_env do
@@ -121,7 +121,7 @@ describe Api::Internal::Docs::Build do
       storage = CrystalShards::MockStorageService.new
 
       with_claims({
-        aud:   "https://docs-launcher.example.run.app",
+        aud:   "https://docs-launcher.docs.example.internal",
         email: "docs-tasks@example.iam.gserviceaccount.com",
       }) do
         with_cloud_tasks_env do

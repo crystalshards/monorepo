@@ -17,8 +17,19 @@ terraform {
 
   required_providers {
     google = {
-      source  = "hashicorp/google"
-      version = "~> 4.84"
+      source = "hashicorp/google"
+      # 5.x for google_cloud_run_v2_service.custom_audiences, which arrived in
+      # that major and is the only supported way to give docs-launcher an OIDC
+      # audience it can verify.
+      #
+      # The audience has to be known by the enqueuer that mints the token and
+      # by the launcher that checks it. Its own URL cannot serve: that is an
+      # output of the launcher's resource and terraform will not let a resource
+      # consume its own output. Copying the hostname into a variable would put a
+      # business fact in configuration with nothing to reconcile it against, and
+      # a data source reading the service back cannot plan against an empty
+      # project. A declared custom audience is an input both sides can hold.
+      version = "~> 5.0"
     }
     random = {
       source  = "hashicorp/random"

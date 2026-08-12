@@ -75,6 +75,20 @@ module CrystalDocs
     INVOKER_ENV  = "DOCS_TASKS_SERVICE_ACCOUNT"
     DEADLINE_ENV = "DOCS_BUILD_DEADLINE_SECONDS"
 
+    # The OIDC audience, deliberately separate from the launcher's URL.
+    #
+    # They were one value, and that made docs-launcher unable to verify its own
+    # callers: the audience has to be known by the enqueuer minting the token
+    # and by the launcher checking it, and the launcher's URL is an output of
+    # the launcher's own terraform resource. It was therefore never set there,
+    # its check raised on every dispatch, every delivery returned 500, and no
+    # documentation was ever built. This app is the primary enqueuer, so it is
+    # the one whose tasks were failing.
+    #
+    # Mirrored from CrystalShards::CloudTasksConfig, like CrystalStorage::Keys,
+    # because the two apps have to spell the same contract the same way.
+    AUDIENCE_ENV = "DOCS_LAUNCHER_AUDIENCE"
+
     # Only used outside production. In production the deadline is required,
     # because it has to equal the docs-launcher Cloud Run request timeout and
     # terraform derives both from one value. Defaulting here would recreate
@@ -90,7 +104,7 @@ module CrystalDocs
         app will not enqueue one without knowing where to send it. Production
         requires all of:
 
-          #{PROJECT_ENV}, #{QUEUE_ENV}, #{LOCATION_ENV}, #{LAUNCHER_ENV}, #{INVOKER_ENV}, #{DEADLINE_ENV}
+          #{PROJECT_ENV}, #{QUEUE_ENV}, #{LOCATION_ENV}, #{LAUNCHER_ENV}, #{AUDIENCE_ENV}, #{INVOKER_ENV}, #{DEADLINE_ENV}
 
         In development and test the queue is in-process and none of these are
         read.
@@ -188,7 +202,13 @@ module CrystalDocs
     # Separated from sending it because the shape is the contract, and a
     # contract that can only be checked by dispatching a real task is a
     # contract nobody checks.
-    def self.task_json(launcher_url : String, invoker : String, task : DocsBuildTask, deadline_seconds : Int32 = CloudTasksConfig.deadline_seconds) : String
+    def self.task_json(
+      launcher_url : String,
+      audience : String,
+      invoker : String,
+      task : DocsBuildTask,
+      deadline_seconds : Int32 = CloudTasksConfig.deadline_seconds,
+    ) : String
       {
         task: {
           # Per task, not a queue setting: Cloud Tasks has no queue level
@@ -206,7 +226,13 @@ module CrystalDocs
               serviceAccountEmail: invoker,
               # The launcher verifies this audience. Anything else is a token
               # minted for a different service and must not be accepted.
-              audience: launcher_url,
+              #
+              # Separate from the URL, and it has to be: the launcher cannot be
+              # told its own URL without terraform consuming its own output, so
+              # when these were one value the check raised on every dispatch
+              # and nothing was ever built. Declared as a custom audience on
+              # the service, so Cloud Run accepts it too.
+              audience: audience,
             },
           },
         },
@@ -220,6 +246,7 @@ module CrystalDocs
         CloudTasksConfig.queue_path,
         self.class.task_json(
           CloudTasksConfig.fetch(CloudTasksConfig::LAUNCHER_ENV),
+          CloudTasksConfig.fetch(CloudTasksConfig::AUDIENCE_ENV),
           CloudTasksConfig.fetch(CloudTasksConfig::INVOKER_ENV),
           task
         )

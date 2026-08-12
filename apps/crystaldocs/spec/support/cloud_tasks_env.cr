@@ -23,6 +23,7 @@ def with_cloud_tasks_env(
   queue : String? = "docs-builds",
   location : String? = "us-central1",
   launcher_url : String? = "https://docs-launcher.example.run.app",
+  audience : String? = "https://docs-launcher.docs.example.internal",
   invoker : String? = "docs-tasks@example.iam.gserviceaccount.com",
   deadline : String? = nil,
   &
@@ -32,6 +33,10 @@ def with_cloud_tasks_env(
     CrystalDocs::CloudTasksConfig::QUEUE_ENV    => queue,
     CrystalDocs::CloudTasksConfig::LOCATION_ENV => location,
     CrystalDocs::CloudTasksConfig::LAUNCHER_ENV => launcher_url,
+    # Different from launcher_url on purpose. They were one value, which is why
+    # the launcher could never be told what audience to expect, and a fixture
+    # that made them equal would let them be conflated again silently.
+    CrystalDocs::CloudTasksConfig::AUDIENCE_ENV => audience,
     CrystalDocs::CloudTasksConfig::INVOKER_ENV  => invoker,
     CrystalDocs::CloudTasksConfig::DEADLINE_ENV => deadline,
   } of String => String?

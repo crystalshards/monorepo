@@ -242,6 +242,26 @@ locals {
   #                                 == Cloud Tasks dispatchDeadline
   docs_sandbox_timeout_seconds = local.docs_build_deadline_seconds - var.docs_build_launcher_margin_seconds
 
+  # The service's name, shared by the resource and anything that names it.
+  docs_launcher_service_name = "docs-launcher"
+
+  # The OIDC audience Cloud Tasks mints build tokens for, and docs-launcher
+  # verifies them against.
+  #
+  # A declared literal, not the launcher's URL, and that is the whole fix. Both
+  # sides need this value: the enqueuer to mint the token, the launcher to check
+  # it. Only the enqueuers can read the launcher's `uri`, because the launcher
+  # is that resource and terraform will not let a resource consume its own
+  # output. So the launcher was never told anything, `verify_caller!` raised
+  # Missing on every dispatch, every delivery returned 500, Cloud Tasks retried
+  # until it gave up, and no documentation was ever built. It failed closed,
+  # which is the right direction, and it failed on everything.
+  #
+  # An input can be held by both. The service declares it in custom_audiences,
+  # so Cloud Run accepts a token bearing it, and the launcher compares against
+  # the same string. Nothing is copied and nothing can drift.
+  docs_launcher_audience = "https://${local.docs_launcher_service_name}.docs.crystalshards.internal"
+
   # Both crystalshards and crystaldocs put documentation builds on the queue.
   # crystaldocs is the primary producer: a reader opens a page for a version
   # with no artifact and the request commissions the build. crystalshards is
@@ -255,6 +275,7 @@ locals {
     DOCS_BUILD_QUEUE            = var.docs_build_queue_name
     DOCS_BUILD_QUEUE_LOCATION   = var.docs_build_queue_location
     DOCS_LAUNCHER_URL           = google_cloud_run_v2_service.docs_launcher.uri
+    DOCS_LAUNCHER_AUDIENCE      = local.docs_launcher_audience
     DOCS_TASKS_SERVICE_ACCOUNT  = google_service_account.docs_tasks.email
     DOCS_BUILD_DEADLINE_SECONDS = tostring(local.docs_build_deadline_seconds)
   }
@@ -403,7 +424,17 @@ locals {
   # DOCS_SANDBOX_ALLOW_UNSAFE is deliberately absent: it exists so that building
   # without a sandbox has to be asked for by name, and production never asks.
   docs_launcher_env = merge(local.common_env, {
-    APP_DOMAIN                 = var.docs_launcher_app_domain
+    APP_DOMAIN = var.docs_launcher_app_domain
+
+    # What verify_caller! checks every dispatch against. Without these two the
+    # guard raises before it can compare anything, which returns 500, which
+    # Cloud Tasks retries until it gives up, which is why nothing was ever
+    # built. The launcher gets the audience and the caller identity and NOT
+    # DOCS_LAUNCHER_URL, because that is its own URL and this is its own
+    # resource.
+    DOCS_LAUNCHER_AUDIENCE     = local.docs_launcher_audience
+    DOCS_TASKS_SERVICE_ACCOUNT = google_service_account.docs_tasks.email
+
     JOB_ADS_URL                = var.job_ads_url
     DOCS_BUCKET                = var.docs_bucket_name
     PACKAGES_BUCKET            = var.packages_bucket_name
