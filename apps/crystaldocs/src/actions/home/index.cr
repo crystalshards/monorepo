@@ -19,13 +19,13 @@ class Home::Index < BrowserAction
     # `PackageCatalogue`, which aggregates it for the whole section in one
     # query. Preloading here loaded every version row of every card to answer
     # a question nothing on this page asks any more.
-    recent_docs = DocQuery.new
-      .last_updated_at.desc_order
-      .limit(6)
-
-    popular_docs = DocQuery.new
-      .total_views.desc_order
-      .limit(6)
+    #
+    # `recently_updated` rather than a bare desc_order: Postgres sorts NULLs
+    # first under DESC, and a package with no last_updated_at has never been
+    # built, so the raw ordering led "Recently Updated" with packages that
+    # have no documentation at all.
+    recent_docs = DocQuery.new.recently_updated.limit(6)
+    popular_docs = DocQuery.new.popular.limit(6)
 
     html Home::IndexPage,
       total_packages: total_packages,
