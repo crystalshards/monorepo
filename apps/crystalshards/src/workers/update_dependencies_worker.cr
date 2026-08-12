@@ -41,6 +41,21 @@ struct UpdateDependenciesWorker < BaseJob
     written = 0
 
     AppDatabase.transaction do
+      # Resolution is serialised per version, and the unique index is not
+      # enough on its own to do it. The index stops two writers producing the
+      # same edge twice; it cannot stop them producing the UNION of two
+      # different manifests. A branch ref is mutable, so two overlapping sweeps
+      # can read {a, b} and {a, c} seconds apart, and without this each one's
+      # DELETE takes its snapshot before the other's INSERTs exist: neither
+      # removes what the other wrote and the version keeps a `b` its manifest
+      # no longer declares. That is the removed-edge case failing silently,
+      # which is the whole contract this replacement exists to keep.
+      #
+      # One row, locked by primary key, held for a short transaction that
+      # touches nothing else. There is no second resource to order against, so
+      # there is nothing here to deadlock with.
+      AppDatabase.exec("SELECT id FROM shard_versions WHERE id = $1 FOR UPDATE", shard_version.id)
+
       # The set is replaced wholesale, so a dependency dropped from a manifest
       # is dropped from the graph. Unconditional, because a manifest that
       # declares nothing still has to lose the rows the last one wrote:
@@ -103,21 +118,37 @@ struct UpdateDependenciesWorker < BaseJob
   # version depends on something called X without claiming to know which
   # repository X is. Discovering X later turns the row into an edge on the next
   # pass that reindexes this version.
+  #
+  # Inserted as SQL rather than through SaveDependency for one reason: ON
+  # CONFLICT DO NOTHING. A unique violation aborts the entire Postgres
+  # transaction, so rescuing one would take out every edge queued behind it
+  # rather than just the duplicate, and the whole point of the constraint is
+  # that two overlapping sweeps resolving the same version end up with one
+  # correct set instead of a doubled one. Absorbing the loser's row is the
+  # right outcome there; raising is not.
+  #
+  # Answers whether THIS call wrote the edge, so a row absorbed as a duplicate
+  # is not counted twice in a run's total.
   private def self.store_dependency(shard_version : ShardVersion, dependency : Declared) : Bool
-    SaveDependency.create!(
-      shard_version_id: shard_version.id,
-      name: dependency.name,
-      version_requirement: extract_version_requirement(dependency.spec),
-      scope: dependency.scope,
-      dependent_shard_id: resolve_dependent_shard(dependency).try(&.id)
-    )
-    true
-  rescue ex : Avram::InvalidOperationError
-    # A blank dependency name is the realistic case. Skipping the one entry
-    # keeps the rest of the version's graph, and validation fails before any
-    # SQL is issued, so the surrounding transaction is still usable.
-    Log.warn { "Skipped dependency #{dependency.name.inspect} on shard_version #{shard_version.id}: #{ex.message}" }
-    false
+    requirement = extract_version_requirement(dependency.spec)
+
+    # What SaveDependency's validate_required stood for. A manifest with a
+    # blank dependency name is garbage rather than an edge, and skipping the
+    # one entry keeps the rest of the version's graph.
+    if dependency.name.blank? || requirement.blank?
+      Log.warn { "Skipped a nameless dependency on shard_version #{shard_version.id}" }
+      return false
+    end
+
+    now = Time.utc
+    result = AppDatabase.exec(<<-SQL, shard_version.id, dependency.name, requirement, dependency.scope, resolve_dependent_shard(dependency).try(&.id), now)
+      INSERT INTO dependencies
+        (shard_version_id, name, version_requirement, scope, dependent_shard_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $6)
+      ON CONFLICT (shard_version_id, name, scope) DO NOTHING
+      SQL
+
+    result.rows_affected > 0
   end
 
   # The source keys the shards tool itself understands, and the host each one
