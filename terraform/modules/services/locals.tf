@@ -48,6 +48,115 @@ locals {
     )
   }
 
+  # Shard discovery.
+  #
+  # STATIC, all five, keyed by the environment variable the crawler reads and
+  # valued by the Secret Manager container that holds it. The variable names are
+  # not free: they are Discovery::Credentials::TOKEN_ENV and USERNAME_ENV
+  # verbatim, and a second spelling for the same credential is how an operator
+  # ends up with a populated secret and a host that still refuses to crawl.
+  #
+  # The repository secret CI reads GitHub's value from is DISCOVERY_GITHUB_TOKEN,
+  # not GITHUB_TOKEN, because GitHub reserves that prefix for secret names and
+  # ${{ secrets.GITHUB_TOKEN }} always resolves to the runner's own installation
+  # token. That alias exists only on the CI input side. The container id and the
+  # env var below are the real contract and neither is renamed.
+  discovery_credentials = {
+    GITHUB_TOKEN           = "github-token"
+    GITLAB_TOKEN           = "gitlab-token"
+    CODEBERG_TOKEN         = "codeberg-token"
+    BITBUCKET_USERNAME     = "bitbucket-username"
+    BITBUCKET_APP_PASSWORD = "bitbucket-app-password"
+  }
+
+  # STATIC. Which credentials a host needs before it can authenticate at all,
+  # mirroring Discovery::Credentials.configured?.
+  #
+  # bitbucket.org has two entries and needs both. Its API takes an app password
+  # over HTTP Basic, and Basic carries the account the password belongs to, so
+  # the password alone starts a sweep that 401s on its first request. Treating
+  # half a pair as configured is the one case where a populated secret would
+  # still produce a broken crawl.
+  discovery_host_credentials = {
+    "github.com"    = ["GITHUB_TOKEN"]
+    "gitlab.com"    = ["GITLAB_TOKEN"]
+    "codeberg.org"  = ["CODEBERG_TOKEN"]
+    "bitbucket.org" = ["BITBUCKET_USERNAME", "BITBUCKET_APP_PASSWORD"]
+  }
+
+  # The hosts Discovery::CrawlRunner::HOSTS knows how to sweep.
+  discovery_hosts = toset(keys(local.discovery_host_credentials))
+
+  # Of those, the ones whose credentials CI has actually put a version into. Only
+  # these get their token attached to the Job.
+  #
+  # A Cloud Run execution that references a secret with no versions never starts,
+  # so wiring all five unconditionally would mean the sweep could not run at all
+  # until every host had a credential. Per host optionality is the point: GitHub
+  # alone covers most of the ecosystem, and a host without a token is skipped and
+  # reported as skipped while the run still succeeds.
+  #
+  # The intersection is deliberate rather than a straight read of the variable.
+  # No value CI can pass can invent a host, so a name outside HOSTS is dropped
+  # here rather than trusted to be spelled correctly upstream.
+  #
+  # What terraform CANNOT check is whether a container actually holds a version,
+  # because reading one would put the token in state. So the naming a host here
+  # is a claim CI makes, and the claim it must get right is the pair: naming
+  # bitbucket.org with only one of its two secrets populated attaches an env var
+  # pointing at an empty container, and that does not break Bitbucket, it stops
+  # the whole execution from starting. The deploy workflow's populate step
+  # therefore requires BOTH before it emits bitbucket.org, and says so at the
+  # call site.
+  discovery_enabled_hosts = setintersection(local.discovery_hosts, var.discovery_enabled_hosts)
+
+  # The token env vars for the enabled hosts, and nothing for the rest. Because
+  # the accessor bindings derive from this same table, absent here means absent
+  # from IAM too. Adding one repository secret is the whole switch: the next
+  # deploy passes the host, and the env var and the binding appear together with
+  # no terraform edit involved.
+  #
+  # Built with flatten rather than merge(...)... because the empty case is the
+  # normal one until a token exists, and this has to produce {} cleanly.
+  discovery_secret_env = {
+    for pair in flatten([
+      for host in local.discovery_enabled_hosts : [
+        for env_var in local.discovery_host_credentials[host] : {
+          name      = env_var
+          secret_id = google_secret_manager_secret.discovery_credentials[env_var].secret_id
+        }
+      ]
+    ]) : pair.name => pair.secret_id
+  }
+
+  # The sweep's whole environment. Small for the same reason
+  # local.migration_config is small: ./discover-shards is a slim binary that
+  # loads app_database, config/database and the crawler, so config/server.cr,
+  # config/email.cr, config/payments.cr and config/job_ads.cr never load and none
+  # of their variables are needed.
+  #
+  # LUCKY_ENV is load bearing. config/database.cr branches on
+  # LuckyEnv.production? to decide whether to read DATABASE_URL at all, so
+  # without it the Job assembles a localhost connection from development defaults
+  # and crawls into nothing, successfully.
+  #
+  # DISCOVERY_FRESH is deliberately absent. It discards a host's saved cursor and
+  # starts that host over, which is an operator recovery action after a bad crawl:
+  #
+  #   gcloud run jobs execute discover-shards --update-env-vars DISCOVERY_FRESH=true
+  #
+  # Pinning it to false here would win over that override and quietly remove the
+  # only way to reset a host.
+  discovery_config = {
+    env = {
+      LUCKY_ENV           = "production"
+      DISCOVERY_MAX_PAGES = tostring(var.discovery_max_pages)
+    }
+    secret_env = merge({
+      DATABASE_URL = var.database_url_secret_ids["crystalshards"]
+    }, local.discovery_secret_env)
+  }
+
 
   # Image references. Terraform sets a real, already pushed SHA at create time
   # and then stops caring: every service and Job below carries
@@ -331,16 +440,37 @@ locals {
     }
   }
 
-  # The application and migration grants are one resource; docs-launcher's are a
-  # separate one. That split is not stylistic. local.app_config reads
-  # docs-launcher's URI, so anything derived from app_config transitively
-  # depends on the launcher service, and the launcher in turn has to wait for
-  # its own secret grants before its first revision starts. Merging all three
-  # into one resource puts the launcher on both sides of that edge and
-  # terraform rejects the graph as a cycle.
+  # The sweep's grants, derived from the same table that builds its environment,
+  # so an env var and its binding can only ever appear together. DATABASE_URL is
+  # in there too: the Job reads its connection string from the same secret the
+  # crystalshards service does, and without this binding the execution fails on
+  # the secret rather than on the crawl.
+  #
+  # Absent hosts produce no entry, which is the whole reason the env var is
+  # conditional. A binding on a container with no versions is not itself harmful,
+  # but it would make the plan claim a capability the sweep does not have.
+  discovery_secret_accessors = {
+    for secret_id in toset(values(local.discovery_config.secret_env)) :
+    "discover-shards/${secret_id}" => {
+      member    = "serviceAccount:${google_service_account.discover_shards.email}"
+      secret_id = secret_id
+    }
+  }
+
+  # The application, migration and discovery grants are one resource;
+  # docs-launcher's are a separate one. That split is not stylistic.
+  # local.app_config reads docs-launcher's URI, so anything derived from
+  # app_config transitively depends on the launcher service, and the launcher in
+  # turn has to wait for its own secret grants before its first revision starts.
+  # Merging all of them into one resource puts the launcher on both sides of that
+  # edge and terraform rejects the graph as a cycle.
+  #
+  # Discovery is safe to merge here because nothing it depends on reads a service
+  # URI: its identity and its secret containers are both static.
   service_secret_accessors = merge(
     local.app_secret_accessors,
     local.migration_secret_accessors,
+    local.discovery_secret_accessors,
   )
 
   # Every identity permitted to open a connection to the Cloud SQL instance.
@@ -351,6 +481,7 @@ locals {
     { for app in local.apps : app => google_service_account.apps[app].email },
     { for app in local.apps : "${app}-migrate" => google_service_account.app_migrations[app].email },
     { "docs-launcher" = google_service_account.docs_launcher.email },
+    { "discover-shards" = google_service_account.discover_shards.email },
   )
 
   # The two services that put work on the docs-builds queue. crystaldocs is the

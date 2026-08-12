@@ -1,7 +1,7 @@
 # Services Module
 # The four public Cloud Run services, the private docs-launcher, the untrusted
-# docs-build Job, the four schema migration Jobs, and all of their identities
-# and IAM.
+# docs-build Job, the four schema migration Jobs, the shard discovery sweep Job,
+# and all of their identities and IAM.
 module "services" {
   source = "./modules/services"
 
@@ -17,6 +17,11 @@ module "services" {
   # Which senders may reference their Resend secret. Empty means both serve with
   # mail raising on send. CI passes the slugs it populated.
   mail_enabled_apps = var.mail_enabled_apps
+
+  # Which git hosts may reference their discovery credential. Empty means the
+  # sweep runs, reports every host as skipped naming the variable that would
+  # enable it, and indexes nothing. CI passes the hosts it populated.
+  discovery_enabled_hosts = var.discovery_enabled_hosts
 
   docs_bucket_name     = module.storage.docs_bucket_name
   packages_bucket_name = module.storage.packages_bucket_name

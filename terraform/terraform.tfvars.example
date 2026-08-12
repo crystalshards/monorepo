@@ -21,13 +21,13 @@ region     = "us-central1"
 # -var="image_tag=<sha>" rather than written here.
 image_tag = "abc1234"
 
-# mail_enabled_apps is the one other variable, and CI owns it. It is a list of
-# app slugs, never a key value, naming the senders whose Resend secret actually
-# has a version. Leave it out here: the default is [] and the deploy passes the
-# real list.
+# mail_enabled_apps and discovery_enabled_hosts are the two other variables, and
+# CI owns both. They are lists of NAMES, never key values: which senders have a
+# Resend version, and which git hosts have a discovery credential. Leave both out
+# here. The default is [] for each and the deploy passes the real list.
 #
-# Do not add a Resend or Stripe entry below. Those variables do not exist and
-# terraform will reject them as undeclared.
+# Do not add a Resend, Stripe or host token entry below. Those variables do not
+# exist and terraform will reject them as undeclared.
 #
 # Two secrets must be populated out of band before crystalgigs.com will start,
 # because config/payments.cr exits at boot in production without them:
@@ -48,6 +48,30 @@ image_tag = "abc1234"
 # repository secrets is the whole switch: the next deploy populates the version,
 # passes the slug in mail_enabled_apps, and the env var and its IAM binding
 # appear together with no terraform edit.
+#
+# The five discovery containers work the same way, with one difference worth
+# knowing. terraform creates github-token, gitlab-token, codeberg-token,
+# bitbucket-username and bitbucket-app-password unconditionally and writes a
+# version to none:
+#
+#   gcloud secrets versions add github-token           --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add gitlab-token           --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add codeberg-token         --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add bitbucket-username     --data-file=- --project=crystalshards-org
+#   gcloud secrets versions add bitbucket-app-password --data-file=- --project=crystalshards-org
+#
+# The difference: a hand added version ROTATES a host that is already on, it does
+# not turn one on. terraform attaches a token env var only for the hosts named in
+# discovery_enabled_hosts, and CI only names a host whose repository secret it
+# read, because terraform cannot check a container for a version without writing
+# the token into state. Adding the repository secret is what turns a host on.
+# The GitHub one is DISCOVERY_GITHUB_TOKEN: GitHub reserves the GITHUB_ prefix
+# for secret names, and ${{ secrets.GITHUB_TOKEN }} resolves to the runner's own
+# one hour installation token, which authenticates and finds nothing.
+#
+# With none of them set the discover-shards Job still runs on schedule and still
+# succeeds: it reports every host as skipped, names the variable that would enable
+# it, and indexes nothing. The registry stays empty until a token exists.
 #
 # Use real keys. An empty version fails exactly like a missing one, and there is
 # no "off" value: the apps that do not send mail never ask for a key at all.

@@ -33,6 +33,26 @@ output "migrate_jobs" {
   value       = module.services.migrate_jobs
 }
 
+output "discover_shards_job" {
+  description = "Name of the shard discovery sweep Job"
+  value       = module.services.discover_shards_job
+}
+
+output "discovery_schedule" {
+  description = "The cadence a bounded slice of the sweep runs on, in unix-cron"
+  value       = module.scheduler.discovery_schedule
+}
+
+output "discovery_enabled_hosts" {
+  description = "The git hosts actually crawled, being those whose credential holds a version. Empty means the sweep succeeds having indexed nothing, because nobody has given it a token"
+  value       = module.services.discovery_enabled_hosts
+}
+
+output "discovery_credential_secret_ids" {
+  description = "Map of crawler environment variable name to the Secret Manager container an operator populates to switch that host on. Container ids only, never values"
+  value       = module.services.discovery_credential_secret_ids
+}
+
 output "artifact_registry_repository" {
   description = "Artifact Registry repository ID"
   value       = module.registry.repository_id

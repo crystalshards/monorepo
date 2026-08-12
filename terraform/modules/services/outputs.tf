@@ -43,6 +43,26 @@ output "migrate_jobs" {
   value       = { for app, job in google_cloud_run_v2_job.app_migrations : app => job.name }
 }
 
+output "discover_shards_job" {
+  description = "Name of the shard discovery sweep Job. The scheduler module builds its Cloud Run Jobs :run target from this rather than restating the name"
+  value       = google_cloud_run_v2_job.discover_shards.name
+}
+
+output "discover_shards_service_account_email" {
+  description = "The identity the discovery sweep runs as. Holds roles/cloudsql.client and an accessor binding on its own database secret plus whichever host credentials are populated, and nothing else"
+  value       = google_service_account.discover_shards.email
+}
+
+output "discovery_enabled_hosts" {
+  description = "The git hosts whose credentials are populated and therefore actually crawled. Empty means the sweep runs, skips every host naming the variable that would enable it, and indexes nothing"
+  value       = local.discovery_enabled_hosts
+}
+
+output "discovery_credential_secret_ids" {
+  description = "Map of crawler environment variable name to the Secret Manager container that holds it. Container ids only, never values: terraform creates all five and writes a version to none of them"
+  value       = { for env_var, secret in google_secret_manager_secret.discovery_credentials : env_var => secret.secret_id }
+}
+
 output "docs_tasks_service_account_email" {
   description = "The OIDC identity Cloud Tasks presents to docs-launcher"
   value       = google_service_account.docs_tasks.email

@@ -8,32 +8,69 @@ Go to Settings → Secrets and variables → Actions and add:
 
 ### Required Secrets
 
-Six, and the workflows read no others.
+Eleven names, and the workflows read no others. Four are mandatory, seven are
+feature switches.
 
-Two authenticate CI to Google Cloud:
+Two authenticate CI to Google Cloud, and nothing deploys without them:
 
 - `GCP_SA_KEY` - Service account JSON key CI authenticates with
 - `GCP_PROJECT_ID` - The Google Cloud project to deploy into
 
-Four are the third party application credentials. The deploy workflow's
-`Add a version to every required secret` step reads them and adds a Secret Manager
-version from each, so these are the only place an operator enters a value:
+Four are third party application credentials. The deploy workflow's
+`Populate the application secrets` step reads them and adds a Secret Manager
+version from each, so these are the only place an operator enters a value. Two of
+the four are mandatory:
 
 | GitHub secret | What it unblocks |
 | --- | --- |
-| `CRYSTALGIGS_RESEND_KEY` | CrystalGigs mail, which delivers job applications |
-| `CRYSTALGIGS_STRIPE_SECRET_KEY` | CrystalGigs payments, server side |
-| `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY` | CrystalGigs payments, browser side |
-| `CRYSTALBITS_RESEND_KEY` | CrystalBits mail, which sends the newsletter |
+| `CRYSTALGIGS_STRIPE_SECRET_KEY` | CrystalGigs payments, server side. Required: the service exits at boot without it |
+| `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY` | CrystalGigs payments, browser side. Required, same reason |
+| `CRYSTALGIGS_RESEND_KEY` | CrystalGigs mail, which delivers job applications. Optional |
+| `CRYSTALBITS_RESEND_KEY` | CrystalBits mail, which sends the newsletter. Optional |
 
-Terraform creates the Secret Manager containers those four populate, but never a
-version for any of them. No third party credential is a Terraform variable and
-none is written into Terraform state.
+Five are the discovery host credentials, one per git host the registry crawls,
+except Bitbucket, which needs two. Every one of them is optional and every one is
+independent:
 
-CrystalGigs and CrystalBits will not start until theirs have a version, and the
-populate step fails closed rather than deploying without them. CrystalShards,
-CrystalDocs and docs-launcher hold no third party secret and serve on a clean
-apply with none of the four set.
+| GitHub secret | Host it turns on |
+| --- | --- |
+| `DISCOVERY_GITHUB_TOKEN` | `github.com`. Most of the Crystal ecosystem is here, so this is the one that matters most |
+| `GITLAB_TOKEN` | `gitlab.com` |
+| `CODEBERG_TOKEN` | `codeberg.org` |
+| `BITBUCKET_USERNAME` | `bitbucket.org`, with the secret below. Neither half alone turns it on |
+| `BITBUCKET_APP_PASSWORD` | `bitbucket.org`, with the secret above |
+
+**With none of those five set, the registry discovers nothing and stays empty.**
+The scheduled sweep still runs and still succeeds: it reports each host as skipped
+and names the variable that would enable it, so a run that indexed zero shards
+reads as nobody having given it a token, not as an empty ecosystem. Adding one
+repository secret is the entire act of turning a host on. There is no code change
+and no Terraform change.
+
+`DISCOVERY_GITHUB_TOKEN` is the odd name in that table, and it has to be. GitHub
+reserves the `GITHUB_` prefix for secret names, so a repository secret called
+`GITHUB_TOKEN` cannot be created at all, and `${{ secrets.GITHUB_TOKEN }}` in a
+workflow always resolves to the installation token GitHub mints for that run.
+That token is present, non empty, scoped to this repository and expires in an
+hour, so using it would pass every check the populate step makes and produce a
+sweep that authenticates successfully and finds nothing on github.com. Do not
+rename this to match its neighbours. The Secret Manager container is still
+`github-token` and the variable the crawler reads is still `GITHUB_TOKEN`; the
+alias exists only on the input side.
+
+Terraform creates the nine Secret Manager containers those application and
+discovery secrets populate, and never a version for any of them. No third party
+credential is a Terraform variable and none is written into Terraform state.
+`GCP_SA_KEY` and `GCP_PROJECT_ID` are not among the nine: they are CI's own
+credentials and never reach Secret Manager.
+
+CrystalGigs will not start until its two Stripe keys have a version, and the
+populate step fails closed rather than deploying without them. Everything else
+here is a feature switch: a missing mail key disables mail on one service, a
+missing host token disables discovery of one host, and the deploy carries on.
+CrystalShards, CrystalDocs, CrystalBits and docs-launcher hold no mandatory third
+party secret and serve on a clean apply with none of the seven optional secrets
+set; CrystalGigs is the one service that needs a value before it can serve.
 [`.github/SETUP.md`](.github/SETUP.md) has the container ids, how to mint the
 Google Cloud key, and how to add a version by hand.
 
@@ -51,6 +88,25 @@ everything Terraform manages, not only Cloud Run and Artifact Registry:
 - `roles/iam.serviceAccountUser`
 - `roles/storage.admin`
 - `roles/serviceusage.serviceUsageAdmin`
+- `roles/cloudscheduler.admin`
+- `roles/iam.roleAdmin`
+
+The last two are what the discovery schedule costs. `roles/cloudscheduler.admin`
+creates the one Cloud Scheduler job in the stack.
+
+`roles/iam.roleAdmin` is the one worth pausing on, because it is
+project-wide authority to create and edit custom IAM roles, not a permission
+anything at runtime holds. It buys exact least privilege for the schedule: the
+identity Cloud Scheduler calls the Cloud Run Jobs API as holds a custom role whose
+permission list is exactly `run.jobs.run`, because no predefined role is that
+small. `roles/run.invoker` also carries `run.instances.invoke` and
+`run.routes.invoke`, and `roles/run.jobsExecutor` also carries
+`run.executions.cancel`, which is the ability to kill a sweep in progress. If you
+would rather not give CI this role, create
+`projects/<project>/roles/runDiscoveryJob` by hand once and remove
+`terraform/modules/scheduler/resource.google_project_iam_custom_role.run_job.tf`,
+replacing the reference with a `data` lookup. The trade is a role nothing
+reconciles against the binding that uses it.
 
 [`.github/SETUP.md`](.github/SETUP.md) holds the commands that create this
 identity, bind the roles, and configure Artifact Registry. Follow it there rather

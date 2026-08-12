@@ -17,18 +17,16 @@ The Google Cloud project the Cloud Run services are deployed into.
 
 **Example**: `crystalshards-org`
 
-Those two authenticate CI to Google Cloud. The deploy workflow reads four more
-repository secrets, the third party application credentials, and adds a Secret
-Manager version from each. They are listed below under Populate the Application
-Secrets, together with the container id each one fills.
+Those two authenticate CI to Google Cloud. The deploy workflow reads nine more
+repository secrets, the third party application and discovery credentials, and
+adds a Secret Manager version from each. They are listed below under Populate the
+Application Secrets and Turn On Shard Discovery, together with the container id
+each one fills.
 
 Terraform creates those containers but never a version for any of them, so no
 third party credential is a Terraform variable and none reaches Terraform state.
 
 #### Roles for the deploy service account
-
-The same identity deploys the services and runs Terraform, so it needs permission
-over everything Terraform manages, not only Cloud Run and Artifact Registry:
 
 ```json
 {
@@ -41,10 +39,22 @@ over everything Terraform manages, not only Cloud Run and Artifact Registry:
     "roles/secretmanager.admin",
     "roles/iam.serviceAccountUser",
     "roles/storage.admin",
-    "roles/serviceusage.serviceUsageAdmin"
+    "roles/serviceusage.serviceUsageAdmin",
+    "roles/cloudscheduler.admin",
+    "roles/iam.roleAdmin"
   ]
 }
 ```
+
+The last two arrived with the discovery schedule and are both deploy time
+authority, not anything a running service holds.
+`roles/cloudscheduler.admin` manages the one Cloud Scheduler job in the stack.
+`roles/iam.roleAdmin` is project-wide authority to create and edit custom IAM
+roles, and it exists to buy exact least privilege for that schedule: its caller
+identity holds a custom role of exactly `run.jobs.run`, because no predefined role
+is that small.
+[`GITHUB_SETUP.md`](../GITHUB_SETUP.md) records the alternative if you would
+rather not grant it.
 
 ## GitHub Environments
 
@@ -62,6 +72,9 @@ gcloud services enable run.googleapis.com
 gcloud services enable artifactregistry.googleapis.com
 gcloud services enable sqladmin.googleapis.com
 gcloud services enable cloudtasks.googleapis.com
+
+# Required by the shard discovery schedule, the only timer in the stack
+gcloud services enable cloudscheduler.googleapis.com
 gcloud services enable secretmanager.googleapis.com
 gcloud services enable storage.googleapis.com
 gcloud services enable dns.googleapis.com
@@ -92,7 +105,9 @@ for ROLE in \
     roles/secretmanager.admin \
     roles/iam.serviceAccountUser \
     roles/storage.admin \
-    roles/serviceusage.serviceUsageAdmin; do
+    roles/serviceusage.serviceUsageAdmin \
+    roles/cloudscheduler.admin \
+    roles/iam.roleAdmin; do
   gcloud projects add-iam-policy-binding $PROJECT_ID \
       --member="serviceAccount:$SA_EMAIL" \
       --role="$ROLE"
@@ -137,9 +152,11 @@ identity needs no further grant on the repository.
 
 ## Terraform Variables
 
-`terraform/variables.tf` declares exactly three: `project_id`, `region` and
-`image_tag`. `project_id` and `region` come from `terraform/terraform.tfvars`.
-`image_tag` is the commit SHA, passed on the command line with `-var`.
+`terraform/variables.tf` declares exactly five: `project_id`, `region`,
+`image_tag`, `mail_enabled_apps` and `discovery_enabled_hosts`. `project_id` and
+`region` come from `terraform/terraform.tfvars`. `image_tag` is the commit SHA,
+passed on the command line with `-var`. The last two are lists of names the deploy
+workflow computes and passes the same way.
 
 Do not add a second source for a variable that already has one. Terraform
 auto-loads `terraform.tfvars`, and an auto-loaded values file outranks `TF_VAR_`,
@@ -147,9 +164,11 @@ so exporting `TF_VAR_project_id` alongside the tracked file changes nothing whil
 the run still reports success. That precedence is what let a tracked values file
 pinning credentials to a placeholder silently override what CI passed.
 
-No third-party credential is a Terraform variable. The Resend and Stripe keys
-reach the services through Secret Manager instead, so nothing sensitive is written
-into Terraform state.
+No third-party credential is a Terraform variable. The Resend keys, the Stripe
+keys and the discovery host tokens all reach their consumers through Secret
+Manager instead, so nothing sensitive is written into Terraform state.
+`mail_enabled_apps` and `discovery_enabled_hosts` carry names only: which
+capability CI found a value for, never the value.
 
 ## Initial Infrastructure Deployment
 
@@ -161,61 +180,124 @@ After CI applies the change, verify what is running:
 ```bash
 gcloud run services list --region us-central1
 gcloud run jobs list --region us-central1
+gcloud scheduler jobs list --location us-central1
 ```
+
+The last of those should list exactly one job, `discover-shards`, on the cadence
+in `terraform/modules/scheduler/variables.tf`. It is the only timer in the stack.
 
 ## Populate the Application Secrets
 
-Terraform creates four empty Secret Manager containers, so there is no
-`gcloud secrets create` step. Each one needs a version before the service that
-reads it can start.
+Terraform creates nine empty Secret Manager containers, so there is no
+`gcloud secrets create` step. Four hold application credentials and five hold
+discovery host credentials; the discovery five are in the next section.
 
-The deploy workflow populates them. Its `Add a version to every required secret`
-step reads four GitHub repository secrets and adds a Secret Manager version from
-each, so an operator supplies the values once under
-Settings, then Secrets and variables, then Actions, and never runs `gcloud` by
-hand. The step fails closed: if any of the four is unset it stops the deploy
-before the stack is applied, rather than putting up a revision that cannot start.
+The deploy workflow populates them. Its `Populate the application secrets` step
+reads the matching GitHub repository secrets and adds a Secret Manager version
+from each, so an operator supplies each value once under Settings, then Secrets
+and variables, then Actions, and never runs `gcloud` by hand.
 
-| GitHub secret | Secret Manager container | What it unblocks |
-| --- | --- | --- |
-| `CRYSTALGIGS_RESEND_KEY` | `crystalgigs-resend-key` | CrystalGigs mail, which delivers job applications |
-| `CRYSTALGIGS_STRIPE_SECRET_KEY` | `crystalgigs-stripe-secret-key` | CrystalGigs payments, server side |
-| `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY` | `crystalgigs-stripe-publishable-key` | CrystalGigs payments, browser side |
-| `CRYSTALBITS_RESEND_KEY` | `crystalbits-resend-key` | CrystalBits mail, which sends the newsletter |
+| GitHub secret | Secret Manager container | What it unblocks | Absent |
+| --- | --- | --- | --- |
+| `CRYSTALGIGS_STRIPE_SECRET_KEY` | `crystalgigs-stripe-secret-key` | CrystalGigs payments, server side | Stops the deploy |
+| `CRYSTALGIGS_STRIPE_PUBLISHABLE_KEY` | `crystalgigs-stripe-publishable-key` | CrystalGigs payments, browser side | Stops the deploy |
+| `CRYSTALGIGS_RESEND_KEY` | `crystalgigs-resend-key` | CrystalGigs mail, which delivers job applications | Mail off on that service, deploy continues |
+| `CRYSTALBITS_RESEND_KEY` | `crystalbits-resend-key` | CrystalBits mail, which sends the newsletter | Mail off on that service, deploy continues |
 
-Those four are the whole list. `crystalshards`, `crystaldocs` and `docs-launcher`
-are deliberately absent from it and must stay absent: a registry and a docs site
-should not refuse to serve a page because a mail credential is missing, and
-`docs-launcher` runs the `crystalshards` image, so it inherits that.
+`crystalshards`, `crystaldocs` and `docs-launcher` are deliberately absent and
+must stay absent: a registry and a docs site should not refuse to serve a page
+because a mail credential is missing, and `docs-launcher` runs the `crystalshards`
+image so it inherits that.
 
-To add a version by hand, outside the pipeline:
+Only the two Stripe keys are mandatory. The step fails closed on those, because
+`config/payments.cr` exits at boot without them, so the alternative is a revision
+that cannot start. A missing mail key is a supported state: the service deploys
+and serves, and raises naming `RESEND_API_KEY` on an actual send attempt rather
+than reporting a delivery that did not happen. Every skip is printed.
+
+## Turn On Shard Discovery
+
+This is how the registry finds shards on its own. Without it the only paths to an
+indexed shard are `POST /api/shards`, `POST /api/shards/upload` and a GitHub
+webhook push, which means somebody has to bring every shard by hand.
+
+A Cloud Scheduler job runs the `discover-shards` Cloud Run Job on a cadence. Each
+run walks a bounded slice of each configured host's search API and stops; the
+crawler saves a per host cursor after every page, so the next run continues rather
+than starting over. Every host needs an API credential, and each is independent:
+
+| GitHub secret | Secret Manager container | Crawler variable | Host it turns on |
+| --- | --- | --- | --- |
+| `DISCOVERY_GITHUB_TOKEN` | `github-token` | `GITHUB_TOKEN` | `github.com` |
+| `GITLAB_TOKEN` | `gitlab-token` | `GITLAB_TOKEN` | `gitlab.com` |
+| `CODEBERG_TOKEN` | `codeberg-token` | `CODEBERG_TOKEN` | `codeberg.org` |
+| `BITBUCKET_USERNAME` | `bitbucket-username` | `BITBUCKET_USERNAME` | `bitbucket.org`, with the row below |
+| `BITBUCKET_APP_PASSWORD` | `bitbucket-app-password` | `BITBUCKET_APP_PASSWORD` | `bitbucket.org`, with the row above |
+
+**Set none of these and the registry discovers nothing and stays empty.** That is
+the state a fresh deploy is in. The sweep still runs on schedule and still
+succeeds: it reports each host as skipped and names the variable that would enable
+it, so a run that indexed zero shards reads as nobody having given it a token
+rather than as an empty ecosystem. Nothing fails, and nothing pretends to have
+looked.
+
+Each token needs public read scope and nothing more. The crawler only enumerates
+public repositories and reads `shard.yml` files.
+
+`bitbucket.org` needs both of its secrets before it turns on. Its API takes an app
+password over HTTP Basic, and Basic carries the account the password belongs to, so
+the password alone authenticates nothing. One half populated leaves the host off
+and says which half is missing.
+
+### Why `DISCOVERY_GITHUB_TOKEN` and not `GITHUB_TOKEN`
+
+Because GitHub will not allow the obvious name, and the way it refuses is silent.
+Secret names "must not start with the `GITHUB_` prefix"
+([docs](https://docs.github.com/en/actions/reference/security/secrets)), so the
+repository secret cannot be created, and `${{ secrets.GITHUB_TOKEN }}` in a
+workflow always resolves to the installation token GitHub mints for that run
+instead. That token is present, non empty, scoped to this repository and expires
+in an hour, so reading it would pass every check the populate step makes and then
+produce a sweep that authenticates successfully and finds nothing on github.com.
+
+Do not rename this to match the other four. The Secret Manager container is still
+`github-token` and the variable the crawler reads is still `GITHUB_TOKEN`, matching
+`Discovery::Credentials::TOKEN_ENV`; the alias exists only on the CI input side.
+
+### Adding a version by hand
+
+To add a version outside the pipeline, for a rotation or an emergency:
 
 ```bash
 gcloud secrets versions add <secret-id> --data-file=- --project=crystalshards-org
 ```
 
-A Cloud Run revision that references a secret with zero versions fails to start.
-It does not start degraded, and it does not start with an empty string.
+For the mail and Stripe containers that is enough. For a discovery container it is
+not, and this is the one asymmetry worth knowing: Terraform decides which token
+environment variables to attach from the list CI publishes, and CI only publishes
+a host whose repository secret it read. Terraform cannot check a container for a
+version itself, because reading one would write the token into Terraform state. So
+a hand added discovery version rotates a host that is already on; it does not turn
+a host on. The repository secret is what does that.
 
-Three of the five services therefore come up on a clean apply with no third party
-credential at all, and two stay dark until theirs have a version:
+### What is running
 
-| Service | On a clean apply |
+A Cloud Run revision or execution that references a secret with zero versions
+fails to start. It does not start degraded, and it does not start with an empty
+string. That is why every optional credential is attached conditionally.
+
+| Service or Job | On a clean apply with no optional secret set |
 | --- | --- |
 | `crystalshards` | Serves. Holds no third party secret. |
 | `crystaldocs` | Serves. Holds no third party secret. |
 | `docs-launcher` | Serves. Holds no third party secret. |
-| `crystalbits` | Will not start until `crystalbits-resend-key` has a version. |
-| `crystalgigs` | Will not start until all three of its secrets have a version. |
+| `crystalbits` | Serves. Mail raises naming `RESEND_API_KEY` on a send attempt. |
+| `crystalgigs` | Will not start until both Stripe secrets have a version. Mail behaves as CrystalBits does. |
+| `discover-shards` | Runs on schedule, reports all four hosts skipped, exits successfully, indexes nothing. |
 
 The four `*-migrate` Jobs are unaffected, holding only the `DATABASE_URL`
 Terraform generates, and `docs-build` is unaffected because it holds no secret
 at all.
-
-Only CrystalGigs and CrystalBits send mail, so only they require a Resend key,
-and each fails closed naming the variable rather than starting without it. There
-is no opt out value: a service that does not send mail has no secret to set.
-CrystalGigs needs real Stripe keys or it does not serve.
 
 ## Security Considerations
 

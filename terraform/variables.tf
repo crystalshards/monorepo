@@ -47,3 +47,22 @@ variable "mail_enabled_apps" {
   type        = set(string)
   default     = []
 }
+
+# Names, not values. The list of git hosts whose discovery credential CI has
+# populated, so terraform knows which token env vars the discovery Job may
+# reference. A Cloud Run execution pointing at a versionless secret never starts,
+# and no host should block a sweep of the hosts that are configured.
+#
+# There is deliberately no variable here for a host token itself, for the same
+# reason there is none for the Resend or Stripe keys. See the comment above.
+#
+# The sweep's two bounded run knobs, discovery_max_pages and
+# discovery_timeout_seconds, are deliberately NOT surfaced here. They have
+# defaults and validation in modules/services/variables.tf, nothing outside
+# terraform sets them, and a root variable restating a module default is the
+# second source for one value that this configuration keeps warning about.
+variable "discovery_enabled_hosts" {
+  description = "Git hosts whose discovery credential has a version, as Discovery::CrawlRunner::HOSTS names them. Empty until the tokens exist; the sweep then reports every host as skipped and indexes nothing"
+  type        = set(string)
+  default     = []
+}
