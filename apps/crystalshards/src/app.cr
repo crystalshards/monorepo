@@ -11,6 +11,12 @@ require "./queries/mixins/**"
 require "./queries/**"
 require "./operations/mixins/**"
 require "./operations/**"
+
+# Pages, serializers and actions all order versions, and all of them must agree
+# with the latest_version the indexer stored. Required explicitly rather than
+# through a services glob: the rest of services/ is the crawler and the indexer,
+# which the web app deliberately does not carry.
+require "./services/version_order"
 require "./serializers/base_serializer"
 require "./serializers/**"
 require "./emails/base_email"

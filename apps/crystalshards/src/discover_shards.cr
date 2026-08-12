@@ -1,9 +1,20 @@
-# Discovery sweep entrypoint for the discover-shards Cloud Run Job.
+# Discovery and indexing entrypoint for the discover-shards Cloud Run Job.
 #
-# Nothing else in this repo invokes the crawler. The registry indexes a shard when
+# Two phases, one process, one schedule.
+#
+#   1. sweep    find repositories nobody has told us about
+#   2. index    turn the ones already found into pages with content
+#
+# Nothing else in this repo invokes either. The registry indexes a shard when
 # somebody posts it, uploads it, or pushes to a repository we already hold a
-# webhook for; none of those find a shard nobody has told us about. This binary is
-# what does, and Cloud Scheduler is what runs it.
+# webhook for; none of those find a shard nobody has told us about, and none of
+# them fill in a shard discovery found six months ago. This binary is what does,
+# and Cloud Scheduler is what runs it.
+#
+# The phases share this process because they share a rate limit. Split across two
+# Jobs they would each hold half a budget they cannot see the other spending, and
+# the crawl would starve the indexer on exactly the runs where discovery found
+# the most to index.
 #
 # It is a Job rather than an HTTP route because a sweep of thousands of
 # repositories is a task, not a request: it runs for minutes, it needs no caller
@@ -33,6 +44,7 @@ require "./queries/**"
 require "./operations/mixins/**"
 require "./operations/**"
 require "./services/discovery/sweep"
+require "./services/index_sweep"
 
 # config/log.cr is not required here: it configures Lucky's request logging and
 # pulls the framework in with it. A Job wants its own logs on stdout, in order,
@@ -45,6 +57,8 @@ require "./services/discovery/sweep"
 # Skipped block they were describing.
 Log.setup(:info, Log::IOBackend.new(STDOUT, dispatcher: :sync))
 
+# Both phases are configured before either runs. A bad INDEX_MAX_SHARDS should
+# not be discovered forty minutes into a crawl, after the budget is spent.
 options = begin
   Discovery::Sweep::Options.from_env
 rescue ex : Discovery::Sweep::ConfigurationError
@@ -55,8 +69,27 @@ rescue ex : Discovery::Sweep::ConfigurationError
   exit 2
 end
 
+index_options = begin
+  IndexSweep::Options.from_env
+rescue ex : IndexSweep::ConfigurationError
+  STDERR.puts ex.message
+  exit 2
+end
+
 result = Discovery::Sweep.run(options)
 Discovery::Sweep.render(result, STDOUT)
+STDOUT.puts
+
+# Indexing runs even when the crawl failed. The two phases fail for unrelated
+# reasons: a host refusing a search says nothing about whether the 217 shards
+# already in the table can be read, and skipping the second phase because the
+# first had a bad night is how the registry stays empty through an outage that
+# never touched it.
+index_report = IndexSweep.run(index_options)
+IndexSweep.render(index_report, STDOUT)
 STDOUT.flush
 
-exit result.exit_code
+# Either phase failing fails the Job. A run that crawled nothing and a run that
+# indexed nothing are both worth a red mark, and collapsing them to the worse of
+# the two is what lets one alert cover the Job rather than one per phase.
+exit [result.exit_code, index_report.exit_code].max
