@@ -1,182 +1,131 @@
+require "yaml"
 require "json"
 
-# The shard.yml as it stood on one git tag.
+# A parsed shard.yml, or the reason there is not one.
 #
-# IndexShardWorker parses the manifest and stores it verbatim in
-# shard_versions.metadata, so this is a reader over that column rather than a
-# second copy of the data.
+# Parsing is separated from fetching so the whole of it is exercised by specs
+# with no network, and so a malformed manifest produces a recorded sentence
+# rather than an exception that aborts a shard mid-index.
 #
-# It exists because shard.yml is a stranger's file. Every key in it is
-# optional, the registry is full of minimal manifests, and a page that calls
-# `.as_h` on whatever somebody committed crashes on the first shard that
-# wrote `dependencies:` with nothing under it. So every accessor here answers
-# with an empty result instead of raising, and the page renders the emptiness
-# as a statement rather than as a blank.
-class ShardManifest
-  # One entry under `targets:`.
-  struct Target
-    getter name : String
-    getter main : String?
+# Every error string here is written to `shard_versions.spec_error` and rendered
+# verbatim to a reader, so they are sentences about the repository rather than
+# exception class names.
+struct ShardManifest
+  getter name : String?
+  getter version : String?
+  getter crystal : String?
+  getter license : String?
+  getter description : String?
+  getter homepage : String?
+  getter documentation : String?
+  getter dependencies : JSON::Any?
+  getter development_dependencies : JSON::Any?
+  getter targets : JSON::Any?
+  getter executables : JSON::Any?
 
-    def initialize(@name : String, @main : String?)
-    end
+  # The whole manifest as JSON, which is what `shard_versions.metadata` has
+  # always held and what UpdateDependenciesWorker reads.
+  getter document : JSON::Any
+
+  def initialize(
+    @document : JSON::Any,
+    @name : String? = nil,
+    @version : String? = nil,
+    @crystal : String? = nil,
+    @license : String? = nil,
+    @description : String? = nil,
+    @homepage : String? = nil,
+    @documentation : String? = nil,
+    @dependencies : JSON::Any? = nil,
+    @development_dependencies : JSON::Any? = nil,
+    @targets : JSON::Any? = nil,
+    @executables : JSON::Any? = nil,
+  )
   end
 
-  # nil means "no manifest is indexed for this version", which is a different
-  # thing from "the manifest declares nothing", and the page says so
-  # differently. A metadata blob that parsed to something other than a mapping
-  # is equally unusable and is also nil: a shard.yml that is a bare list is
-  # not a manifest, whatever the file was called.
-  def self.from(version : ShardVersion?) : ShardManifest?
-    return nil unless version
-
-    raw = version.metadata
-    return nil unless raw
-
-    fields = raw.as_h?
-    return nil unless fields
-
-    new(fields)
-  end
-
-  def initialize(@fields : Hash(String, JSON::Any))
-  end
-
-  # The `crystal:` constraint. Written as a string most of the time, but
-  # `crystal: 0.36` is legal YAML and arrives as a number, so both are read.
-  def crystal : String?
-    scalar("crystal")
-  end
-
-  def license : String?
-    scalar("license")
-  end
-
-  def version : String?
-    scalar("version")
-  end
-
-  def description : String?
-    scalar("description")
-  end
-
-  def authors : Array(String)
-    strings("authors")
-  end
-
-  def executables : Array(String)
-    strings("executables")
-  end
-
-  # `targets:` is a mapping of executable name to build settings, of which
-  # `main` is the only one worth showing.
-  def targets : Array(Target)
-    mapping("targets").map do |name, spec|
-      main = spec.as_h?.try { |h| json_scalar(h["main"]?) }
-      Target.new(name, main)
-    end
-  end
-
-  def dependency_names : Array(String)
-    mapping("dependencies").keys
-  end
-
-  def development_dependency_names : Array(String)
-    mapping("development_dependencies").keys
-  end
-
-  # Where a dependency comes from, in the shorthand shard.yml itself uses:
-  # "github: kemalcr/kemal", "git: https://example.com/x.git", "path: ../y".
-  #
-  # This is the part of a dependency the Dependency row does not carry, and it
-  # is the part that says whether a requirement tracks a release or somebody's
-  # branch. Refs are appended for the same reason: "github: foo/bar,
-  # branch: master" is a materially different dependency from a versioned one.
-  def source_for(name : String) : String?
-    spec = dependency_spec(name)
-    return nil unless spec
-
-    parts = [] of String
-
-    SOURCE_KEYS.each do |key|
-      if value = json_scalar(spec[key]?)
-        parts << "#{key}: #{value}"
-        break
-      end
+  # Parsed, or a sentence saying why not. Never raises: a shard whose manifest
+  # is broken is a shard with a broken manifest, which is a fact worth showing,
+  # not a reason to abandon the rest of its indexing.
+  def self.parse(source : String) : ShardManifest | String
+    if source.blank?
+      return "shard.yml is empty."
     end
 
-    REF_KEYS.each do |key|
-      if value = json_scalar(spec[key]?)
-        parts << "#{key}: #{value}"
-      end
+    parsed = YAML.parse(source)
+
+    # A YAML document can legally be a string, a list, or null. Only a mapping
+    # is a shard.yml, and "false" is a valid YAML document that would otherwise
+    # sail through as a manifest with no fields.
+    mapping = parsed.as_h?
+    unless mapping
+      return "shard.yml is valid YAML but not a mapping, so it is not a shard specification."
     end
 
-    parts.empty? ? nil : parts.join(", ")
+    document = JSON.parse(parsed.to_json)
+
+    new(
+      document: document,
+      name: string_at(document, "name"),
+      version: string_at(document, "version"),
+      crystal: crystal_constraint(document),
+      license: string_at(document, "license"),
+      description: string_at(document, "description"),
+      homepage: string_at(document, "homepage"),
+      documentation: string_at(document, "documentation"),
+      dependencies: mapping_at(document, "dependencies"),
+      development_dependencies: mapping_at(document, "development_dependencies"),
+      targets: mapping_at(document, "targets"),
+      executables: list_at(document, "executables"),
+    )
+  rescue ex : YAML::ParseException
+    # The line number is the useful half of this: a reader with it can open the
+    # file and see the problem.
+    location = ex.line_number > 0 ? " at line #{ex.line_number}" : ""
+    "shard.yml is not valid YAML#{location}: #{ex.message.to_s.split(" at line").first}."
+  rescue ex : JSON::Error
+    "shard.yml parsed as YAML but could not be represented as JSON: #{ex.message}."
   end
 
-  # True when the manifest was indexed but says nothing a reader would want:
-  # a name and a version and no more. Most of the registry looks like this,
-  # and the page states it rather than drawing an empty table.
-  def describes_nothing? : Bool
-    crystal.nil? &&
-      license.nil? &&
-      authors.empty? &&
-      executables.empty? &&
-      targets.empty? &&
-      dependency_names.empty? &&
-      development_dependency_names.empty?
+  # The binaries this version builds, by name.
+  def target_names : Array(String)
+    targets.try(&.as_h?).try(&.keys) || [] of String
   end
 
-  # The source keys `shards` understands, in the order it resolves them.
-  SOURCE_KEYS = %w[github gitlab bitbucket codeberg git hg fossil path]
-
-  # What a source is pinned to, when it is pinned to something other than a
-  # version requirement.
-  REF_KEYS = %w[branch tag commit]
-
-  private def dependency_spec(name : String) : Hash(String, JSON::Any)?
-    spec = mapping("dependencies")[name]? || mapping("development_dependencies")[name]?
-    spec.try(&.as_h?)
+  def executable_names : Array(String)
+    executables.try(&.as_a?).try(&.compact_map(&.as_s?)) || [] of String
   end
 
-  private def scalar(key : String) : String?
-    json_scalar(@fields[key]?)
-  end
-
-  # YAML scalars arrive as whatever JSON type they parsed to. A number is
-  # still worth showing; a mapping or a list under a key that should hold a
-  # scalar is malformed, and showing nothing beats showing a JSON dump.
-  private def json_scalar(value : JSON::Any?) : String?
+  # `crystal:` is a version constraint, but it is written both as a string
+  # (">= 1.0.0") and, in older shards, as a bare number that YAML reads as a
+  # float (crystal: 0.35). Both mean the same thing to a reader.
+  private def self.crystal_constraint(document : JSON::Any) : String?
+    value = document["crystal"]?
     return nil unless value
 
     case raw = value.raw
-    when String
-      raw.blank? ? nil : raw
-    when Int64, Float64, Bool
-      raw.to_s
-    else
-      nil
+    when String then raw.presence
+    when Int64  then raw.to_s
+    when Float64
+      # 0.35 must not render as "0.35000000000000003".
+      raw == raw.round ? raw.to_i64.to_s : raw.to_s
     end
   end
 
-  # `authors:` is a list, but a single author written as a bare string is
-  # common enough that reading it as a one-item list is kinder than dropping
-  # the only author a shard has.
-  private def strings(key : String) : Array(String)
-    value = @fields[key]?
-    return [] of String unless value
-
-    case raw = value.raw
-    when Array
-      raw.compact_map { |entry| json_scalar(entry) }
-    when String
-      raw.blank? ? [] of String : [raw]
-    else
-      [] of String
-    end
+  private def self.string_at(document : JSON::Any, key : String) : String?
+    document[key]?.try(&.as_s?).presence
   end
 
-  private def mapping(key : String) : Hash(String, JSON::Any)
-    @fields[key]?.try(&.as_h?) || {} of String => JSON::Any
+  private def self.mapping_at(document : JSON::Any, key : String) : JSON::Any?
+    value = document[key]?
+    return nil unless value.try(&.as_h?)
+
+    value
+  end
+
+  private def self.list_at(document : JSON::Any, key : String) : JSON::Any?
+    value = document[key]?
+    return nil unless value.try(&.as_a?)
+
+    value
   end
 end

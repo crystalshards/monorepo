@@ -14,12 +14,20 @@ module Shards::RendersShowPage
   DEPENDENTS_SHOWN = 12
 
   private def render_show_page(shard : Shard, requested_version : String? = nil)
-    versions = shard.shard_versions.sort_by(&.released_at).reverse
+    # Semver, not released_at. Only the version the indexer actually fetched
+    # carries a real commit date; every other row falls back to the repository's
+    # pushed_at, so a date sort returns them in an order Postgres chose. Measured
+    # on kemal: 64 of its 65 rows share one instant and 1.9.0 sorted above
+    # 1.11.0, while the shard's own latest_version said 1.12.0.
+    versions = VersionOrder.sort_versions(shard.shard_versions)
 
     selected = if requested = requested_version
                  versions.find { |candidate| candidate.version == requested }
                else
-                 versions.first?
+                 # The same rule the indexer used to choose latest_version, so
+                 # the selector's default, the card and the API cannot disagree
+                 # about which version this shard is on.
+                 VersionOrder.latest_version(versions)
                end
 
     # A URL naming a release this shard never published is not a sparse page,
@@ -35,7 +43,7 @@ module Shards::RendersShowPage
       versions: versions,
       selected_version: selected,
       dependencies: dependencies_for(selected),
-      manifest: ShardManifest.from(selected),
+      manifest: StoredManifest.from(selected),
       dependent_count: ShardPopularity.dependent_count(shard_id),
       dependents: dependents_for(shard_id)
   end

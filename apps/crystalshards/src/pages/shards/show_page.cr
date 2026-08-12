@@ -1,4 +1,4 @@
-require "../../services/shard_manifest"
+require "../../services/stored_manifest"
 
 # One shard, at one version.
 #
@@ -23,7 +23,7 @@ class Shards::ShowPage < MainLayout
   needs dependencies : Array(Dependency)
   # The parsed shard.yml at the selected version. nil means nothing is indexed
   # for it, which is a statement the page makes rather than a blank it draws.
-  needs manifest : ShardManifest?
+  needs manifest : StoredManifest?
   needs dependent_count : Int32
   needs dependents : Array(Shard)
 
@@ -325,7 +325,7 @@ class Shards::ShowPage < MainLayout
     end
   end
 
-  private def render_manifest_facts(manifest : ShardManifest)
+  private def render_manifest_facts(manifest : StoredManifest)
     tag "dl", class: "manifest-facts" do
       # The Crystal constraint on the version row is written from this same
       # parse, so either would do; the manifest is preferred because it is the

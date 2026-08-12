@@ -60,6 +60,29 @@ describe UpdateDependenciesWorker do
       deps.name("unpinned").first.version_requirement.should eq("*")
     end
 
+    it "records a version constraint the manifest left unquoted" do
+      # `version: 1.0` is legal YAML and reaches metadata as a number, not a
+      # string. A sweep reading arbitrary manifests meets them, and reading one
+      # as a string would raise and cost the whole version its graph.
+      shard = ShardFactory.create &.name("unquoted-deps")
+      version = version_with_metadata(shard, <<-JSON)
+        {
+          "name": "unquoted-deps",
+          "dependencies": {
+            "floaty": {"github": "user/floaty", "version": 1.0},
+            "whole": {"github": "user/whole", "version": 2}
+          }
+        }
+        JSON
+
+      UpdateDependenciesWorker.new(shard_name: "unquoted-deps", version: "1.0.0").perform
+
+      deps = DependencyQuery.new.shard_version_id(version.id)
+      deps.select_count.should eq(2)
+      deps.name("floaty").first.version_requirement.should eq("1.0")
+      deps.name("whole").first.version_requirement.should eq("2")
+    end
+
     it "links a dependency to the shard it names, when that shard is indexed" do
       kemal = ShardFactory.create &.name("kemal")
       consumer = ShardFactory.create &.name("consumer")
@@ -143,9 +166,10 @@ describe UpdateDependenciesWorker do
       DependencyQuery.new.shard_version_id(version.id).select_count.should eq(0)
     end
 
-    it "skips development dependencies when the runtime dependencies key is absent" do
-      # parse_and_store_dependencies returns early without a "dependencies"
-      # key, so development dependencies alone are never reached.
+    it "records development dependencies when the runtime dependencies key is absent" do
+      # A library with no runtime dependencies and ameba in development still
+      # declares a dependency. Reading the runtime key first and stopping when
+      # it is missing understates ameba's dependents across the whole registry.
       shard = ShardFactory.create &.name("dev-only")
       version = version_with_metadata(shard, <<-JSON)
         {
@@ -156,7 +180,9 @@ describe UpdateDependenciesWorker do
 
       UpdateDependenciesWorker.new(shard_name: "dev-only", version: "1.0.0").perform
 
-      DependencyQuery.new.shard_version_id(version.id).select_count.should eq(0)
+      deps = DependencyQuery.new.shard_version_id(version.id)
+      deps.select_count.should eq(1)
+      deps.name("ameba").first.scope.should eq("development")
     end
 
     it "clears existing rows when the metadata declares an empty dependency set" do

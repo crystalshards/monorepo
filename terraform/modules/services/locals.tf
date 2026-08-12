@@ -151,6 +151,13 @@ locals {
     env = {
       LUCKY_ENV           = "production"
       DISCOVERY_MAX_PAGES = tostring(var.discovery_max_pages)
+
+      # The Job runs two bounded phases against one rate limit: it sweeps for
+      # new repositories, then indexes the stalest shards it can still afford.
+      # Both bounds are published, because tuning one without seeing the other
+      # is how a crawl starves the indexer on exactly the runs that discovered
+      # the most to index.
+      INDEX_MAX_SHARDS = tostring(var.index_max_shards)
     }
     secret_env = merge({
       DATABASE_URL = var.database_url_secret_ids["crystalshards"]
