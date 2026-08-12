@@ -1,3 +1,10 @@
+# The catalogue, as JSON. The same list the browse page renders and from the
+# same source: the registry decides which packages exist, and this app's rows
+# say which of them it has built.
+#
+# This is the endpoint a client resolves a name against, so answering it from
+# the `docs` table meant a name only resolved once somebody had already opened
+# that package on the website.
 class Api::Docs::Index < ApiAction
   include Api::Auth::SkipRequireAuthToken
 
@@ -6,39 +13,44 @@ class Api::Docs::Index < ApiAction
   param query : String?
 
   get "/api/docs" do
-    docs_query = DocQuery.new
-      .preload_doc_versions
-      .last_updated_at.desc_order
+    current_page = page < 1 ? 1 : page
+    catalogue = CrystalDocs::PackageCatalogue.page(query, current_page, per_page)
 
-    if search_query = query
-      docs_query = docs_query.package_name.ilike("%#{search_query}%")
+    if catalogue.available?
+      json(catalogue_body(catalogue, current_page))
+    else
+      # 503 rather than an empty list. An empty `docs` array is a claim that
+      # the registry holds no matching shard, and a client that cannot tell
+      # that apart from an outage will cache the absence.
+      json(
+        {error: "The shard index is unavailable, so the catalogue cannot be listed."},
+        status: 503
+      )
     end
+  end
 
-    total_count = docs_query.select_count
-    offset_value = (page - 1) * per_page
-
-    paginated_docs = docs_query
-      .limit(per_page)
-      .offset(offset_value)
-
-    json({
-      docs: paginated_docs.map do |doc|
+  private def catalogue_body(
+    catalogue : CrystalDocs::PackageCatalogue::Page,
+    current_page : Int32,
+  )
+    {
+      docs: catalogue.entries.map do |entry|
         {
-          package_name:    doc.package_name,
-          current_version: doc.current_version,
-          description:     doc.description,
-          repository_url:  doc.repository_url,
-          total_views:     doc.total_views,
-          last_updated_at: doc.last_updated_at,
-          created_at:      doc.created_at,
-          updated_at:      doc.updated_at,
+          package_name:    entry.key,
+          current_version: entry.version,
+          description:     entry.description,
+          repository_url:  entry.repository_url,
+          total_views:     entry.total_views,
+          last_updated_at: entry.last_updated_at,
+          created_at:      entry.created_at,
+          updated_at:      entry.updated_at,
         }
       end,
       meta: {
-        page:     page,
+        page:     current_page,
         per_page: per_page,
-        total:    total_count,
+        total:    catalogue.total,
       },
-    })
+    }
   end
 end

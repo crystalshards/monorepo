@@ -71,6 +71,50 @@ describe CrystalDocs::RegistryPackages do
 
       chosen.try(&.version).should eq("edge")
     end
+
+    # Semver ranks 2.0.0-rc1 above 1.9.0, so "highest version" alone sent
+    # every reader of a shard mid-release-candidate to an API that has not
+    # shipped. It is also what `shards.latest_version` says, and the browse
+    # card shows that column, so the badge and the page it links to would
+    # disagree.
+    it "stays on the stable release when a newer prerelease exists" do
+      chosen = CrystalDocs::RegistryPackages.default_release([
+        release("1.9.0", day: 1),
+        release("2.0.0-rc1", day: 2),
+      ])
+
+      chosen.try(&.version).should eq("1.9.0")
+    end
+
+    it "takes the highest prerelease when nothing stable was ever tagged" do
+      chosen = CrystalDocs::RegistryPackages.default_release([
+        release("2.0.0-rc1", day: 1),
+        release("2.0.0-rc2", day: 2),
+      ])
+
+      chosen.try(&.version).should eq("2.0.0-rc2")
+    end
+
+    # An unrankable tag ranks below a real prerelease rather than beside a
+    # stable one. Treating "nightly" as stable because it does not parse would
+    # let it beat a genuine 2.0.0-rc1.
+    it "prefers a prerelease over a tag that is not a version" do
+      chosen = CrystalDocs::RegistryPackages.default_release([
+        release("2.0.0-rc1", day: 1),
+        release("nightly", day: 2),
+      ])
+
+      chosen.try(&.version).should eq("2.0.0-rc1")
+    end
+
+    it "prefers a stable release over a tag that is not a version" do
+      chosen = CrystalDocs::RegistryPackages.default_release([
+        release("1.9.0", day: 1),
+        release("nightly", day: 2),
+      ])
+
+      chosen.try(&.version).should eq("1.9.0")
+    end
   end
 
   # A registry nobody configured cannot tell a real shard from an invented one,

@@ -1,5 +1,9 @@
 class Docs::IndexPage < MainLayout
-  needs docs : DocQuery
+  needs entries : Array(CrystalDocs::PackageCatalogue::Entry)
+  # False when the registry could not be reached. The page then reports that it
+  # cannot list the catalogue, rather than listing the packages this app
+  # happens to hold and letting a fraction of the ecosystem read as all of it.
+  needs available : Bool
   needs query : String?
   needs page : Int32
   needs per_page : Int32
@@ -11,8 +15,13 @@ class Docs::IndexPage < MainLayout
 
   def content
     render_page_header
-    render_docs_list
-    render_pagination
+
+    if available?
+      render_docs_list
+      render_pagination
+    else
+      render_unavailable
+    end
   end
 
   private def render_page_header
@@ -21,7 +30,7 @@ class Docs::IndexPage < MainLayout
 
       # Search itself lives in the masthead; here we only report what the
       # current query matched.
-      if query
+      if query && available?
         para class: "search-results-count" do
           text "Found #{total_count} package#{"s" unless total_count == 1} matching "
           strong query.to_s
@@ -31,10 +40,10 @@ class Docs::IndexPage < MainLayout
   end
 
   private def render_docs_list
-    if docs.any?
+    if entries.any?
       div class: "doc-list" do
-        docs.each do |doc|
-          mount Components::DocCard, doc: doc, heading_level: 2
+        entries.each do |entry|
+          mount Components::DocCard, entry: entry, heading_level: 2
         end
       end
     else
@@ -48,8 +57,18 @@ class Docs::IndexPage < MainLayout
         para "No packages found matching \"#{query}\""
         a "View all packages", href: "/docs", class: "button"
       else
-        para "No documentation available yet"
+        para "No packages are indexed yet"
       end
+    end
+  end
+
+  # An outage is reported as an outage. The alternative is a page that answers
+  # a question the reader did not ask with a number that looks like the one
+  # they wanted.
+  private def render_unavailable
+    div class: "empty-state" do
+      para "The shard index is unavailable right now, so this page cannot " \
+           "list packages. Documentation already built is still served."
     end
   end
 

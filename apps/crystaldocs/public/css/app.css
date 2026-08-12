@@ -485,6 +485,20 @@ body:has(.docs-shell) .navbar {
   outline-offset: -2px;
 }
 
+/* The repository under the shard name. Monospaced and quiet: it is an
+   identifier the reader scans for a host and an owner, not prose, and it is
+   secondary to the name the catalogue is ordered by. */
+.doc-slug {
+  font: 400 0.78rem/1.4 var(--mono);
+  color: var(--ink-muted);
+  margin: 0.3rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* Most of the catalogue has no documentation built yet, so this is the common
+   state and must not read as an error. */
+.doc-unbuilt { color: var(--ink-muted); }
+
 .doc-description {
   color: var(--ink-muted); font-size: 0.9rem; line-height: 1.55;
   margin: 0.55rem 0 1.1rem;

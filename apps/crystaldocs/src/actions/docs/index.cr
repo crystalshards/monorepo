@@ -1,26 +1,28 @@
+# The catalogue of shards, which is the registry's list and not this app's.
+#
+# This page used to browse the `docs` table, which is populated on demand by
+# `PackageRegistration` when somebody opens a package's version URL. That made
+# the list, its total and its pagination a report on this site's own traffic
+# while presenting itself as the set of Crystal shards, and it is why the two
+# sites reported different totals for the same ecosystem.
 class Docs::Index < BrowserAction
   param page : Int32 = 1
   param query : String?
 
   get "/docs" do
     per_page = 20
-    docs_query = DocQuery.new
-      .with_versions
-      .search(query)
-      .recently_updated
+    # A page below the first is not a page. Left unclamped it produces a
+    # negative OFFSET, which Postgres rejects outright.
+    current_page = page < 1 ? 1 : page
 
-    total_count = docs_query.select_count
-    offset_value = (page - 1) * per_page
-
-    paginated_docs = docs_query
-      .limit(per_page)
-      .offset(offset_value)
+    catalogue = CrystalDocs::PackageCatalogue.page(query, current_page, per_page)
 
     html Docs::IndexPage,
-      docs: paginated_docs,
+      entries: catalogue.entries,
+      available: catalogue.available?,
       query: query,
-      page: page,
+      page: current_page,
       per_page: per_page,
-      total_count: total_count
+      total_count: catalogue.total
   end
 end
