@@ -140,8 +140,8 @@ describe "workers keyed on identity" do
   end
 
   describe BuildDocsWorker do
-    it "builds the shard the slug names" do
-      _, gitlab = create_same_name_pair_with_versions
+    it "builds the shard the slug names, and stores it under that slug" do
+      _, _ = create_same_name_pair_with_versions
 
       builder = CrystalShards::MockDocsBuilder.new
       storage = CrystalShards::MockStorageService.new
@@ -152,11 +152,15 @@ describe "workers keyed on identity" do
 
       builder.calls.size.should eq(1)
       builder.calls.first.repository_url.should eq("https://gitlab.com/acme/router")
-      ShardQuery.new.id(gitlab.id).first.documentation_url.should_not be_nil
+
+      # Not "router/1.0.0/docs.json". Both shards are called router, so a key
+      # made from the name would have each build overwrite the other's
+      # documentation, and crystaldocs reads back from the slug it asked with.
+      storage.uploaded_docs.should eq(["gitlab.com/acme/router/1.0.0/docs.json"])
     end
 
     it "builds nothing when a bare name is ambiguous" do
-      github, gitlab = create_same_name_pair_with_versions
+      _, _ = create_same_name_pair_with_versions
 
       builder = CrystalShards::MockDocsBuilder.new
       storage = CrystalShards::MockStorageService.new
@@ -166,8 +170,7 @@ describe "workers keyed on identity" do
       end
 
       builder.calls.should be_empty
-      ShardQuery.new.id(github.id).first.documentation_url.should be_nil
-      ShardQuery.new.id(gitlab.id).first.documentation_url.should be_nil
+      storage.uploaded_docs.should be_empty
     end
   end
 end

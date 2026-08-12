@@ -40,3 +40,29 @@ def create_same_name_pair_with_versions(
   ShardVersionFactory.create &.shard_id(gitlab.id).version(version)
   {github, gitlab}
 end
+
+# A row with no identity, inserted with raw SQL on purpose.
+#
+# SaveShard refuses a shard whose repository_url does not name a repository, so
+# a row without host, owner and repo cannot be created through the operation.
+# They exist anyway: rows that predate host qualified identity, which the
+# backfill could not parse and reported rather than guessing at. Anything that
+# has to behave sensibly for them, such as a documentation link that has no key
+# to point at, needs one to test against.
+def insert_unidentified_shard(name : String, repository_url : String = "not-a-url") : Shard
+  id = AppDatabase.query_one(
+    <<-SQL,
+    INSERT INTO shards
+      (name, repository_url, provider, repository_type, total_downloads,
+       identity_error, created_at, updated_at)
+    VALUES ($1, $2, 'github', 'git', 0, $3, NOW(), NOW())
+    RETURNING id
+    SQL
+    name,
+    repository_url,
+    "#{repository_url} does not name a repository",
+    as: Int64
+  )
+
+  ShardQuery.new.id(id).first
+end

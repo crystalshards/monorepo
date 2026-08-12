@@ -10,8 +10,12 @@ class DocQuery < Doc::BaseQuery
     preload_doc_versions
   end
 
+  # last_updated_at records when documentation was last built, so a package
+  # that has never been built has none. Postgres sorts NULLs first under DESC,
+  # which put every package somebody had merely asked for at the top of a list
+  # of the most recently updated. Nulls last: never built is not recent.
   def recently_updated
-    last_updated_at.desc_order
+    last_updated_at.desc_order(:nulls_last)
   end
 
   def popular

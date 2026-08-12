@@ -136,7 +136,7 @@ class About::ShowPage < MainLayout
       end
 
       div class: "section-footer" do
-        a href: "/docs/#{CrystalDocs::CORE_PACKAGE}", class: "view-all-link" do
+        a href: CrystalDocs::PackagePaths.package_path(CrystalDocs::CORE_PACKAGE), class: "view-all-link" do
           text "Browse the standard library"
           tag "i", class: "fa-solid fa-arrow-right", "aria-hidden": "true"
         end

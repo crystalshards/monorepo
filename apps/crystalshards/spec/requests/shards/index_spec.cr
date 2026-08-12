@@ -440,4 +440,44 @@ describe Shards::Index do
       response.body.should contain("checked")
     end
   end
+
+  # Every shard links to its documentation, from the listing as well as from
+  # its own page, because the link is what causes the documentation to be
+  # built.
+  describe "documentation links" do
+    it "links a listed shard to its documentation" do
+      shard = ShardFactory.create &.name("listed")
+        .host("github.com").owner("acme").repo("listed")
+        .canonical_slug("github.com/acme/listed")
+
+      response = BrowserClient.exec(Shards::Index)
+
+      response.body.should contain(CrystalShards::DocsSite.url_for?(shard).not_nil!)
+    end
+
+    it "gives two same-named shards two different documentation links" do
+      ShardFactory.create &.name("router")
+        .host("github.com").owner("acme").repo("router")
+        .canonical_slug("github.com/acme/router")
+      ShardFactory.create &.name("router")
+        .host("gitlab.com").owner("acme").repo("router")
+        .canonical_slug("gitlab.com/acme/router")
+
+      response = BrowserClient.exec(Shards::Index)
+
+      response.body.should contain("https://crystaldocs.org/docs/_/github.com/acme/router")
+      response.body.should contain("https://crystaldocs.org/docs/_/gitlab.com/acme/router")
+    end
+
+    # No identity, no key, no URL. Guessing one from the name would point at
+    # whichever repository claimed it.
+    it "links nowhere for a shard whose repository could not be identified" do
+      insert_unidentified_shard("unidentified")
+
+      response = BrowserClient.exec(Shards::Index)
+
+      response.body.should contain("unidentified")
+      response.body.should_not contain("crystaldocs.org/docs/unidentified")
+    end
+  end
 end
