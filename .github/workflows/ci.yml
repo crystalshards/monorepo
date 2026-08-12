@@ -130,6 +130,24 @@ jobs:
           echo "Checking Crystal formatting for ${{ matrix.app }}: ${targets[*]}"
           crystal tool format --check "${targets[@]}"
 
+  # The deploy decides whether docs-launcher will accept a build token by
+  # running two jq programs against the live service description. Both have
+  # been wrong in production: one read a path Cloud Run does not use and
+  # failed a release whose configuration was correct and working.
+  #
+  # The deploy reads these same files, so this cannot drift from what actually
+  # runs.
+  deploy-selectors:
+    name: Deploy Selector Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Test the docs-launcher audience selectors
+        shell: bash
+        run: bash .github/jq/selectors_test.sh
+
   # Security scanning
   security:
     name: Security Scanning

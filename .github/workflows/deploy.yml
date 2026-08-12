@@ -1179,6 +1179,16 @@ jobs:
     timeout-minutes: 30
     environment: production
     steps:
+      # The audience guard below runs jq programs that live in the repository,
+      # so this job needs the tree. Pinned to the same commit the rest of the
+      # deploy is releasing, and with no credentials left behind: nothing here
+      # pushes.
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -1308,19 +1318,19 @@ jobs:
             # runs the image this run built rather than asserting on spelling.
             expected_repo="${expected_image%:*}"
             expected_tag="${expected_image##*:}"
-            # Resolving that tag fails in two ways that must not be reported as
-            # one. The image can be genuinely absent, which is a real failure
-            # worth stopping a release for, or the Artifact Registry call can
-            # fail, which says nothing at all about the image. This step
-            # collapsed both into "could not resolve" with the actual error
-            # discarded by 2>/dev/null, and failed a release over a transient
-            # API error while the image it claimed was missing was present and
-            # already serving. The build job asserted this exact reference
-            # resolvable before the deploy started, so a failure here is far
-            # more likely to be the call than the image.
+            # Resolving that tag can fail because the image is genuinely absent,
+            # which is worth stopping a release for, or because the call itself
+            # failed, which says nothing about the image. This step collapsed
+            # both into "could not resolve" and discarded the reason with
+            # 2>/dev/null, then failed a release over an image that was present
+            # and already serving. What the call actually said that time is
+            # unknown, precisely because the guard threw it away.
             #
-            # Retry the call, keep its stderr, and only stop early when the
-            # registry actually says the image is not there.
+            # So keep the error, and spend every attempt rather than deciding
+            # from one answer. The build job asserted this exact reference
+            # resolvable before the deploy started, so a single reading of
+            # absent contradicts something already proven and is not grounds to
+            # stop. Three failed attempts are, whatever each one said.
             describe_err="${RUNNER_TEMP}/describe-${service}.err"
             expected_digest=""
             for attempt in 1 2 3; do
@@ -1331,11 +1341,9 @@ jobs:
               fi
 
               expected_digest=""
-              if grep -qiE 'not found|NOT_FOUND|does not exist' "$describe_err"; then
-                break
+              if [ "$attempt" -lt 3 ]; then
+                sleep $((attempt * 5))
               fi
-
-              sleep $((attempt * 5))
             done
 
             if [ -z "$expected_digest" ]; then
@@ -1519,15 +1527,38 @@ jobs:
           json="$(gcloud run services describe "$DOCS_LAUNCHER_SERVICE" \
             --region "$REGION" --format=json)"
 
-          configured="$(jq -r '
-            [.. | objects | select(.name == "DOCS_LAUNCHER_AUDIENCE") | .value]
-            | map(select(. != null)) | first // empty' <<< "$json")"
+          # Both selectors live in .github/jq and are exercised by
+          # .github/jq/selectors_test.sh in CI. They are files rather than
+          # inline programs so the test runs the same text this step does: a
+          # test holding its own copy would have gone on passing while this
+          # guard read the wrong field and failed a good release.
+          selectors="${GITHUB_WORKSPACE}/.github/jq"
 
-          accepted="$(jq -r '
-            ((.spec.template.metadata.annotations["run.googleapis.com/custom-audiences"] // "[]")
-              | try fromjson catch [])
-            + (.customAudiences // [])
-            | unique | join(" ")' <<< "$json" 2>/dev/null || true)"
+          configured="$(jq -r --from-file "${selectors}/docs-launcher-configured-audience.jq" <<< "$json")"
+
+          case "$configured" in
+            CONFLICT:*)
+              echo "${DOCS_LAUNCHER_SERVICE} declares more than one DOCS_LAUNCHER_AUDIENCE (${configured#CONFLICT: })." >&2
+              echo "Only one can be the value its caller check compares against." >&2
+              exit 1
+              ;;
+          esac
+
+          accepted="$(jq -r --from-file "${selectors}/docs-launcher-accepted-audiences.jq" <<< "$json")"
+
+          # An annotation we could not read is not the same finding as a service
+          # that accepts nothing, even though both stop here. Saying "accepts
+          # none" when the truth is "could not parse" sends whoever reads this
+          # to the wrong place, and reporting something unestablished is what
+          # this guard already did once.
+          case "$accepted" in
+            UNPARSEABLE:*)
+              echo "${DOCS_LAUNCHER_SERVICE} has a custom-audiences annotation that is not JSON." >&2
+              echo "Raw value: ${accepted#UNPARSEABLE: }" >&2
+              echo "Whether it accepts the build audience cannot be established from this." >&2
+              exit 1
+              ;;
+          esac
 
           if [ -z "$configured" ]; then
             echo "${DOCS_LAUNCHER_SERVICE} has no DOCS_LAUNCHER_AUDIENCE." >&2
