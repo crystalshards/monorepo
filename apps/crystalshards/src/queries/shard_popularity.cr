@@ -98,7 +98,6 @@ module ShardPopularity
     return counts if shard_ids.empty?
 
     shard_ids.each { |id| counts[id] = 0 }
-
     sql = <<-SQL
       SELECT d.dependent_shard_id, COUNT(DISTINCT sv.shard_id)
       FROM dependencies d

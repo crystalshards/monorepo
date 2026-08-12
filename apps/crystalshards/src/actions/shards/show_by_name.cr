@@ -16,6 +16,8 @@
 #                                 hosts, and both link to their own URL.
 #   none                      -> 404.
 class Shards::ShowByName < BrowserAction
+  include Shards::RendersShowPage
+
   get "/shards/:shard_name" do
     matches = ShardQuery.new
       .preload_shard_versions
@@ -47,23 +49,10 @@ class Shards::ShowByName < BrowserAction
   end
 
   # Mirrors Shards::Show for the one case that cannot be redirected there.
+  # A legacy row has no host/owner/repo, so it has no versioned URL either:
+  # the picker renders its versions as text rather than as links that would
+  # 404, and the page shows the newest one.
   private def render_legacy_shard(shard : Shard)
-    versions = VersionOrder.sort_versions(shard.shard_versions)
-    latest_version = VersionOrder.latest_version(shard.shard_versions)
-
-    dependencies = if latest_version
-                     DependencyQuery.new
-                       .shard_version_id(latest_version.id.not_nil!)
-                       .preload_dependent_shard
-                       .to_a
-                   else
-                     [] of Dependency
-                   end
-
-    html Shards::ShowPage,
-      shard: shard,
-      versions: versions,
-      dependencies: dependencies,
-      latest_version: latest_version
+    render_show_page(shard)
   end
 end

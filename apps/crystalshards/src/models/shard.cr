@@ -88,6 +88,18 @@ class Shard < BaseModel
     end
   end
 
+  # The registry path for one tagged version.
+  #
+  # nil for a legacy row with no identity: there is no host/owner/repo to
+  # build the path from, and the bare-name route cannot address a version. The
+  # version picker renders those versions as text rather than as links that
+  # would 404.
+  def version_path(version : String) : String?
+    return nil unless slug = canonical_slug
+
+    "/shards/#{slug}/versions/#{URI.encode_path_segment(version)}"
+  end
+
   def identified? : Bool
     !canonical_slug.nil?
   end

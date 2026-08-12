@@ -79,4 +79,11 @@ class ShardVersion < BaseModel
   def ships_executable? : Bool
     !target_names.empty? || !executable_names.empty?
   end
+
+  # What to call this row in a heading or a picker. A release keeps its
+  # number; a tracked branch is named as a branch, because calling a branch
+  # "v master" is how a reader ends up depending on a moving target.
+  def label : String
+    release? ? version : "#{version} branch"
+  end
 end
