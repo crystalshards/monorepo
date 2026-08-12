@@ -13,13 +13,17 @@ class VersionSelector < Lucky::BaseComponent
   # sidebar's order and the two must not disagree.
   needs versions : Array(ShardVersion)
   needs selected : ShardVersion?
+  # Whether the registry has actually read this repository's tags. Without it
+  # an empty list reads as "this repository has no releases", which is a claim
+  # about somebody else's repository made from a gap in ours.
+  needs indexed : Bool
 
   def render
     if @versions.empty?
       # Not an empty control. A shard with no tags is the normal case in this
       # registry and the reader is told, in place, why there is nothing to pick.
       span class: "version-pill version-pill-empty" do
-        text "No tagged releases"
+        text @indexed ? "No tagged releases" : "Not indexed yet"
       end
       return
     end

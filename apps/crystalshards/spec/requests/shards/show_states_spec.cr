@@ -138,8 +138,12 @@ describe Shards::Show do
 
   describe "a shard with no tags" do
     it "says so, and offers the snippet that actually works for it" do
+      # indexed_at set, because "this repository has no tags" is a claim we can
+      # only make once we have actually read it. The unindexed case is its own
+      # spec below and says something different on purpose.
       shard = ShardFactory.create &.name("untagged")
         .at("github.com", "someone", "untagged")
+        .indexed_at(Time.utc)
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
       body = response.body
@@ -151,6 +155,21 @@ describe Shards::Show do
       body.should contain("No release to pin to")
       # No version, so nothing claims to know this repository's dependencies.
       body.should_not contain("<h2>Dependencies</h2>")
+    end
+
+    # The bug this split exists for. kemal was discovered with 3903 stars and
+    # its page said the repository had no releases we could see, while it has
+    # 65 tags. An empty version list before indexing is a gap in our database,
+    # not a fact about somebody's repository.
+    it "does not claim a repository has no releases before reading it" do
+      shard = ShardFactory.create &.name("unread")
+        .at("github.com", "someone", "unread")
+
+      body = BrowserClient.exec(Shards::Show.with(**identity_of(shard))).body
+
+      body.should contain("found but not read yet")
+      body.should_not contain("No tagged releases")
+      body.should_not contain("repository has none")
     end
 
     # A repository with no tags is recorded by tracking its default branch, and

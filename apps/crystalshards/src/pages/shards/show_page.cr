@@ -44,11 +44,11 @@ class Shards::ShowPage < MainLayout
           render_installation
           render_manifest_section
           render_dependencies_section
-          render_documentation_section
           render_readme_section
         end
 
         div class: "shard-sidebar" do
+          render_documentation_block
           render_links
           render_selected_version_section
           render_dependents_section
@@ -71,7 +71,8 @@ class Shards::ShowPage < MainLayout
         mount VersionSelector,
           shard: @shard,
           versions: @versions,
-          selected: @selected_version
+          selected: @selected_version,
+          indexed: !@shard.indexed_at.nil?
       end
 
       # Two shards can share a name, so the repository is part of the title,
@@ -166,11 +167,27 @@ class Shards::ShowPage < MainLayout
     end
 
     if @versions.empty?
-      notice "info", "fa-tag" do
-        text "No tagged releases have been indexed. "
-        text "`shards` resolves a version from a git tag, and this "
-        text "repository has none we could see, so a dependency on it has to "
-        text "name a branch or a commit."
+      # Two different facts, and only one of them is about the repository.
+      #
+      # Discovery records a shard when it finds it and the indexer reads its
+      # tags on a later pass, so an empty version list means "not looked at
+      # yet" until indexed_at is set. Saying "this repository has none we could
+      # see" before we have looked told visitors that kemal, which has 65 tags,
+      # had none. A gap in our database is not a claim we get to make about
+      # somebody's repository.
+      if @shard.indexed_at
+        notice "info", "fa-tag" do
+          text "No tagged releases. "
+          text "`shards` resolves a version from a git tag, and this "
+          text "repository has none, so a dependency on it has to "
+          text "name a branch or a commit."
+        end
+      else
+        notice "info", "fa-hourglass-half" do
+          text "This shard has been found but not read yet. "
+          text "Its releases, manifest and README are fetched on a later pass, "
+          text "so everything below is unknown rather than absent."
+        end
       end
     elsif version = @selected_version
       unless version.indexed?
@@ -516,36 +533,42 @@ class Shards::ShowPage < MainLayout
   # No version in the URL. crystaldocs holds the release list and picks the
   # current release itself, so this link cannot go stale the next time a
   # maintainer tags, and a shard with no release lands on a page that says so.
-  private def render_documentation_section
-    section class: "shard-section" do
-      h2 do
+  # In the sidebar, at the top, rather than as a section in the body.
+  #
+  # Documentation is the thing most readers arriving at a shard page are
+  # actually after, and a body section put it below the manifest and the
+  # dependency list, which is a long way to scroll for the primary action. The
+  # sidebar's first block is where the eye lands after the title.
+  private def render_documentation_block
+    section class: "sidebar-section sidebar-section-lead" do
+      h3 do
         text "Documentation"
       end
 
       if docs_url = CrystalShards::DocsSite.url_for?(@shard)
         para do
-          a href: docs_url, class: "button button-primary" do
-            text "Read the API documentation"
+          a href: docs_url, class: "button button-primary button-block" do
+            text "Read the API docs"
           end
         end
 
-        para class: "text-muted" do
-          text "Generated from the source of the current release. The first "
-          text "visit to a release that has never been documented starts its build."
+        para class: "text-muted sidebar-note" do
+          text "Built from the current release. The first visit to a release "
+          text "nobody has asked for starts its build."
         end
       else
         # No identity, so there is no key to address documentation by, and
         # guessing one from the name would point at whichever repository
         # claimed that name. The sidebar already says why the row has none.
-        para class: "text-muted" do
-          text "This shard has no documentation URL, because its repository "
-          text "could not be identified from its registry entry."
+        para class: "text-muted sidebar-note" do
+          text "No documentation URL: this repository could not be identified "
+          text "from its registry entry."
         end
       end
 
       if declared = declared_documentation_url
-        para do
-          text "The maintainer also publishes documentation at "
+        para class: "sidebar-note" do
+          text "The maintainer also publishes docs at "
           a href: declared, target: "_blank", rel: "noopener" do
             text declared
           end

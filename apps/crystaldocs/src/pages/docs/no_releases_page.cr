@@ -35,7 +35,7 @@ class Docs::NoReleasesPage < MainLayout
     end
 
     div class: "doc-section" do
-      h2 "No documentation yet"
+      h2 heading
 
       para class: "empty-state" do
         text explanation
@@ -52,7 +52,26 @@ class Docs::NoReleasesPage < MainLayout
     end
   end
 
+  private def heading : String
+    package.indexed? ? "No documentation yet" : "Not indexed yet"
+  end
+
+  # Three states, and only two of them are facts about the repository.
+  #
+  # The registry records a shard's identity when it discovers it and fetches
+  # its tags on a later pass, so an empty release list means "we have not
+  # looked" until it has been indexed. Reading that as "this repository
+  # publishes no releases" told visitors that kemal, which has 65 tags, had
+  # never cut one. We do not get to make a claim about somebody's repository
+  # from a gap in our own database.
   private def explanation : String
+    unless package.indexed?
+      return "#{package.name} was found but its releases have not been read yet. " \
+             "The registry records a repository when it finds it and fetches its " \
+             "tags on a later pass, so this says nothing about whether " \
+             "#{package.name} has releases. Check back shortly."
+    end
+
     if withdrawn_count.zero?
       "#{package.name} has no published releases. Documentation is built from a " \
       "release, so there is nothing to build yet. Tag one and this page becomes " \

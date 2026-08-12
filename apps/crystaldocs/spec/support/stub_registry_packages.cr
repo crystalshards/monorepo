@@ -50,18 +50,25 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
   # Registers a repository, and optionally its releases. Versions are given as
   # strings because precedence is the interesting part and publication dates
   # are not; each gets a distinct timestamp so ordering is still observable.
+  #
+  # `indexed` defaults true because almost every spec here is about a
+  # repository the registry has already read. Pass false for the state that
+  # produced the bug: discovered, not yet read, so an empty release list is a
+  # gap in our database rather than a fact about the repository.
   def publish(
     slug : String,
     name : String,
     versions : Array(String) = [] of String,
     yanked : Array(String) = [] of String,
     description : String? = nil,
+    indexed : Bool = true,
   ) : StubRegistryPackages
     @packages[slug] = Package.new(
       slug: slug,
       name: name,
       description: description,
-      repository_url: "https://#{slug}"
+      repository_url: "https://#{slug}",
+      indexed_at: indexed ? Time.utc(2024, 1, 1) : nil,
     )
 
     @releases[slug] = versions.map_with_index do |version, index|
