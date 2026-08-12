@@ -11,6 +11,24 @@ module CrystalShards
   #
   # Only the outcome columns are written. crystaldocs owns the request itself.
   class DocsBuildStatus
+    # An outcome that could not be written down.
+    #
+    # This exists so a caller can tell "the build failed" from "the build's
+    # result was lost", which are different facts with different repairs. The
+    # builder's own rescue path used to be reached by both, and would then
+    # record a failure for a build that had in fact succeeded.
+    class Unrecorded < Exception
+      def initialize(outcome : String, package_name : String, version : String, cause : Exception)
+        super(
+          "could not record the #{outcome} outcome of #{package_name}@#{version} in the crystaldocs " \
+          "database: #{cause.message.presence || cause.class.name}. Neither the build request nor the " \
+          "version row was changed, so the documentation site still shows this version exactly as it " \
+          "did before the build ran.",
+          cause
+        )
+      end
+    end
+
     # Compiler output from a shard that does not build can run to tens of
     # kilobytes. The page shows this verbatim, and the useful part is at the
     # start, so it is capped rather than stored whole.
@@ -91,39 +109,87 @@ module CrystalShards
     def initialize(@package_name : String, @version : String)
     end
 
+    # The one state that is allowed to go unrecorded.
+    #
+    # Nothing durable is lost when this write fails. Both columns already read
+    # what a reader is already being shown, and whichever outcome follows
+    # overwrites them from scratch rather than stepping forward from here, so
+    # the only cost is that the pending page says "pending" instead of
+    # "building" for the length of one build. Raising would abandon a build
+    # that was about to succeed in order to report that it had started.
+    #
+    # Not silent, though: `record` has already logged the failure at error
+    # level against this package and version before raising, so a docs
+    # database that has stopped accepting writes is visible from the first
+    # build rather than from the first outcome.
     def building : Nil
-      write(BUILDING_SQL)
-      write(VERSION_BUILDING_SQL)
+      record("building", BUILDING_SQL, VERSION_BUILDING_SQL)
+    rescue Unrecorded
     end
 
     def succeeded : Nil
-      write(SUCCEEDED_SQL)
-      write(VERSION_SUCCEEDED_SQL)
+      record("succeeded", SUCCEEDED_SQL, VERSION_SUCCEEDED_SQL)
     end
 
     def failed(reason : String?) : Nil
-      write(FAILED_SQL, truncate(reason))
-      write(VERSION_FAILED_SQL)
+      record("failed", FAILED_SQL, VERSION_FAILED_SQL, truncate(reason))
     end
 
-    # A build that cannot be reported is still a build. If the docs database
-    # is unreachable the artifact may well have been produced and uploaded, so
-    # this never interrupts the job; it logs loudly and lets the build stand.
+    # One outcome, one transaction, and no swallowing.
     #
-    # No row is a normal outcome, not an error: a build triggered by the
-    # registry indexer rather than by someone opening a docs page has nobody
-    # waiting on it and nothing to update.
-    private def write(sql : String, error : String? = nil) : Nil
+    # The two statements describe the same build. Written separately, a failure
+    # between them left crystaldocs holding a request row that said 'succeeded'
+    # beside a version row that still said 'pending', and nothing anywhere
+    # reconciles those afterwards. In one transaction an outcome lands in both
+    # tables or in neither, so the pair can be stale but never contradictory.
+    #
+    # An outcome that cannot be recorded raises, because the outcome of a build
+    # is durable state and nothing re-derives it: the artifact is in the bucket
+    # and unreferenced, the version reads 'pending' forever, DependencyIndex
+    # skips it forever, and the retry floor has no failed_at to measure from.
+    # Raising fails the job, which is what puts the request back on the queue
+    # to be built and recorded again. Rebuilding a shard is cheap next to a
+    # catalogue entry that is permanently wrong.
+    #
+    # `building` is the one caller that rescues this, for the reason given
+    # there.
+    private def record(outcome : String, request_sql : String, version_sql : String, error : String? = nil) : Nil
       now = Time.utc
+      requests = 0_i64
+      versions = 0_i64
 
-      if error.nil?
-        DocsDatabase.exec(sql, @package_name, @version, now)
-      else
-        DocsDatabase.exec(sql, @package_name, @version, now, error)
+      # Scoped to the write alone, so the receipt below cannot be reported as a
+      # lost outcome and the message about nothing having changed is always
+      # true of what actually happened.
+      begin
+        DocsDatabase.transaction do
+          result =
+            if error
+              DocsDatabase.exec(request_sql, @package_name, @version, now, error)
+            else
+              DocsDatabase.exec(request_sql, @package_name, @version, now)
+            end
+
+          requests = result.rows_affected
+          versions = DocsDatabase.exec(version_sql, @package_name, @version, now).rows_affected
+        end
+      rescue ex : Exception
+        Log.error(exception: ex) do
+          "DocsBuildStatus: could not record the #{outcome} outcome of #{@package_name}@#{@version}. " \
+          "The transaction was rolled back, so neither doc_build_requests nor doc_versions was changed " \
+          "and the documentation site still shows this version as it was before the build."
+        end
+
+        raise Unrecorded.new(outcome, @package_name, @version, ex)
       end
-    rescue ex : Exception
-      Log.error(exception: ex) do
-        "DocsBuildStatus: could not record build state for #{@package_name}@#{@version}. The docs site will keep showing this version as still building until it is asked for again."
+
+      # The receipt. A statement that matched no row succeeds and records
+      # nothing, which is a normal outcome for the request table and an
+      # entirely different fact from one that landed; the counts are the only
+      # thing that can tell those apart once the build is over.
+      Log.info do
+        "DocsBuildStatus: recorded #{outcome} for #{@package_name}@#{@version} " \
+        "(#{requests} request row#{"s" unless requests == 1}, #{versions} version row#{"s" unless versions == 1})"
       end
     end
 

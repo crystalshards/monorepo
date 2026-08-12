@@ -1,4 +1,20 @@
-docs_database_name = "crystaldocs_#{LuckyEnv.environment}"
+# Development points at the real crystaldocs development database, because
+# locally both apps run against one Postgres and the builder writing what the
+# documentation site reads is the whole point of running them together.
+#
+# Test does NOT, and must not. crystaldocs_test belongs to the crystaldocs spec
+# suite and to its migrations: two suites pointed at it truncate each other's
+# rows between examples, and the tables this suite creates for itself are
+# tables the other app's migrator then finds already present with no migration
+# recorded. So the test name is derived from this app's own database, which
+# means a spec run given a unique DATABASE_URL gets a unique docs database with
+# it and cannot reach another suite's.
+docs_database_name =
+  if LuckyEnv.test?
+    "#{AppDatabase.credentials.database}_docs"
+  else
+    "crystaldocs_#{LuckyEnv.environment}"
+  end
 
 DocsDatabase.configure do |settings|
   settings.credentials =
