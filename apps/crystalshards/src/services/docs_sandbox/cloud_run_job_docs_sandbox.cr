@@ -73,6 +73,13 @@ module CrystalShards
     # would be launched without a Google project.
     class_property runner : Proc(String, String, String)? = nil
 
+    # Test seam for the other half. Receives the operation name and returns the
+    # status code and body a poll would have got, so a spec can pin what this
+    # does with a refusal without a Google project. Separate from `runner`
+    # because starting and watching fail for different reasons and one of them
+    # went unnoticed in production for want of a way to exercise it.
+    class_property poller : Proc(String, {Int32, String})? = nil
+
     def initialize(@storage : ScratchStorage = StorageService.build_scratch)
     end
 
@@ -242,11 +249,17 @@ module CrystalShards
 
       while Time.monotonic < deadline
         begin
-          response = HTTP::Client.get("#{api_host}/v2/#{operation}", headers: auth_headers)
+          status, body =
+            if custom = @@poller
+              custom.call(operation)
+            else
+              response = HTTP::Client.get("#{api_host}/v2/#{operation}", headers: auth_headers)
+              {response.status_code, response.body}
+            end
 
-          if response.success?
+          if 200 <= status < 300
             last_poll_error = nil
-            parsed = JSON.parse(response.body)
+            parsed = JSON.parse(body)
 
             if parsed["done"]?.try(&.as_bool?)
               if error = parsed["error"]?
@@ -256,8 +269,22 @@ module CrystalShards
 
               return true
             end
+          elsif status == 401 || status == 403
+            # A refusal is not a blip, and retrying one until the deadline is
+            # how a missing grant reads in the logs as a slow build. The
+            # launcher polls with its own identity, so the answer will be the
+            # same on every attempt, and each attempt holds the Cloud Tasks
+            # request open against a service with a small concurrency cap.
+            #
+            # Reading the operation needs run.operations.get, which the role
+            # that lets the launcher START the Job does not carry, and which
+            # cannot be granted on the Job because an operation is not
+            # addressable under it.
+            log_error "Refused when reading docs build status, so the build cannot be watched: " \
+                      "#{status} #{body}"
+            return false
           else
-            last_poll_error = "#{response.status_code} #{response.body}"
+            last_poll_error = "#{status} #{body}"
           end
         rescue ex : IO::Error | Socket::Error | JSON::Error
           last_poll_error = ex.message
