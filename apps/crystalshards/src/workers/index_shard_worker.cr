@@ -3,9 +3,24 @@ require "../providers/provider_factory"
 
 struct IndexShardWorker < BaseJob
   # The jobs this worker chains once a shard version has been indexed.
+  #
+  # Documentation is deliberately NOT one of them. It is built on first
+  # request, which is the contract CrystalDocs::DocBuildRequests is written
+  # around: "built on first request, rather than eagerly for every published
+  # version of every shard".
+  #
+  # Chaining it here broke that in the most expensive way available. Every
+  # version of every shard the sweep indexed put a build on the queue, so a
+  # registry of thousands of shards queued tens of thousands of compiles, and
+  # the builder runs a handful at a time. A reader opening a page joined the
+  # back of that queue and waited behind the entire catalogue, which is what
+  # "still no docs" looked like from outside: the pipeline working perfectly
+  # and nobody's page ever reaching the front.
+  #
+  # It also spends the compile on documentation nobody has asked to read, for
+  # every version ever published, forever.
   enum Followup
     UpdateDependencies
-    BuildDocs
   end
 
   # Test seam. Every follow-up job is scheduled through this proc, which
@@ -16,8 +31,6 @@ struct IndexShardWorker < BaseJob
     case followup
     in Followup::UpdateDependencies
       UpdateDependenciesWorker.enqueue(shard_name: shard_name, version: version)
-    in Followup::BuildDocs
-      BuildDocsWorker.enqueue(shard_name: shard_name, version: version)
     end
     nil
   }
@@ -66,7 +79,6 @@ struct IndexShardWorker < BaseJob
     dispatch = @@dispatcher
     followup_key = shard.canonical_slug || @shard_name
     dispatch.call(Followup::UpdateDependencies, followup_key, @version)
-    dispatch.call(Followup::BuildDocs, followup_key, @version)
 
     log_info "Successfully indexed #{@shard_name}@#{@version}"
   rescue ex : Exception
