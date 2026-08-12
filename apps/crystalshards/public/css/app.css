@@ -192,13 +192,28 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 
 .site-header { background: var(--surface); border-bottom: 1px solid var(--edge); }
 
+/* Three columns rather than a flex row, so the search field is centred on the
+   bar rather than sitting wherever the brand and menu widths happen to leave
+   it.
+
+   The outer tracks are 1fr and 1fr, NOT auto and auto. With auto columns the
+   middle track is centred in whatever space the brand and menu leave over, and
+   since the wordmark and the nav links are different widths that is not the
+   centre of anything. Equal outer tracks put the field on the real centre line
+   and keep it there as the menu changes length. */
 .navbar {
-  display: flex; align-items: center; gap: 2rem;
+  display: grid;
+  /* The centre track carries the width. A percentage width on the field inside
+     an `auto` track is circular and collapses to content, which rendered the
+     bar at 238px instead of the intended 512. */
+  grid-template-columns: 1fr minmax(0, 32rem) 1fr;
+  align-items: center;
+  gap: 2rem;
   max-width: var(--shell); margin: 0 auto; padding: 0 1.5rem;
   min-height: 4.125rem;
 }
 
-.navbar-brand { display: flex; align-items: center; }
+.navbar-brand { display: flex; align-items: center; justify-self: start; }
 
 .logo {
   display: inline-flex; align-items: center; gap: 0.65rem;
@@ -213,7 +228,7 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   clip-path: polygon(50% 0, 100% 27%, 100% 73%, 50% 100%, 0 73%, 0 27%);
 }
 
-.navbar-menu { display: flex; flex-wrap: wrap; gap: 1.6rem; margin-left: auto; }
+.navbar-menu { display: flex; flex-wrap: wrap; gap: 1.6rem; justify-self: end; }
 
 .nav-link {
   display: inline-flex; align-items: center;
@@ -278,8 +293,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 }
 .search-button:hover { background: var(--beryl); color: var(--on-beryl); }
 
-/* In the masthead the field flexes with the bar and the button is icon-only. */
-.search-form-compact { flex: 1 1 20rem; max-width: 32rem; margin-right: 0.5rem; }
+/* In the masthead the button is icon-only and the field takes a definite width.
+   `flex` would do nothing here: the bar is a grid, and a grid item in an `auto`
+   track sizes to its content, which for a bare input is far narrower than the
+   field should be. */
+.search-form-compact { width: 100%; margin-right: 0; }
 .search-form-compact .search-button { padding: 0 0.85rem; }
 
 /* ---- getting-started recipes ------------------------------------------- */
@@ -582,15 +600,21 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 @media (max-width: 60rem) {
   .shard-content { grid-template-columns: minmax(0, 1fr); }
   .navbar { gap: 1rem; }
-  .search-form-compact { flex-basis: 12rem; }
+  .search-form-compact { width: min(20rem, 100%); }
 }
 
 @media (max-width: 48rem) {
-  /* Brand and menu share the first row, search takes its own full-width row
-     so it never squeezes below a usable size. */
-  .navbar { flex-wrap: wrap; gap: 0.75rem 1rem; padding-top: 0.75rem; padding-bottom: 0.75rem; }
-  .search-form-compact { order: 3; flex-basis: 100%; max-width: none; margin-right: 0; }
-  .navbar-menu { margin-left: auto; }
+  /* Brand and menu share the first row, search takes its own full-width row so
+     it never squeezes below a usable size. Expressed in grid terms because the
+     bar is a grid: `flex-wrap` and `order` were inert here and the field kept
+     its centre column, which at this width is barely wider than the button. */
+  .navbar {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.75rem 1rem;
+    padding-top: 0.75rem; padding-bottom: 0.75rem;
+  }
+  .search-form-compact { grid-column: 1 / -1; grid-row: 2; max-width: none; margin-right: 0; }
+  .navbar-menu { justify-self: end; }
 }
 
 @media (max-width: 40rem) {
