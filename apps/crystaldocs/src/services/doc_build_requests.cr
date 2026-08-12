@@ -35,6 +35,28 @@ module CrystalDocs
     # so a stream of readers cannot walk it forward.
     RETRY_FLOOR = 1.hour
 
+    # How long a claimed build may show no outcome before anyone may ask for
+    # it again.
+    #
+    # A row only ever left 'pending' or 'building' is a row nothing will ever
+    # revisit: the retry path below matches on 'failed', so a request whose
+    # task was never delivered, or whose builder died before writing an
+    # outcome, stays claimed forever. Every reader after that sees "being
+    # built" and no build is happening or ever will.
+    #
+    # That is not hypothetical. It is what the whole published catalogue
+    # looked like after the launcher spent its entire life unable to
+    # authenticate: the rows were claimed during the outage, the outage was
+    # fixed, and not one of them moved, because nothing reconsiders a claim.
+    #
+    # Measured from the claim rather than from the request, so a stream of
+    # readers cannot walk it forward. It has to exceed the longest a build can
+    # legitimately take, or a slow build would be re-queued while it is still
+    # running: the sandbox is bounded by DOCS_SANDBOX_TIMEOUT_SECONDS and the
+    # launcher holds the request open for the whole build, so this sits beyond
+    # both.
+    STALE_CLAIM_FLOOR = 1.hour
+
     # The identity of a build is (package, version) and deliberately NOT
     # (package, version, crystal version).
     #
@@ -91,9 +113,17 @@ module CrystalDocs
           updated_at = $3
       WHERE package_name = $1
         AND version = $2
-        AND status = 'failed'
-        AND failed_at IS NOT NULL
-        AND failed_at <= $4
+        AND (
+          (status = 'failed' AND failed_at IS NOT NULL AND failed_at <= $4)
+          OR
+          -- A claim nobody ever resolved. Measured from the moment it was
+          -- claimed, and only past a floor beyond the longest a build can
+          -- legitimately take, so a build still running is never re-queued
+          -- underneath itself.
+          (status IN ('pending', 'building')
+            AND COALESCE(started_at, requested_at) IS NOT NULL
+            AND COALESCE(started_at, requested_at) <= $5)
+        )
       RETURNING id
       SQL
 
@@ -150,6 +180,7 @@ module CrystalDocs
         version,
         now,
         now - RETRY_FLOOR,
+        now - STALE_CLAIM_FLOOR,
         as: Int64
       ).first?
     end
