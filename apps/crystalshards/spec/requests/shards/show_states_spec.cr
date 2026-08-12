@@ -159,8 +159,12 @@ describe Shards::Show do
     it "renders a tracked branch as a branch, not as a release" do
       shard = ShardFactory.create &.name("branchy")
         .at("github.com", "someone", "branchy")
+      # source is what the indexer records, and what release? now reads. Before
+      # the indexer landed this was inferred from the shape of the version
+      # string, which could not tell a branch called "v2" from the tag.
       ShardVersionFactory.create &.shard_id(shard.id)
         .version("master")
+        .source(ShardVersion::Source::BRANCH)
         .metadata(JSON.parse(%({"name": "branchy"})))
 
       body = BrowserClient.exec(Shards::Show.with(**identity_of(shard))).body

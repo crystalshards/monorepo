@@ -449,7 +449,11 @@ describe Shards::Show do
     # is the whole class of bug being fixed here.
     it "states that an indexed version declares no dependencies" do
       shard = ShardFactory.create &.name("test-shard")
+      # indexed_at is what the indexer stamps and what indexed? now reads.
+      # Metadata alone no longer means the manifest was read: a tag with no
+      # shard.yml is indexed and empty, which is a fact, not a gap.
       ShardVersionFactory.create &.shard_id(shard.id)
+        .indexed_at(Time.utc)
         .metadata(JSON.parse(%({"name": "test-shard", "version": "1.0.0"})))
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))

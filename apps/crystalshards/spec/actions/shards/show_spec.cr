@@ -184,6 +184,7 @@ describe Shards::Show do
     it "states that an indexed version declares no dependencies" do
       shard = ShardFactory.create &.name("independent-shard")
       ShardVersionFactory.create &.shard_id(shard.id)
+        .indexed_at(Time.utc)
         .metadata(JSON.parse(%({"name": "independent-shard"})))
 
       response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
