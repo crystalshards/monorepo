@@ -38,6 +38,7 @@ def with_cloud_tasks_env(
   queue : String? = "docs-builds",
   location : String? = "us-central1",
   launcher_url : String? = "https://docs-launcher.example.run.app",
+  audience : String? = "https://docs-launcher.docs.example.internal",
   invoker : String? = "docs-tasks@example.iam.gserviceaccount.com",
   deadline : String? = nil,
   &
@@ -47,6 +48,12 @@ def with_cloud_tasks_env(
     CrystalShards::CloudTasksConfig::QUEUE_ENV    => queue,
     CrystalShards::CloudTasksConfig::LOCATION_ENV => location,
     CrystalShards::CloudTasksConfig::LAUNCHER_ENV => launcher_url,
+    # Deliberately different from launcher_url in the default, because they
+    # were one value and that is exactly what broke: the launcher could not be
+    # told an audience without terraform consuming its own output. A default
+    # that made them equal would let a spec pass while the two were conflated
+    # again.
+    CrystalShards::CloudTasksConfig::AUDIENCE_ENV => audience,
     CrystalShards::CloudTasksConfig::INVOKER_ENV  => invoker,
     CrystalShards::CloudTasksConfig::DEADLINE_ENV => deadline,
   } of String => String?

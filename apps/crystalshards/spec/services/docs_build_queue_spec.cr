@@ -13,10 +13,15 @@ require "../spec_helper"
 describe CrystalShards::CloudTasksDocsBuildQueue do
   task = CrystalShards::DocsBuildTask.new("github.com/kemalcr/kemal", "1.6.0", "build-7")
 
+  # The URL and the audience are deliberately different strings here. They were
+  # one value in production, which is why docs-launcher could never be told what
+  # to expect: its own URL is an output of its own terraform resource. A fixture
+  # that made them equal would let the two be conflated again without failing.
   request = -> do
     JSON.parse(
       CrystalShards::CloudTasksDocsBuildQueue.task_json(
         "https://docs-launcher.example.run.app",
+        "https://docs-launcher.docs.example.internal",
         "docs-tasks@example.iam.gserviceaccount.com",
         task
       )
@@ -49,11 +54,18 @@ describe CrystalShards::CloudTasksDocsBuildQueue do
 
   # Not optional: docs-launcher grants run.invoker to one service account, so a
   # task without a token is a 403 on every dispatch.
-  it "signs the task as the invoker, for the launcher's own audience" do
+  #
+  # The audience is the configured one and NOT the delivery URL. They were the
+  # same value, which meant the launcher could not be told what to verify
+  # without terraform consuming its own output, so its check raised on every
+  # dispatch, every delivery returned 500, and no documentation was ever built.
+  # Asserting they differ is what stops them being merged back together.
+  it "signs the task as the invoker, for the configured audience rather than the URL" do
     oidc = request.call["httpRequest"]["oidcToken"]
 
     oidc["serviceAccountEmail"].as_s.should eq("docs-tasks@example.iam.gserviceaccount.com")
-    oidc["audience"].as_s.should eq("https://docs-launcher.example.run.app")
+    oidc["audience"].as_s.should eq("https://docs-launcher.docs.example.internal")
+    oidc["audience"].as_s.should_not eq(request.call["httpRequest"]["url"].as_s)
   end
 
   # Must equal the docs-launcher Cloud Run request timeout. Unset it defaults
@@ -82,6 +94,7 @@ describe CrystalShards::CloudTasksDocsBuildQueue do
       parsed = JSON.parse(
         CrystalShards::CloudTasksDocsBuildQueue.task_json(
           "https://docs-launcher.example.run.app",
+          "https://docs-launcher.docs.example.internal",
           "docs-tasks@example.iam.gserviceaccount.com",
           task
         )
