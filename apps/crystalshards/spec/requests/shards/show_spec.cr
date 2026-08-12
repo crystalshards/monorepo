@@ -93,7 +93,8 @@ describe Shards::Show do
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("https://crystaldocs.org/docs/_/#{shard.canonical_slug}\"")
+      docs = CrystalShards::DocsSite.origin
+      response.body.should contain("#{docs}/docs/_/#{shard.canonical_slug}\"")
     end
 
     it "shows the maintainer's own documentation link alongside it" do

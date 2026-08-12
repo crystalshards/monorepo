@@ -269,6 +269,13 @@ locals {
         JOB_ADS_URL     = var.job_ads_url
         DOCS_BUCKET     = var.docs_bucket_name
         PACKAGES_BUCKET = var.packages_bucket_name
+
+        # Every documentation link the registry renders is built from this.
+        # Derived from the same app_domains map that produces crystaldocs's own
+        # APP_DOMAIN, so the two cannot disagree about where that site is: one
+        # value, used by the service that answers there and by the service that
+        # links to it.
+        DOCS_SITE_ORIGIN = "https://${var.app_domains["crystaldocs"]}"
       })
       secret_env = {
         DATABASE_URL    = var.database_url_secret_ids["crystalshards"]
