@@ -227,4 +227,61 @@ describe BuildDocsWorker do
       ShardVersionQuery.new.shard_id(shard.id).version("99.99.99").first?.should be_nil
     end
   end
+
+  # A lost outcome is not a failed build, and this method is where the two used
+  # to be confused: every exception left the body through one rescue, which then
+  # recorded a failure. So a build that had compiled and uploaded its artifact
+  # was recorded as failed the moment the write of its success went wrong.
+  describe "when the outcome cannot be recorded" do
+    it "does not record a failure for a build that succeeded" do
+      shard = ShardFactory.create &.name("unrecordable")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+      DocsRows.register("unrecordable", "1.0.0")
+      DocsRows.request("unrecordable", "1.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      storage = CrystalShards::MockStorageService.new
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        DocsRows.refusing_doc_version_writes do
+          expect_raises(CrystalShards::DocsBuildStatus::Unrecorded) do
+            BuildDocsWorker.new(shard_name: "unrecordable", version: "1.0.0").perform
+          end
+        end
+      end
+
+      # The documentation was built and published. Recording that as a failure
+      # would be a lie about it, and 'failed' is also what starts crystaldocs'
+      # one hour retry floor, so the lie would then block the rebuild that is
+      # the only thing able to record the truth.
+      storage.uploaded_docs.should eq(["unrecordable/1.0.0/docs.json"])
+      DocsRows.request_status("unrecordable", "1.0.0").should eq("pending")
+      DocsRows.version_status("unrecordable", "1.0.0").should eq("pending")
+    end
+
+    # Raising is what fails the job, and failing the job is what makes Cloud
+    # Tasks redeliver. The redelivery is the entire repair mechanism for a lost
+    # outcome, so absorbing this would strand the version silently.
+    it "still raises when the build itself failed as well" do
+      shard = ShardFactory.create &.name("unrecordable-failure")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+      DocsRows.register("unrecordable-failure", "1.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      builder.raise_with = "Failed to clone repository: fatal: repository not found"
+      storage = CrystalShards::MockStorageService.new
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        DocsRows.refusing_doc_version_writes do
+          # The build's own exception, not the recording failure: it is why this
+          # path was taken, and either one fails the job.
+          expect_raises(Exception, /Failed to clone repository/) do
+            BuildDocsWorker.new(shard_name: "unrecordable-failure", version: "1.0.0").perform
+          end
+        end
+      end
+
+      DocsRows.version_status("unrecordable-failure", "1.0.0").should eq("pending")
+    end
+  end
 end

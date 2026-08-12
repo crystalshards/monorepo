@@ -87,12 +87,35 @@ struct BuildDocsWorker < BaseJob
         "crystal docs produced no output for #{@shard_name} #{@version}, and the build did not say why."
       )
     end
+  rescue ex : CrystalShards::DocsBuildStatus::Unrecorded
+    # An outcome this method already decided could not be written down. It is
+    # NOT a build failure and must not be recorded as one: the build it
+    # describes may well have succeeded and uploaded its artifact, and the
+    # write that would say so is the write that just failed. Trying again with
+    # 'failed' over the same connection cannot work and would be a lie if it
+    # did.
+    #
+    # DocsBuildStatus has already logged this against the package and version.
+    # Raising fails the job, so Cloud Tasks redelivers, and the redelivery
+    # rebuilds and records again. That redelivery is the only thing that
+    # repairs a lost outcome, which is why this is raised rather than
+    # absorbed.
+    raise ex
   rescue ex : Exception
     log_error "Failed to build docs for #{@shard_name}@#{@version}", ex
+
     # Recorded before re-raising, so the reader sees a failure even though
     # Cloud Tasks will redeliver the request. A retry that succeeds overwrites
     # this; one that fails again just refreshes failed_at.
-    docs_status.failed(ex.message)
+    begin
+      docs_status.failed(ex.message)
+    rescue CrystalShards::DocsBuildStatus::Unrecorded
+      # Already logged there, against this package and version. The build's own
+      # exception is the one worth raising: it is why this path was taken, and
+      # the job fails on either, which is what puts the request back on the
+      # queue.
+    end
+
     raise ex
   end
 
