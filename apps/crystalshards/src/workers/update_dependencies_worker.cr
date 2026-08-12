@@ -120,6 +120,15 @@ struct UpdateDependenciesWorker < BaseJob
     false
   end
 
+  # The source keys the shards tool itself understands, and the host each one
+  # means.
+  SOURCE_HOSTS = {
+    "github"    => "github.com",
+    "gitlab"    => "gitlab.com",
+    "bitbucket" => "bitbucket.org",
+    "codeberg"  => "codeberg.org",
+  }
+
   # A shard.yml dependency already says which host it comes from:
   #
   #   router:
@@ -131,26 +140,41 @@ struct UpdateDependenciesWorker < BaseJob
   # unresolvable dependency is stored with a null dependent_shard_id: the
   # requirement is still recorded, it simply does not claim to point at a
   # repository we cannot identify.
+  #
+  # A DECLARED source that will not parse is unresolvable, not absent. Falling
+  # through to the name there would take a dependency that said "gitlab.com,
+  # acme, router" and attach it to whichever shard happens to be called router,
+  # which is a confidently wrong edge in the one figure this graph exists to
+  # produce. Two shards sharing a name is the normal case the canonical slug
+  # exists for, so guessing between them is never better than saying nothing.
   private def self.resolve_dependent_shard(dependency : Declared) : Shard?
-    if slug = dependency_slug(dependency.spec)
-      return ShardQuery.new.canonical_slug(slug).first?
+    spec = dependency.spec.as_h?
+
+    if spec && declares_source?(spec)
+      slug = source_slug(spec)
+      return slug ? ShardQuery.new.canonical_slug(slug).first? : nil
     end
 
     ShardQuery.new.resolve(dependency.name)
   end
 
-  # Maps a dependency's source to a canonical slug. The shorthand keys are the
-  # ones the shards tool itself understands.
-  private def self.dependency_slug(dep_spec : JSON::Any) : String?
-    spec = dep_spec.as_h?
-    return nil unless spec
+  # Whether the dependency named a repository at all, regardless of whether we
+  # could make sense of it. Keyed on the key being present rather than on it
+  # holding a usable string, because `github: 12` is still a dependency that
+  # meant a particular repository.
+  private def self.declares_source?(spec : Hash(String, JSON::Any)) : Bool
+    return true if spec.has_key?("git")
 
-    {
-      "github"    => "github.com",
-      "gitlab"    => "gitlab.com",
-      "bitbucket" => "bitbucket.org",
-      "codeberg"  => "codeberg.org",
-    }.each do |key, host|
+    SOURCE_HOSTS.each_key do |key|
+      return true if spec.has_key?(key)
+    end
+
+    false
+  end
+
+  # Maps a declared source to a canonical slug, or nil when it does not parse.
+  private def self.source_slug(spec : Hash(String, JSON::Any)) : String?
+    SOURCE_HOSTS.each do |key, host|
       if path = spec[key]?.try(&.as_s?)
         return ShardIdentity.parse_url("https://#{host}/#{path}").try(&.canonical_slug)
       end

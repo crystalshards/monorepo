@@ -83,6 +83,29 @@ describe UpdateDependenciesWorker do
       deps.name("whole").first.version_requirement.should eq("2")
     end
 
+    it "refuses to guess by name when a declared source will not parse" do
+      # The dependency said which repository it meant. We could not read it, so
+      # the honest answer is no edge. Attaching it to the shard that happens to
+      # share the bare name would credit a dependent to the wrong repository,
+      # and two shards sharing a name is the ordinary case here.
+      ShardFactory.create &.name("router").repository_url("https://github.com/acme/router")
+      shard = ShardFactory.create &.name("guessing")
+      version = version_with_metadata(shard, <<-JSON)
+        {
+          "name": "guessing",
+          "dependencies": {
+            "router": {"gitlab": "not a repository path at all"}
+          }
+        }
+        JSON
+
+      UpdateDependenciesWorker.new(shard_name: "guessing", version: "1.0.0").perform
+
+      router = DependencyQuery.new.shard_version_id(version.id).name("router").first
+      router.version_requirement.should eq("*")
+      router.dependent_shard_id.should be_nil
+    end
+
     it "links a dependency to the shard it names, when that shard is indexed" do
       kemal = ShardFactory.create &.name("kemal")
       consumer = ShardFactory.create &.name("consumer")
