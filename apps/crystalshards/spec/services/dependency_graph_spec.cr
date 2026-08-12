@@ -22,8 +22,10 @@ private def indexed_edges(shard : Shard) : DependencyQuery
   DependencyQuery.new.shard_version_id(version.id)
 end
 
-# The dependent count a shard page renders: distinct shards, through their
-# versions, that name this one. The same query the report states.
+# The dependent count a shard page renders: distinct OTHER shards, through
+# their versions, that name this one. The self-edge predicate matches the one
+# in the popularity query, because a manifest listing its own shard would
+# otherwise let a shard be its own dependent.
 private def dependent_shards(shard : Shard) : Int64
   AppDatabase.query_one(
     <<-SQL,
@@ -31,6 +33,7 @@ private def dependent_shards(shard : Shard) : Int64
     FROM dependencies
     JOIN shard_versions ON shard_versions.id = dependencies.shard_version_id
     WHERE dependencies.dependent_shard_id = $1
+      AND shard_versions.shard_id <> dependencies.dependent_shard_id
     SQL
     shard.id, as: Int64
   )
@@ -198,7 +201,7 @@ describe "dependency graph written by indexing" do
     dependent_shards(dropped).should eq(0)
   end
 
-  it "clears the graph when the manifest stops being readable" do
+  it "clears the graph when the host says the manifest is gone" do
     radix = shard_at("github.com", "luislavena", "radix", "radix")
     consumer = shard_at("github.com", "acme", "regressing", "regressing")
 
@@ -210,9 +213,10 @@ describe "dependency graph written by indexing" do
     RecordedGithub.install(before) { ShardIndexer.index(consumer) }
     dependent_shards(radix).should eq(1)
 
-    # A tag whose shard.yml has gone keeps no stored manifest, so it must keep
-    # no edges either: leaving them would show dependencies the tag does not
-    # declare.
+    # The host answered: there is no shard.yml here. That is a fact about the
+    # repository, so the stored manifest goes and the edges derived from it go
+    # with it. Keeping them would list dependencies beside a page that says the
+    # manifest could not be read.
     after = RecordedGithub.new("acme/regressing")
       .repository(default_branch: "main")
       .tags("v1.0.0")
@@ -223,6 +227,95 @@ describe "dependency graph written by indexing" do
     result.dependencies.should eq(0)
     indexed_edges(consumer).select_count.should eq(0)
     dependent_shards(radix).should eq(0)
+  end
+
+  it "clears the graph when the manifest stops parsing" do
+    radix = shard_at("github.com", "luislavena", "radix", "radix")
+    consumer = shard_at("github.com", "acme", "broken", "broken")
+
+    before = RecordedGithub.new("acme/broken")
+      .repository(default_branch: "main")
+      .tags("v1.0.0")
+      .file("v1.0.0", "shard.yml", RADIX_ONLY)
+
+    RecordedGithub.install(before) { ShardIndexer.index(consumer) }
+    dependent_shards(radix).should eq(1)
+
+    # Same reasoning as an absent manifest. The host served the file and it is
+    # not a shard specification, which the version records in spec_error; a
+    # dependency list rendered next to that sentence would contradict it.
+    after = RecordedGithub.new("acme/broken")
+      .repository(default_branch: "main")
+      .tags("v1.0.0")
+      .file("v1.0.0", "shard.yml", "name: broken\n  dependencies: [\n")
+
+    RecordedGithub.install(after) { ShardIndexer.index(reload(consumer)) }
+
+    indexed_edges(consumer).select_count.should eq(0)
+    dependent_shards(radix).should eq(0)
+  end
+
+  it "keeps the graph when the host fails to answer for the manifest" do
+    radix = shard_at("github.com", "luislavena", "radix", "radix")
+    consumer = shard_at("github.com", "acme", "flaky", "flaky")
+
+    before = RecordedGithub.new("acme/flaky")
+      .repository(default_branch: "main")
+      .tags("v1.0.0")
+      .file("v1.0.0", "shard.yml", RADIX_ONLY)
+
+    RecordedGithub.install(before) { ShardIndexer.index(consumer) }
+    dependent_shards(radix).should eq(1)
+
+    # A 500 from the file endpoint is news about the host, not about the ref.
+    # The ref still declares what it declared, so deleting its edges would drop
+    # radix out of every dependent count over one bad second, invisibly, until
+    # some later pass happened to succeed.
+    after = RecordedGithub.new("acme/flaky")
+      .repository(default_branch: "main")
+      .tags("v1.0.0")
+      .file_status("v1.0.0", "shard.yml", 500)
+
+    result = RecordedGithub.install(after) { ShardIndexer.index(reload(consumer)) }
+
+    # Nothing written this pass, and nothing destroyed either.
+    result.outcome.should eq(ShardIndexer::Outcome::Indexed)
+    result.dependencies.should eq(0)
+    indexed_edges(consumer).name("radix").first.dependent_shard_id.should eq(radix.id)
+    dependent_shards(radix).should eq(1)
+
+    # And the preservation is durable, not just true until something else runs.
+    # The stored manifest was kept too, so the queue path, which reads that row
+    # and replaces the whole set from it, still finds the dependency there
+    # rather than deleting an edge it can no longer see a reason for.
+    UpdateDependenciesWorker.new(shard_name: "github.com/acme/flaky", version: "1.0.0").perform
+
+    indexed_edges(consumer).name("radix").first.dependent_shard_id.should eq(radix.id)
+    dependent_shards(radix).should eq(1)
+
+    # The retry contract, end to end. `Failed` is a fact about the fetch, and
+    # IndexSweep's queue is ordered by index_attempted_at staleness alone, so a
+    # later pass returns to this shard whatever its outcome was and re-reads
+    # shard.yml. When the host answers again the preserved graph is replaced by
+    # what the manifest now says, so preservation delays the update rather than
+    # freezing it.
+    recovered = RecordedGithub.new("acme/flaky")
+      .repository(default_branch: "main")
+      .tags("v1.0.0")
+      .file("v1.0.0", "shard.yml", <<-YAML)
+        name: flaky
+        dependencies:
+          exception_page:
+            github: crystal-loot/exception_page
+        YAML
+
+    moved_to = shard_at("github.com", "crystal-loot", "exception_page", "exception_page")
+    result = RecordedGithub.install(recovered) { ShardIndexer.index(reload(consumer)) }
+
+    result.dependencies.should eq(1)
+    indexed_edges(consumer).name("radix").first?.should be_nil
+    dependent_shards(radix).should eq(0)
+    dependent_shards(moved_to).should eq(1)
   end
 
   it "resolves only the version whose manifest was fetched" do
