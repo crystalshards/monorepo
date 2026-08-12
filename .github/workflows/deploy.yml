@@ -1417,6 +1417,59 @@ jobs:
 
           echo "${DOCS_BUILD_JOB}: ${configured}"
 
+      - name: Update the discover-shards Job image
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          REGISTRY_URL: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          # This Job was never rolled by any release, and terraform ignores its
+          # image after creation, so it ran whatever it was born with for the
+          # life of the deployment. The symptom that found it: a sweep that had
+          # just been taught to index printed no indexing phase at all, because
+          # the container executing was built before that code existed.
+          #
+          # It runs the crystalshards image, which carries both the crawler and
+          # the indexer as ./discover-shards.
+          job="discover-shards"
+          image="${REGISTRY_URL}/crystalshards:${SHA}"
+
+          gcloud run jobs update "$job" --region "$REGION" --image "$image" --quiet
+
+          # Read it back, for the same reason the docs-build step does: a
+          # successful update is not the same as the template holding the image
+          # the next execution will actually run.
+          job_json="$(gcloud run jobs describe "$job" --region "$REGION" --format=json)"
+          configured="$(jq -r '
+            (.spec.template.spec.template.spec.containers[0].image
+             // .spec.template.template.containers[0].image
+             // .template.template.containers[0].image
+             // ([.. | objects | select(has("containers")) | .containers[0].image?]
+                 | map(select(. != null)) | first)
+             // empty)' <<< "$job_json")"
+
+          if [ -z "$configured" ]; then
+            echo "Could not read the container image of Job ${job}." >&2
+            echo "Top level keys: $(jq -r 'keys | join(", ")' <<< "$job_json")" >&2
+            exit 1
+          fi
+
+          if [ "$configured" != "$image" ]; then
+            echo "Job ${job} is configured with '${configured}', expected '${image}'." >&2
+            exit 1
+          fi
+          case "$configured" in
+            *:latest)
+              echo "Job ${job} is pinned to 'latest'; images must be pinned to a commit SHA." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "${job}: ${configured}"
+
       - name: Assert the docs build timeout pairing
         shell: bash
         env:
