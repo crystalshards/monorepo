@@ -28,6 +28,22 @@ class Head < Lucky::BaseComponent
       tag "link", rel: "stylesheet", href: ICON_HREF
       tag "link", rel: "stylesheet", href: asset("css/app.css")
 
+      # Icons. The mark is the header's `.logo::before`, the same faceted
+      # crystal section in this app's accent, so the four sites read as a
+      # family in a tab strip and stay told apart by hue.
+      #
+      # Fixed root paths rather than `asset()`: a user agent asks for
+      # `/favicon.ico` and follows `/manifest.json` on its own, so these URLs
+      # are a contract with the browser and must never be rewritten.
+      tag "link", rel: "icon", href: "/favicon.ico", sizes: "16x16 32x32 48x48"
+      tag "link", rel: "icon", href: "/icon.svg", type: "image/svg+xml"
+      tag "link", rel: "apple-touch-icon", href: "/apple-touch-icon.png"
+      tag "link", rel: "manifest", href: "/manifest.json"
+
+      # Browser chrome follows the page ground, so the two agree at the seam.
+      meta name: "theme-color", content: "#f4f6f6", media: "(prefers-color-scheme: light)"
+      meta name: "theme-color", content: "#070a0b", media: "(prefers-color-scheme: dark)"
+
       render_csrf_meta_tags
     end
   end
