@@ -53,6 +53,11 @@ class RecordedGithub
     description : String? = nil,
     homepage : String? = nil,
     license : String? = nil,
+    # GitHub sends "license": null for a repository it detects no licence for,
+    # which is a different body from omitting the key and the one that broke
+    # indexing: a JSON::Any wrapping null is truthy, so a `try` chain walks
+    # straight into it. Nothing produced that shape until this flag existed.
+    null_license : Bool = false,
     topics : Array(String)? = nil,
     default_branch : String? = nil,
     pushed_at : Time? = nil,
@@ -70,6 +75,8 @@ class RecordedGithub
     # claim in shard.yml is a different field and outranks this one.
     if license
       @repository_fields["license"] = JSON::Any.new({"spdx_id" => JSON::Any.new(license)})
+    elsif null_license
+      @repository_fields["license"] = JSON::Any.new(nil)
     end
 
     self
