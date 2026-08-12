@@ -61,8 +61,12 @@ describe Home::Index do
     response.body.should contain("shards")
   end
 
-  it "displays total downloads count" do
-    shard = ShardFactory.create
+  it "renders no downloads figure, and would have caught one if it were there" do
+    # Positive control built into the assertion: the same body IS searched
+    # successfully for the stat that replaced downloads, so this cannot pass
+    # by accident on an empty or failed render. Real Download rows exist here,
+    # so any surviving counter would have something to print.
+    shard = ShardFactory.create &.name("some-shard")
     version = ShardVersionFactory.create &.shard_id(shard.id)
     DownloadFactory.create &.shard_version_id(version.id).shard_id(shard.id)
     DownloadFactory.create &.shard_version_id(version.id).shard_id(shard.id)
@@ -70,7 +74,52 @@ describe Home::Index do
     response = BrowserClient.exec(Home::Index)
 
     response.status_code.should eq(200)
-    response.body.should contain("2")
-    response.body.should contain("downloads")
+    response.body.should contain("Dependency links")
+    response.body.downcase.should_not contain("download")
+  end
+
+  it "says stars are unmeasured rather than printing a zero" do
+    # A registry whose metadata fetch has not run has no star count. Printing
+    # 0 would claim nobody has starred anything, which is the exact failure
+    # that made the download counter worth deleting.
+    ShardFactory.create &.name("unfetched")
+
+    response = BrowserClient.exec(Home::Index)
+
+    response.body.should contain("Stars")
+    response.body.should contain("not indexed yet")
+  end
+
+  it "sums stars once any shard has actually been measured" do
+    ShardFactory.create &.name("alpha").github_stars(40)
+    ShardFactory.create &.name("beta").github_stars(2)
+
+    response = BrowserClient.exec(Home::Index)
+
+    response.body.should contain("42")
+    response.body.should_not contain("not indexed yet")
+  end
+
+  it "hides the most starred section until something has been starred" do
+    # Ranking six shards by a number none of them have is crawl order wearing
+    # a popularity label.
+    ShardFactory.create &.name("unfetched")
+
+    response = BrowserClient.exec(Home::Index)
+
+    response.body.should_not contain("Most starred")
+    response.body.should contain("Recently updated")
+  end
+
+  it "shows a dependent count on every card" do
+    target = ShardFactory.create &.name("target-shard")
+    depender = ShardFactory.create &.name("depending-shard")
+    version = ShardVersionFactory.create &.shard_id(depender.id)
+    DependencyFactory.create &.shard_version_id(version.id).dependent_shard_id(target.id)
+
+    response = BrowserClient.exec(Home::Index)
+
+    response.body.should contain("dependents")
+    response.body.should contain("Dependency links")
   end
 end
