@@ -12,7 +12,39 @@ module CrystalShards
   # shards addressed by name would read and write the same documentation. A
   # bare name is only for what predates that.
   module DocsSite
-    ORIGIN = "https://crystaldocs.org"
+    ENV_KEY = "DOCS_SITE_ORIGIN"
+
+    # Where crystaldocs answers. Required in every environment, with no default
+    # and no production fallback.
+    #
+    # It was `https://crystaldocs.org`, written into the source. That is not a
+    # constant, it is one deployment's address: locally crystaldocs is on
+    # another port, and a hardcoded production URL meant every docs link on a
+    # development machine pointed at production. It was also invisible, because
+    # the value that made production work was the same value that made local
+    # wrong, so nothing ever failed to reveal it.
+    #
+    # Raising rather than defaulting is the point. A default here is a guess
+    # about where another service lives, and a wrong guess produces links that
+    # resolve somewhere real, which is the failure nobody notices.
+    class MissingOrigin < Exception
+      def initialize
+        super(
+          "#{ENV_KEY} is not set. It is the origin crystaldocs answers on, " \
+          "for example https://crystaldocs.org in production or " \
+          "http://localhost:3001 against the local stack. Every documentation " \
+          "link this app renders is built from it, so there is no value that " \
+          "could be guessed that would not be wrong somewhere."
+        )
+      end
+    end
+
+    def self.origin : String
+      raw = ENV[ENV_KEY]?
+      raise MissingOrigin.new if raw.nil? || raw.blank?
+
+      raw.rstrip('/')
+    end
 
     # Repository keys are nested under a static segment so they cannot be
     # mistaken for a bare package name by the routes that still take one. The
@@ -31,7 +63,7 @@ module CrystalShards
     end
 
     def self.url_for(key : String, version : String? = nil) : String
-      "#{ORIGIN}#{path_for(key, version)}"
+      "#{origin}#{path_for(key, version)}"
     end
 
     # The documentation URL for a shard, or nil when it has no identity to

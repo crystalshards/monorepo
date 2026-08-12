@@ -101,7 +101,11 @@ class GithubRepositoryApi < RepositorySource
       forks: repository["forks_count"]?.try(&.as_i?),
       description: presence_of(repository["description"]?),
       homepage: presence_of(repository["homepage"]?),
-      license: presence_of(repository["license"]?.try(&.["spdx_id"]?)),
+      # `as_h?` first, because a repository with no licence answers
+      # "license": null, and a JSON::Any wrapping null is truthy. `try` does not
+      # guard it, so indexing the field raised and cost the shard its whole
+      # pass. Measured: 8 of 60 shards in one local run.
+      license: presence_of(repository["license"]?.try(&.as_h?).try(&.["spdx_id"]?)),
       topics: repository["topics"]?.try(&.as_a?).try(&.compact_map(&.as_s?)) || [] of String,
       default_branch: default_branch,
       pushed_at: pushed_at,

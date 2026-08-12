@@ -560,7 +560,7 @@ class Shards::ShowPage < MainLayout
   private def declared_documentation_url : String?
     url = @shard.documentation_url
     return nil if url.nil?
-    return nil if url.starts_with?(CrystalShards::DocsSite::ORIGIN)
+    return nil if url.starts_with?(CrystalShards::DocsSite.origin)
 
     url
   end

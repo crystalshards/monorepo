@@ -122,6 +122,32 @@ describe ShardIndexer do
       row.index_error.should be_nil
     end
 
+    # The bug that cost 8 of 60 shards their whole pass on the first real run.
+    #
+    # A repository GitHub detects no licence for answers "license": null, not
+    # an absent key. A JSON::Any wrapping null is truthy, so the try chain
+    # walked into it and raised "Expected Hash for #[]?(key : String), not Nil"
+    # out of fetch_snapshot, which the indexer records as a failed shard. The
+    # fixture only ever omitted the key, so nothing produced the shape.
+    it "indexes a repository whose licence is an explicit null" do
+      shard = indexable
+      github = RecordedGithub.new("kemalcr/kemal")
+        .repository(null_license: true, default_branch: "master", stars: 12)
+        .tags("v1.0.0")
+        .file("v1.0.0", "shard.yml", "name: kemal\nversion: 1.0.0\n")
+
+      result = RecordedGithub.install(github) { ShardIndexer.index(shard) }
+
+      result.outcome.should eq(ShardIndexer::Outcome::Indexed)
+
+      row = reload(shard)
+      row.github_stars.should eq(12)
+      # Not "null", not an empty string: the repository has no detected licence
+      # and the row says nothing rather than saying something wrong.
+      row.license.should be_nil
+      row.index_error.should be_nil
+    end
+
     it "writes a version row for every tag, not just the one it fetched" do
       shard = indexable
       github = RecordedGithub.new("kemalcr/kemal")

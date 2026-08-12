@@ -465,8 +465,12 @@ describe Shards::Index do
 
       response = BrowserClient.exec(Shards::Index)
 
-      response.body.should contain("https://crystaldocs.org/docs/_/github.com/acme/router")
-      response.body.should contain("https://crystaldocs.org/docs/_/gitlab.com/acme/router")
+      # Built from the configured origin, not a spelled-out host: the point of
+      # the assertion is the key, and hardcoding the host here is what let a
+      # production URL live in the source unnoticed.
+      docs = CrystalShards::DocsSite.origin
+      response.body.should contain("#{docs}/docs/_/github.com/acme/router")
+      response.body.should contain("#{docs}/docs/_/gitlab.com/acme/router")
     end
 
     # No identity, no key, no URL. Guessing one from the name would point at

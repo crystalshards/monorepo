@@ -196,7 +196,8 @@ class GitlabRepositorySource < HostRepositorySource
       forks: document["forks_count"]?.try(&.as_i?),
       description: presence_of(document["description"]?),
       homepage: presence_of(document["web_url"]?),
-      license: presence_of(document["license"]?.try(&.["key"]?)),
+      # as_h? first: a JSON null is truthy as a JSON::Any, so indexing it raises.
+      license: presence_of(document["license"]?.try(&.as_h?).try(&.["key"]?)),
       topics: document["topics"]?.try(&.as_a?).try(&.compact_map(&.as_s?)) || [] of String,
       default_branch: document["default_branch"]?.try(&.as_s?),
       pushed_at: parse_time(document["last_activity_at"]?.try(&.as_s?)),
@@ -304,7 +305,7 @@ class BitbucketRepositorySource < HostRepositorySource
       homepage: presence_of(document["website"]?),
       # Bitbucket has no stars. Left nil rather than zeroed, because zero would
       # read as "nobody starred this" on a host with no such button.
-      default_branch: document["mainbranch"]?.try(&.["name"]?).try(&.as_s?),
+      default_branch: document["mainbranch"]?.try(&.as_h?).try(&.["name"]?).try(&.as_s?),
       pushed_at: parse_time(document["updated_on"]?.try(&.as_s?)),
     )
   end

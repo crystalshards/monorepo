@@ -77,6 +77,10 @@ services:
       STORAGE_SECRET_KEY: minioadmin
       DOCS_BUCKET: crystal-docs
       PACKAGES_BUCKET: packages
+      # Where crystaldocs answers. Required, with no default in the code: a
+      # hardcoded production URL made every documentation link on a development
+      # machine point at production, and nothing failed to reveal it.
+      DOCS_SITE_ORIGIN: http://localhost:3001
     depends_on:
       postgres:
         condition: service_healthy
