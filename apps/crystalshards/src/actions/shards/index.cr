@@ -1,8 +1,17 @@
 class Shards::Index < BrowserAction
+  # Popularity is the default order, not recency.
+  #
+  # The crawler walks GitHub's search results bisected on shard.yml byte size
+  # ascending, so every row was discovered in roughly one burst and
+  # "recently updated" is very nearly crawl order. That surfaces the smallest
+  # manifests on the internet first, which is why the front page of this
+  # registry currently reads as a pile of abandoned test projects. Ranking by
+  # what other shards actually depend on, then by stars, puts the
+  # load-bearing packages on the first page instead.
   param page : Int32 = 1
   param per_page : Int32 = 20
   param query : String?
-  param sort : String = "updated"
+  param sort : String = "popular"
   param license : String?
   param min_stars : Int32?
   param has_docs : Bool?
@@ -32,17 +41,10 @@ class Shards::Index < BrowserAction
       shards_query = shards_query.documentation_url.is_not_nil if filter_has_docs
     end
 
-    # Apply sorting
-    shards_query = case sort
-                   when "popular"
-                     shards_query.github_stars.desc_order(:nulls_last)
-                   when "name"
-                     shards_query.name.asc_order
-                   when "downloads"
-                     shards_query.total_downloads.desc_order
-                   else # "updated"
-                     shards_query.updated_at.desc_order
-                   end
+    # One definition of the sorts, on ShardQuery. An unrecognised sort, which
+    # now includes the retired "downloads", falls through to popularity rather
+    # than erroring: an old bookmark still returns a sensible page.
+    shards_query = shards_query.sort_by_column(sort)
 
     total_count = shards_query.select_count
     offset_value = (page - 1) * per_page
@@ -52,8 +54,14 @@ class Shards::Index < BrowserAction
       .offset(offset_value)
       .to_a
 
+    # Every card shows a dependent count, so the whole page is counted in one
+    # query here. A card resolving its own count would be an N+1 that grows
+    # with per_page.
+    dependent_counts = ShardPopularity.dependent_counts(paginated_shards.map(&.id))
+
     html Shards::IndexPage,
       shards: paginated_shards,
+      dependent_counts: dependent_counts,
       query: query,
       sort: sort,
       license: license,

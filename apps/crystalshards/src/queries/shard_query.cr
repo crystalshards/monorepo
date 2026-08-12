@@ -55,18 +55,54 @@ class ShardQuery < Shard::BaseQuery
     github_stars.gte(min_stars)
   end
 
-  def sort_by_column(column : String, direction : String = "desc")
+  # Popularity is stars plus dependents, and there is deliberately no third
+  # term. Nothing is downloaded from this registry: `shards` fetches from the
+  # origin repository, so a download counter here can only ever read zero, and
+  # ordering by it would just shuffle the list.
+  #
+  # Dependents leads. "Other indexed shards build on this" is a stronger claim
+  # to being load-bearing than a star count, which accrues from visibility.
+  # Stars break the tie, with unknown sorting LAST so a shard whose metadata
+  # has never been fetched cannot outrank one we have actually measured.
+  # updated_at makes the order total, which is what keeps pagination stable.
+  def by_popularity
+    self.order_by(ShardPopularity::DependentsOrder.new(:desc))
+      .github_stars.desc_order(:nulls_last)
+      .updated_at.desc_order
+  end
+
+  def by_dependents(direction : String? = nil)
+    heading = direction == "asc" ? Avram::OrderBy::Direction::ASC : Avram::OrderBy::Direction::DESC
+
+    self.order_by(ShardPopularity::DependentsOrder.new(heading))
+      .github_stars.desc_order(:nulls_last)
+  end
+
+  # Every sort the listing offers, defined once. The action routes the `sort`
+  # param straight through here rather than repeating this case, because the
+  # two drifting apart is how "downloads" survived in one place after being
+  # removed from the other.
+  #
+  # `direction` is an override, not a requirement: each sort key already
+  # implies the only direction anyone wants from it. Names read A to Z, every
+  # popularity signal reads highest first. That is why the default below is
+  # per-key rather than a blanket "desc".
+  def sort_by_column(column : String, direction : String? = nil)
     case column
     when "name"
-      direction == "asc" ? name.asc_order : name.desc_order
-    when "downloads"
-      direction == "asc" ? total_downloads.asc_order : total_downloads.desc_order
+      direction == "desc" ? name.desc_order : name.asc_order
     when "stars"
-      direction == "asc" ? github_stars.asc_order : github_stars.desc_order
+      if direction == "asc"
+        github_stars.asc_order(:nulls_last).updated_at.desc_order
+      else
+        github_stars.desc_order(:nulls_last).updated_at.desc_order
+      end
+    when "dependents"
+      by_dependents(direction)
     when "updated"
       direction == "asc" ? updated_at.asc_order : updated_at.desc_order
     else
-      updated_at.desc_order
+      by_popularity
     end
   end
 

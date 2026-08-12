@@ -108,14 +108,53 @@ describe ShardQuery do
       results.last.should eq(zebra)
     end
 
-    it "sorts by downloads descending" do
-      popular = ShardFactory.create &.total_downloads(1000)
-      unpopular = ShardFactory.create &.total_downloads(10)
+    it "falls back to popularity for the retired downloads sort" do
+      # Nothing is downloaded from this registry, so the ordering is gone. An
+      # old bookmark carrying ?sort=downloads has to keep returning a sensible
+      # page rather than erroring or falling into crawl order.
+      quiet = ShardFactory.create &.name("quiet").github_stars(1)
+      loved = ShardFactory.create &.name("loved").github_stars(900)
 
       results = ShardQuery.new.sort_by_column("downloads", "desc").results
 
-      results.first.should eq(popular)
-      results.last.should eq(unpopular)
+      results.first.should eq(loved)
+      results.last.should eq(quiet)
+    end
+
+    it "sorts by dependents, counting a depender with many releases once" do
+      one_dependent = ShardFactory.create &.name("one-dependent")
+      two_dependents = ShardFactory.create &.name("two-dependents")
+
+      # A single depender that declares the same dependency across two
+      # releases. Without DISTINCT this outweighs the shard below, which two
+      # separate projects actually depend on.
+      repeat = ShardFactory.create &.name("repeat-depender")
+      repeat_v1 = ShardVersionFactory.create &.shard_id(repeat.id).version("1.0.0")
+      repeat_v2 = ShardVersionFactory.create &.shard_id(repeat.id).version("2.0.0")
+      DependencyFactory.create &.shard_version_id(repeat_v1.id).dependent_shard_id(one_dependent.id)
+      DependencyFactory.create &.shard_version_id(repeat_v2.id).dependent_shard_id(one_dependent.id)
+      DependencyFactory.create &.shard_version_id(repeat_v1.id).dependent_shard_id(two_dependents.id)
+
+      other = ShardFactory.create &.name("other-depender")
+      other_v1 = ShardVersionFactory.create &.shard_id(other.id).version("1.0.0")
+      DependencyFactory.create &.shard_version_id(other_v1.id).dependent_shard_id(two_dependents.id)
+
+      results = ShardQuery.new.sort_by_column("dependents", "desc").results
+
+      results.index(&.id.==(two_dependents.id)).not_nil!
+        .should be < results.index(&.id.==(one_dependent.id)).not_nil!
+    end
+
+    it "sorts shards with no star count last, not first" do
+      # Postgres puts NULLs first on a DESC order. Without nulls_last a shard
+      # nobody has fetched metadata for would lead "most stars".
+      unmeasured = ShardFactory.create &.name("unmeasured")
+      measured = ShardFactory.create &.name("measured").github_stars(3)
+
+      results = ShardQuery.new.sort_by_column("stars", "desc").results
+
+      results.first.id.should eq(measured.id)
+      results.last.id.should eq(unmeasured.id)
     end
 
     it "sorts by stars descending" do
@@ -130,7 +169,7 @@ describe ShardQuery do
 
     it "sorts by updated descending by default" do
       old = ShardFactory.create
-      sleep 0.01
+      sleep 10.milliseconds
       new_shard = ShardFactory.create
 
       results = ShardQuery.new.sort_by_column("updated", "desc").results
