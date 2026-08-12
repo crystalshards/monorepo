@@ -17,8 +17,12 @@ class Shards::Show < BrowserAction
       raise Lucky::RouteNotFoundError.new(context)
     end
 
-    versions = shard.shard_versions.sort_by(&.released_at).reverse
-    latest_version = versions.first?
+    # Semver, not released_at. Only the indexed version carries a real commit
+    # date; the rest fall back to the repository's pushed_at, so a date sort
+    # ranks 1.9.0 above 1.11.0 and picks a "latest" that contradicts the
+    # latest_version stored on the shard itself.
+    versions = VersionOrder.sort_versions(shard.shard_versions)
+    latest_version = VersionOrder.latest_version(shard.shard_versions)
 
     dependencies = if latest_version
                      DependencyQuery.new

@@ -17,9 +17,10 @@ class ShardCard < Lucky::BaseComponent
           end
         end
 
-        # Preload order is not guaranteed, so pick the newest release rather
-        # than whichever row happens to come back first.
-        if version = @shard.shard_versions.max_by?(&.released_at)
+        # Preload order is not guaranteed and released_at is not a real date on
+        # any version except the indexed one, so this is chosen by semver. A
+        # card and the page it links to must not name different latest versions.
+        if version = VersionOrder.latest_version(@shard.shard_versions)
           span class: "version-number" do
             text version.version
           end

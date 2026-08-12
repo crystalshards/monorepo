@@ -7,7 +7,9 @@ class SaveShard < Shard::SaveOperation
   permit_columns :name, :description, :repository_url, :homepage_url,
     :documentation_url, :license, :total_downloads, :github_stars,
     :github_forks, :last_synced_at, :provider, :repository_type,
-    :readme_content, :host, :owner, :repo, :unavailable_at
+    :readme_content, :host, :owner, :repo, :unavailable_at,
+    :topics, :default_branch, :pushed_at, :archived, :latest_version,
+    :indexed_at, :index_attempted_at, :index_error
 
   before_save do
     derive_identity

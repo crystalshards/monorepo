@@ -48,8 +48,8 @@ class Shards::ShowByName < BrowserAction
 
   # Mirrors Shards::Show for the one case that cannot be redirected there.
   private def render_legacy_shard(shard : Shard)
-    versions = shard.shard_versions.sort_by(&.released_at).reverse
-    latest_version = versions.first?
+    versions = VersionOrder.sort_versions(shard.shard_versions)
+    latest_version = VersionOrder.latest_version(shard.shard_versions)
 
     dependencies = if latest_version
                      DependencyQuery.new
