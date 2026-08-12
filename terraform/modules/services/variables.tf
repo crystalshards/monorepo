@@ -105,12 +105,19 @@ variable "discovery_max_pages" {
     property: it runs until the Job timeout kills it, mid page, having spent the
     host's whole rate limit budget in one window.
 
-    Ten pages is sized against the tightest limiter in the set. GitHub's code
-    search API, the only way to ask which repositories have a shard.yml at their
-    root, allows 10 authenticated requests per minute and caps any one query at
-    1000 results, so ten pages is both a full query's worth of results and about
-    a minute of search budget. The other three hosts are looser, and all four
-    back off on their own rate limit headers regardless of this number.
+    Ten is not a round number, it is one full GitHub code search result window.
+    GithubCrawler has RESULT_CAP 1000 and PER_PAGE 100 and computes
+    last_page = (min(total, 1000) - 1) // 100 + 1, which is 10; at page >=
+    last_page it advances to the next file-size window instead. So ten pages stops
+    the sweep exactly on a window boundary and cannot overshoot the 1000 result
+    cap, and a smaller number would stop partway through a window for no benefit.
+
+    It is also about a minute of search budget. GET /search/code is the tightest
+    limiter in the set, and the only way to ask which repositories have a
+    shard.yml at their root: it requires authentication and allows 10 requests per
+    minute. Not the 30 per minute figure, which GitHub's docs apply to every
+    search endpoint EXCEPT code search. The other three hosts are looser, and all
+    four back off on their own rate limit headers regardless of this number.
   DESC
   type        = number
   default     = 10

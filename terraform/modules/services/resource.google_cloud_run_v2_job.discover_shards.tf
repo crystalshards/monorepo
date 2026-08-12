@@ -19,11 +19,25 @@
 #
 # max_retries is 0, and that is a correctness requirement rather than thrift. The
 # crawler persists its cursor after every page, so an interrupted sweep resumes
-# from where it stopped. A retry re-enters run_all from the top: it re-reads the
+# from where it stopped. A retry re-enters the sweep from the top: it re-reads the
 # cursor, so it does not lose the frontier, but it does spend a second slice of
 # the host's rate limit inside the same window that the first attempt already
 # exhausted, which is the one condition most likely to have killed it. A failed
 # slice costs nothing. The next scheduled run continues from the same cursor.
+#
+# Note that being rate limited is not a failed execution at all. A throttled host
+# comes back partial with its cursor saved and the run exits 0, so the next tick
+# simply continues it; retries are not what makes throttling survivable, the
+# cursor is. The exit codes the binary actually uses:
+#
+#   0  the sweep ran. Includes a host reported as skipped for want of a token, and
+#      a host that stopped partway on a rate limit.
+#   1  a configured host errored outright, which for bitbucket.org includes a
+#      registered workspace answering 403. A real access problem, not throttling.
+#   2  the Job's own environment is wrong, checked before any host is touched. Look
+#      at this file and at var.discovery_max_pages, not at a git host. At the
+#      6 hour cadence a 2 repeats until someone changes terraform, and the first
+#      line of stderr names the offending variable.
 #
 # timeout is deliberately not the 600s default. See var.discovery_timeout_seconds.
 resource "google_cloud_run_v2_job" "discover_shards" {

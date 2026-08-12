@@ -65,6 +65,24 @@ resource "google_cloud_scheduler_job" "discover_shards" {
       "Content-Type" = "application/json"
     }
 
+    # oauth_token, NOT oidc_token. Do not "correct" this to match the OIDC used
+    # elsewhere in the stack for docs-launcher: those are Cloud Run SERVICES with
+    # an ingress that validates a Google signed ID token whose audience is the
+    # service URL. A Job has no ingress, so the target above is the Cloud Run
+    # Admin API, and a Google API authenticates with an OAuth access token.
+    #
+    # An OIDC token here answers 401 UNAUTHENTICATED, and the failure shape is
+    # why this comment is long: the schedule still fires exactly on time, the
+    # apply is clean, nothing is unhealthy, and the only evidence is a 401 in
+    # Cloud Scheduler's own logs. Nobody reads those until someone asks why the
+    # registry is still empty, and by then the plausible suspects are the token,
+    # the crawler and the cursor.
+    #
+    # The scope grants nothing on its own. cloud-platform is the scope every
+    # Google API access token carries; what the caller may actually do is the
+    # custom role bound in
+    # resource.google_cloud_run_v2_job_iam_member.discovery_scheduler.tf, whose
+    # permission list is exactly ["run.jobs.run"] on this one Job.
     oauth_token {
       service_account_email = google_service_account.discovery_scheduler.email
       scope                 = "https://www.googleapis.com/auth/cloud-platform"
