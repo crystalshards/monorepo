@@ -190,14 +190,25 @@ module IndexSweep
   # before each fetch is what makes a pass strictly advance: nothing already
   # touched sorts ahead of something that has not been.
   #
-  # `id` breaks ties so the order is total. Without it, the 217 rows that all
-  # have a null cursor come back in whatever order Postgres feels like, and two
-  # consecutive runs could pick overlapping sets and never reach the tail.
+  # Among the never-indexed, most-starred first, and that tiebreak is doing real
+  # work. It used to be `id`, which meant discovery order, which put every shard
+  # the ranked seed had just gone and found at the BACK of a queue of several
+  # hundred trivial ones: kemalcr/kemal was registered with 3903 stars and then
+  # waited behind roughly 660 rows discovered before it, so its page said "no
+  # tagged releases have been indexed" while sitting at the top of the listing.
+  # Finding the shards that matter and then indexing them last is not two
+  # separate decisions, it is one broken one.
+  #
+  # `id` still breaks the remaining ties, so the order is total. Without a total
+  # order the rows that share a null cursor come back in whatever order Postgres
+  # feels like, and two consecutive runs could pick overlapping sets and never
+  # reach the tail.
   def self.due(options : Options, now : Time = Time.utc) : Array(Shard)
     ShardQuery.new
       .index_attempted_at.lte(now - options.min_age)
       .or(&.index_attempted_at.is_nil)
       .index_attempted_at.asc_order(:nulls_first)
+      .github_stars.desc_order(:nulls_last)
       .id.asc_order
       .limit(options.max_shards)
       .to_a

@@ -57,14 +57,16 @@ private def rendered(report : IndexSweep::Report) : String
 end
 
 # A shard placed at a known point in the queue. `attempted` nil is a shard that
-# has never been indexed, which is the whole reason nulls sort first.
-private def queued(slug : String, attempted : Time? = nil) : Shard
+# has never been indexed, which is the whole reason nulls sort first. `stars`
+# nil is one nobody has measured, which is not the same as a shard with none.
+private def queued(slug : String, attempted : Time? = nil, stars : Int32? = nil) : Shard
   owner, _, repo = slug.partition("/")
   shard = ShardFactory.create &.name(repo).at("github.com", owner, repo)
-  return shard unless attempted
+  return shard unless attempted || stars
 
   operation = SaveShard.new(shard)
-  operation.index_attempted_at.value = attempted
+  operation.index_attempted_at.value = attempted if attempted
+  operation.github_stars.value = stars if stars
   operation.update!
 end
 
@@ -98,10 +100,38 @@ describe IndexSweep do
       ])
     end
 
-    it "breaks ties by id, so the order is total" do
-      # Without it the rows that all have a null cursor come back in whatever
-      # order Postgres feels like, and two consecutive runs could pick
-      # overlapping sets and never reach the tail.
+    # The queue is ranked, not first-come. The ranked discovery seed exists to
+    # find the shards that matter, and indexing them behind several hundred
+    # trivial ones undoes it: kemalcr/kemal was registered with 3903 stars and
+    # sorted last among the never-indexed because its row was newest.
+    it "indexes the most-starred of the never-indexed first" do
+      queued("acme/small", stars: 3)
+      queued("acme/huge", stars: 3903)
+      queued("acme/medium", stars: 120)
+
+      IndexSweep.due(options).map(&.canonical_slug).should eq([
+        "github.com/acme/huge",
+        "github.com/acme/medium",
+        "github.com/acme/small",
+      ])
+    end
+
+    # An unmeasured star count is not zero, but it cannot outrank a real one
+    # either, so it sorts after everything measured rather than first.
+    it "puts a shard with no star count behind the ones that have one" do
+      queued("acme/unknown")
+      queued("acme/known", stars: 1)
+
+      IndexSweep.due(options).map(&.canonical_slug).should eq([
+        "github.com/acme/known",
+        "github.com/acme/unknown",
+      ])
+    end
+
+    it "breaks the remaining ties by id, so the order is total" do
+      # Without it the rows that all have a null cursor and no stars come back
+      # in whatever order Postgres feels like, and two consecutive runs could
+      # pick overlapping sets and never reach the tail.
       first = queued("acme/one")
       second = queued("acme/two")
       third = queued("acme/three")
