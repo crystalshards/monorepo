@@ -38,7 +38,6 @@ describe "workers keyed on identity" do
 
           followups.should eq([
             {IndexShardWorker::Followup::UpdateDependencies, "gitlab.com/acme/router", "1.0.0"},
-            {IndexShardWorker::Followup::BuildDocs, "gitlab.com/acme/router", "1.0.0"},
           ])
         end
       end
