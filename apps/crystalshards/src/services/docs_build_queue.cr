@@ -58,6 +58,23 @@ module CrystalShards
     INVOKER_ENV  = "DOCS_TASKS_SERVICE_ACCOUNT"
     DEADLINE_ENV = "DOCS_BUILD_DEADLINE_SECONDS"
 
+    # The OIDC audience, which is deliberately NOT the launcher's URL.
+    #
+    # Both were one variable, and that made the launcher unable to check its
+    # own callers. The audience has to be known by the enqueuer that mints the
+    # token AND by the launcher that verifies it, and the launcher's URL is an
+    # output of the launcher's own terraform resource, so putting it in that
+    # resource's environment is a dependency cycle. The result was that the
+    # check never ran with a value: `verify_caller!` raised Missing on every
+    # dispatch, returned 500, Cloud Tasks retried forever, and no documentation
+    # was ever built. It failed closed, which is the right direction, but it
+    # failed on everything.
+    #
+    # A literal audience is an input rather than an output, so both sides can
+    # hold it. Cloud Run accepts it because the service declares it in
+    # `custom_audiences`; the URL stays the delivery target and nothing else.
+    AUDIENCE_ENV = "DOCS_LAUNCHER_AUDIENCE"
+
     # Only used outside production. In production the deadline is required,
     # because it has to equal the docs-launcher Cloud Run request timeout and
     # terraform derives both from one value. Defaulting here would recreate
@@ -69,10 +86,16 @@ module CrystalShards
         super(<<-MESSAGE)
         #{key} is not set.
 
-        Documentation builds are commissioned through Cloud Tasks. Production
+        Documentation builds are commissioned through Cloud Tasks. An enqueuer
         requires all of:
 
-          #{PROJECT_ENV}, #{QUEUE_ENV}, #{LOCATION_ENV}, #{LAUNCHER_ENV}, #{INVOKER_ENV}, #{DEADLINE_ENV}
+          #{PROJECT_ENV}, #{QUEUE_ENV}, #{LOCATION_ENV}, #{LAUNCHER_ENV}, #{AUDIENCE_ENV}, #{INVOKER_ENV}, #{DEADLINE_ENV}
+
+        docs-launcher, which verifies rather than enqueues, requires
+        #{AUDIENCE_ENV} and #{INVOKER_ENV}. It cannot hold #{LAUNCHER_ENV}:
+        that is its own service URL, and putting an output of a resource into
+        that resource's own environment is a terraform cycle. Which is why the
+        audience is a separate literal both sides can be told.
 
         In development and test the queue is in-process and none are read.
         MESSAGE
@@ -162,7 +185,18 @@ module CrystalShards
     # Built separately from being sent, because the shape is the contract with
     # a separate deployment and a contract that can only be checked by
     # dispatching a real task is a contract nobody checks.
-    def self.task_json(launcher_url : String, invoker : String, task : DocsBuildTask, deadline_seconds : Int32 = CloudTasksConfig.deadline_seconds) : String
+    #
+    # `audience` is separate from `launcher_url` and must stay separate. They
+    # were one value, which meant the launcher could not be told what to expect
+    # without terraform depending on its own output, so its caller check raised
+    # on every dispatch and nothing was ever built.
+    def self.task_json(
+      launcher_url : String,
+      audience : String,
+      invoker : String,
+      task : DocsBuildTask,
+      deadline_seconds : Int32 = CloudTasksConfig.deadline_seconds,
+    ) : String
       {
         task: {
           # Per task, not a queue setting: Cloud Tasks has no queue level
@@ -175,7 +209,9 @@ module CrystalShards
             body:       Base64.strict_encode(task.to_json),
             oidcToken:  {
               serviceAccountEmail: invoker,
-              audience:            launcher_url,
+              # Declared on the service as a custom audience, so Cloud Run
+              # accepts it and the launcher can hold the same literal.
+              audience: audience,
             },
           },
         },
@@ -189,6 +225,7 @@ module CrystalShards
         CloudTasksConfig.queue_path,
         self.class.task_json(
           CloudTasksConfig.fetch(CloudTasksConfig::LAUNCHER_ENV),
+          CloudTasksConfig.fetch(CloudTasksConfig::AUDIENCE_ENV),
           CloudTasksConfig.fetch(CloudTasksConfig::INVOKER_ENV),
           task
         )

@@ -20,10 +20,20 @@
 # for the same reason: the launcher is waiting on a Job between requests and a
 # throttled instance would stop polling it.
 resource "google_cloud_run_v2_service" "docs_launcher" {
-  project  = var.project_id
-  name     = "docs-launcher"
+  project = var.project_id
+  # Shared with everything that names this service.
+  name     = local.docs_launcher_service_name
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
+
+  # The audience Cloud Tasks mints build tokens for. Declared here so Cloud Run
+  # accepts a token bearing it, and given to the launcher as an env var so it
+  # can verify the same string. A literal rather than this service's own URL,
+  # because a resource cannot consume its own output and the launcher has to be
+  # told what to expect. Without it the caller check raised on every dispatch
+  # and no documentation was ever built.
+  custom_audiences = [local.docs_launcher_audience]
+
 
   template {
     service_account                  = google_service_account.docs_launcher.email

@@ -99,7 +99,7 @@ class Api::Internal::Docs::Build < ApiAction
     # service, by some other caller, from opening this one. A valid Google
     # token is not by itself a token for us.
     audience = claims["aud"]?.try(&.as_s?)
-    expected_audience = CrystalShards::CloudTasksConfig.fetch(CrystalShards::CloudTasksConfig::LAUNCHER_ENV)
+    expected_audience = CrystalShards::CloudTasksConfig.fetch(CrystalShards::CloudTasksConfig::AUDIENCE_ENV)
 
     unless audience == expected_audience
       raise UnauthorizedCaller.new("token audience #{audience.inspect} is not this service")

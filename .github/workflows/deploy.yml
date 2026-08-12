@@ -1470,6 +1470,55 @@ jobs:
 
           echo "${job}: ${configured}"
 
+      - name: Assert the docs build audience is one the launcher accepts
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          DOCS_LAUNCHER_SERVICE: ${{ needs.infra.outputs.docs_launcher_service }}
+        run: |
+          set -euo pipefail
+
+          # docs-launcher verifies that a build task's OIDC audience equals the
+          # string it was configured with, and Cloud Run independently rejects a
+          # token whose audience is neither this service's URL nor one of its
+          # declared custom audiences. Both have to agree or nothing builds.
+          #
+          # This exists because the env var was absent for the life of the
+          # deployment: the caller check raised on every dispatch, every
+          # delivery returned 500, Cloud Tasks retried until it gave up, and the
+          # only symptom anywhere was a documentation page that said "queued"
+          # forever. Nothing failed loudly, so nothing was noticed.
+          json="$(gcloud run services describe "$DOCS_LAUNCHER_SERVICE" \
+            --region "$REGION" --format=json)"
+
+          configured="$(jq -r '
+            [.. | objects | select(.name == "DOCS_LAUNCHER_AUDIENCE") | .value]
+            | map(select(. != null)) | first // empty' <<< "$json")"
+
+          accepted="$(jq -r '
+            ((.spec.template.metadata.annotations["run.googleapis.com/custom-audiences"] // "[]")
+              | try fromjson catch [])
+            + (.customAudiences // [])
+            | unique | join(" ")' <<< "$json" 2>/dev/null || true)"
+
+          if [ -z "$configured" ]; then
+            echo "${DOCS_LAUNCHER_SERVICE} has no DOCS_LAUNCHER_AUDIENCE." >&2
+            echo "Its caller check cannot run without one, so every build 500s." >&2
+            exit 1
+          fi
+
+          case " ${accepted} " in
+            *" ${configured} "*) ;;
+            *)
+              echo "DOCS_LAUNCHER_AUDIENCE is '${configured}', which ${DOCS_LAUNCHER_SERVICE} does not accept." >&2
+              echo "Accepted custom audiences: ${accepted:-none}." >&2
+              echo "Cloud Run would reject every task token before the launcher saw it." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "Build audience accepted by the launcher: ${configured}"
+
       - name: Assert the docs build timeout pairing
         shell: bash
         env:

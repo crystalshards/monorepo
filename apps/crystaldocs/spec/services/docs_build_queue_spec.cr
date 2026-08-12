@@ -30,6 +30,7 @@ describe CrystalDocs::CloudTasksDocsBuildQueue do
     JSON.parse(
       CrystalDocs::CloudTasksDocsBuildQueue.task_json(
         "https://docs-launcher.example.run.app",
+        "https://docs-launcher.docs.example.internal",
         "docs-tasks@example.iam.gserviceaccount.com",
         task
       )
@@ -51,6 +52,7 @@ describe CrystalDocs::CloudTasksDocsBuildQueue do
     parsed = JSON.parse(
       CrystalDocs::CloudTasksDocsBuildQueue.task_json(
         "https://docs-launcher.example.run.app",
+        "https://docs-launcher.docs.example.internal",
         "docs-tasks@example.iam.gserviceaccount.com",
         task
       )
@@ -72,6 +74,7 @@ describe CrystalDocs::CloudTasksDocsBuildQueue do
       parsed = JSON.parse(
         CrystalDocs::CloudTasksDocsBuildQueue.task_json(
           "https://docs-launcher.example.run.app",
+          "https://docs-launcher.docs.example.internal",
           "docs-tasks@example.iam.gserviceaccount.com",
           task
         )
@@ -117,6 +120,7 @@ describe CrystalDocs::CloudTasksDocsBuildQueue do
     parsed = JSON.parse(
       CrystalDocs::CloudTasksDocsBuildQueue.task_json(
         "https://docs-launcher.example.run.app/",
+        "https://docs-launcher.docs.example.internal",
         "docs-tasks@example.iam.gserviceaccount.com",
         task
       )
@@ -152,9 +156,17 @@ describe CrystalDocs::CloudTasksDocsBuildQueue do
   # The launcher verifies this audience. A token minted for a different
   # audience is a valid Google token for the wrong service and must not open
   # this door.
-  it "mints the token for the launcher's own audience" do
-    body.call["oidcToken"]["audience"].as_s
-      .should eq("https://docs-launcher.example.run.app")
+  #
+  # It is the configured audience and NOT the delivery URL. Those were the same
+  # value, which left the launcher unable to be told what to verify without
+  # terraform consuming its own output, so its check raised on every dispatch
+  # and no documentation was ever built. This app is the primary enqueuer, so
+  # these were the tasks that were failing.
+  it "mints the token for the configured audience rather than the URL" do
+    oidc = body.call["oidcToken"]
+
+    oidc["audience"].as_s.should eq("https://docs-launcher.docs.example.internal")
+    oidc["audience"].as_s.should_not eq(body.call["url"].as_s)
   end
 
   describe "#enqueue" do
