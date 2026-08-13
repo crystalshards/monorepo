@@ -734,6 +734,7 @@ jobs:
       services: ${{ steps.outputs.outputs.services }}
       migrate_jobs: ${{ steps.outputs.outputs.migrate_jobs }}
       docs_build_job: ${{ steps.outputs.outputs.docs_build_job }}
+      docs_status_reconcile_job: ${{ steps.outputs.outputs.docs_status_reconcile_job }}
       docs_launcher_service: ${{ steps.outputs.outputs.docs_launcher_service }}
       load_balancer_ip: ${{ steps.outputs.outputs.load_balancer_ip }}
       managed_certificates: ${{ steps.outputs.outputs.managed_certificates }}
@@ -849,6 +850,7 @@ jobs:
           emit_json managed_certificates
           emit_json public_hostnames
           emit_raw docs_build_job
+          emit_raw docs_status_reconcile_job
           emit_raw docs_launcher_service
           emit_raw load_balancer_ip
 
@@ -1169,8 +1171,8 @@ jobs:
           echo "All four databases migrated."
 
   # ---------------------------------------------------------------------------
-  # Roll every Cloud Run service and the docs-build Job onto the images built above,
-  # then read back what is actually serving.
+  # Roll every Cloud Run service and every long-lived Job onto the images built
+  # above, then read back what is actually serving.
   # ---------------------------------------------------------------------------
   release:
     name: Release revisions
@@ -1506,6 +1508,48 @@ jobs:
 
           echo "${job}: ${configured}"
 
+      - name: Update the docs-status reconciliation Job image
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          REGISTRY_URL: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          JOB: ${{ needs.infra.outputs.docs_status_reconcile_job }}
+        run: |
+          set -euo pipefail
+
+          image="${REGISTRY_URL}/crystalshards:${SHA}"
+
+          gcloud run jobs update "$JOB" --region "$REGION" --image "$image" --quiet
+
+          job_json="$(gcloud run jobs describe "$JOB" --region "$REGION" --format=json)"
+          configured="$(jq -r '
+            (.spec.template.spec.template.spec.containers[0].image
+             // .spec.template.template.containers[0].image
+             // .template.template.containers[0].image
+             // ([.. | objects | select(has("containers")) | .containers[0].image?]
+                 | map(select(. != null)) | first)
+             // empty)' <<< "$job_json")"
+
+          if [ -z "$configured" ]; then
+            echo "Could not read the container image of Job ${JOB}." >&2
+            echo "Top level keys: $(jq -r 'keys | join(", ")' <<< "$job_json")" >&2
+            exit 1
+          fi
+
+          if [ "$configured" != "$image" ]; then
+            echo "Job ${JOB} is configured with '${configured}', expected '${image}'." >&2
+            exit 1
+          fi
+          case "$configured" in
+            *:latest)
+              echo "Job ${JOB} is pinned to 'latest'; images must be pinned to a commit SHA." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "${JOB}: ${configured}"
+
       - name: Assert the docs build audience is one the launcher accepts
         shell: bash
         env:
@@ -1685,6 +1729,69 @@ jobs:
           fi
 
           echo "Timeout ordering holds: sandbox ${sandbox_seconds}s < launcher ${timeout_seconds}s == deadline ${deadline_seconds}s."
+
+  # ---------------------------------------------------------------------------
+  # Repair documentation status only after the new application image is live.
+  # This job reads artifact storage as the source of truth and mutates registry
+  # rows, so a failed execution is a failed deploy, never an informational check.
+  # ---------------------------------------------------------------------------
+  reconcile-docs-status:
+    name: Reconcile documentation status
+    needs: [gate, infra, release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Google Cloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Execute reconciliation and require success
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          JOB: ${{ needs.infra.outputs.docs_status_reconcile_job }}
+        run: |
+          set -euo pipefail
+
+          execution="$(
+            gcloud run jobs execute "$JOB" \
+              --region "$REGION" \
+              --wait \
+              --format='value(metadata.name)'
+          )"
+
+          if [ -z "$execution" ]; then
+            echo "Cloud Run did not return an execution name for ${JOB}." >&2
+            exit 1
+          fi
+
+          execution_json="$(
+            gcloud run jobs executions describe "$execution" \
+              --region "$REGION" \
+              --format=json
+          )"
+          succeeded="$(
+            jq -r '
+              ((.conditions // .status.conditions // [])
+               | map(select(.type == "Completed" or .type == "Ready"))
+               | first
+               | .state) // empty
+            ' <<< "$execution_json"
+          )"
+
+          if [ "$succeeded" != "CONDITION_SUCCEEDED" ]; then
+            echo "Reconciliation execution ${execution} finished in '${succeeded:-unknown}', expected CONDITION_SUCCEEDED." >&2
+            jq '{conditions: (.conditions // .status.conditions), failedCount: (.failedCount // .status.failedCount), cancelledCount: (.cancelledCount // .status.cancelledCount)}' \
+              <<< "$execution_json" >&2 || true
+            exit 1
+          fi
+
+          echo "Documentation status reconciled by ${execution}."
 
   # ---------------------------------------------------------------------------
   # Smoke test the public hostnames.
