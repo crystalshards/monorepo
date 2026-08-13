@@ -1853,6 +1853,15 @@ jobs:
     timeout-minutes: 20
     environment: production
     steps:
+      # The outcome selector lives in .github/jq and is exercised by
+      # .github/jq/selectors_test.sh in CI, so this job needs the tree. Pinned
+      # to the commit being deployed, with no credentials left behind.
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -1886,21 +1895,33 @@ jobs:
               --region "$REGION" \
               --format=json
           )"
-          succeeded="$(
-            jq -r '
-              ((.conditions // .status.conditions // [])
-               | map(select(.type == "Completed" or .type == "Ready"))
-               | first
-               | .state) // empty
-            ' <<< "$execution_json"
+
+          # `gcloud run jobs execute --wait` exits zero on a FAILED execution as
+          # readily as on a successful one: it waits, it does not judge. The
+          # judgement is the Completed condition, read by a selector this repo
+          # tests, because reading the wrong field here already failed a deploy
+          # whose reconciliation had in fact succeeded.
+          completed="$(
+            jq -r --from-file "${GITHUB_WORKSPACE}/.github/jq/cloud-run-execution-completed.jq" \
+              <<< "$execution_json"
           )"
 
-          if [ "$succeeded" != "CONDITION_SUCCEEDED" ]; then
-            echo "Reconciliation execution ${execution} finished in '${succeeded:-unknown}', expected CONDITION_SUCCEEDED." >&2
-            jq '{conditions: (.conditions // .status.conditions), failedCount: (.failedCount // .status.failedCount), cancelledCount: (.cancelledCount // .status.cancelledCount)}' \
+          if [ "$completed" != "True" ]; then
+            case "$completed" in
+              False) echo "Reconciliation execution ${execution} failed." >&2 ;;
+              *)     echo "Reconciliation execution ${execution} reported no Completed condition, so its outcome is unknown." >&2 ;;
+            esac
+            jq '{conditions: (.conditions // .status.conditions), failedCount, cancelledCount, succeededCount}' \
               <<< "$execution_json" >&2 || true
             exit 1
           fi
+
+          jq -r '
+            ((.conditions // .status.conditions // [])
+             | map(select(.type == "Completed"))
+             | first
+             | .message) // "no message"
+          ' <<< "$execution_json"
 
           echo "Documentation status reconciled by ${execution}."
 
