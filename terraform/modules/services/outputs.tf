@@ -58,6 +58,16 @@ output "discover_shards_job" {
   value       = google_cloud_run_v2_job.discover_shards.name
 }
 
+output "docs_status_reconcile_job" {
+  description = "Name of the idempotent documentation status reconciliation Job"
+  value       = google_cloud_run_v2_job.docs_status_reconcile.name
+}
+
+output "docs_status_reconcile_service_account_email" {
+  description = "The identity used only to reconcile documentation state"
+  value       = google_service_account.docs_status_reconcile.email
+}
+
 output "discover_shards_service_account_email" {
   description = "The identity the discovery sweep runs as. Holds roles/cloudsql.client and an accessor binding on its own database secret plus whichever host credentials are populated, and nothing else"
   value       = google_service_account.discover_shards.email

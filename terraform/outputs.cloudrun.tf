@@ -43,6 +43,11 @@ output "discover_shards_job" {
   value       = module.services.discover_shards_job
 }
 
+output "docs_status_reconcile_job" {
+  description = "Name of the idempotent documentation status reconciliation Job"
+  value       = module.services.docs_status_reconcile_job
+}
+
 output "discovery_schedule" {
   description = "The cadence a bounded slice of the sweep runs on, in unix-cron"
   value       = module.scheduler.discovery_schedule

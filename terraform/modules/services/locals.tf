@@ -534,6 +534,7 @@ locals {
     local.app_secret_accessors,
     local.migration_secret_accessors,
     local.discovery_secret_accessors,
+    local.docs_status_reconcile_secret_accessors,
   )
 
   # Every identity permitted to open a connection to the Cloud SQL instance.
@@ -545,6 +546,7 @@ locals {
     { for app in local.apps : "${app}-migrate" => google_service_account.app_migrations[app].email },
     { "docs-launcher" = google_service_account.docs_launcher.email },
     { "discover-shards" = google_service_account.discover_shards.email },
+    { "docs-status-reconcile" = google_service_account.docs_status_reconcile.email },
   )
 
   # The two services that put work on the docs-builds queue. crystaldocs is the
@@ -583,6 +585,11 @@ locals {
       bucket = var.docs_bucket_name
       role   = "roles/storage.objectViewer"
       member = "serviceAccount:${google_service_account.apps["crystaldocs"].email}"
+    }
+    "docs-status-reconcile/docs/view" = {
+      bucket = var.docs_bucket_name
+      role   = "roles/storage.objectViewer"
+      member = "serviceAccount:${google_service_account.docs_status_reconcile.email}"
     }
     # The launcher signs a GET against the package source. A signed URL is
     # checked against the signer's own permissions when it is used, so this
