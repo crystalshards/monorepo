@@ -129,8 +129,8 @@ COMPILER_LOG="$WORK_DIR/compiler.log"
 # What the launcher is allowed to learn about a failure, in the order a reader
 # needs it: our explanation first, the compiler's own words after. It never
 # carries a signed url. curl's errors go to this container's stderr and stop
-# there, and the compile that fills COMPILER_LOG has no url to leak because it
-# runs with an empty environment under a parent it cannot read.
+# there, and the compile that fills COMPILER_LOG has no capability-bearing
+# variable to leak and runs under a parent it cannot read.
 DIAGNOSTIC="$WORK_DIR/diagnostic.txt"
 
 # Set once the compile has exited, to a file created after it exited. Until
@@ -151,11 +151,11 @@ chmod 0755 "$WORK_DIR"
 chown "$BUILD_USER" "$SOURCE_DIR" "$COMPILE_HOME"
 
 # Descriptors opened BEFORE any shard code exists, so what this script later
-# reads and writes is the file it created. The compile runs as the same uid
-# and can rename or symlink anything under this directory; a descriptor is not
-# a path and does not follow it. Without this, `ln -sf /proc/self/environ
-# diagnostic.txt` inside a macro would make this script upload its own signed
-# urls into a page we then publish.
+# reads and writes is the file it created. The files and their parent are root
+# owned today, which already prevents the compile replacing their paths; the
+# descriptors keep that guarantee true if a future permissions edit widens
+# access by mistake. A descriptor is an inode, not a path, and never follows a
+# symlink left behind by a macro.
 exec 4<"$DOCS_JSON"
 exec 5<"$COMPILER_LOG"
 exec 6>>"$DIAGNOSTIC"
