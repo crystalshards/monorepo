@@ -44,12 +44,6 @@ class Components::Head < Lucky::BaseComponent
       meta name: "theme-color", content: "#f4f6f6", media: "(prefers-color-scheme: light)"
       meta name: "theme-color", content: "#070a0b", media: "(prefers-color-scheme: dark)"
 
-      # Syntax highlighting with Prism.js
-      tag "link", rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism.min.css"
-      tag "link", rel: "stylesheet", href: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css"
-      tag "script", src: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js", defer: "defer"
-      tag "script", src: "https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-crystal.min.js", defer: "defer"
-
       # Progressive enhancement, and only that. The sidebar tree is
       # <details>/<summary> and its current branch is opened server side; this
       # adds the filter field's behaviour and nothing else, and no-ops on every

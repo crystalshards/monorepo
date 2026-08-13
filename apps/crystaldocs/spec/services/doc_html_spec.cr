@@ -10,6 +10,17 @@ private def element_ids(html : String) : Array(String)
   html.scan(/id="([^"]*)"/).map(&.[1])
 end
 
+# What a reader actually sees in a code block: the markup dropped and the
+# entities decoded once, the way a browser decodes them. Asserting on the
+# encoded form would pass just as happily on text encoded twice, which is
+# the bug these specs exist to hold shut.
+private def code_block_text(html : String) : String
+  match = html.match(/<pre><code[^>]*>(.*?)<\/code><\/pre>/m)
+  raise "no code block in: #{html}" unless match
+
+  HTML.unescape(match[1].gsub(/<[^>]+>/, ""))
+end
+
 # Everything in a docs.json was written by whoever published the shard, and we
 # display it richly. These specs pin the boundary: documentation markup
 # survives, anything that can execute does not.
@@ -92,6 +103,109 @@ describe CrystalDocs::DocHtml do
 
     it "returns empty for no README" do
       CrystalDocs::DocHtml.markdown(nil).should eq("")
+    end
+
+    # Markd encodes the text it emits, and this module encoded it again, so
+    # every quote in every code block on the site reached the reader as a
+    # literal `&quot;`. These pin the encoding at exactly once.
+    it "renders a quote in a code fence as a quote" do
+      html = CrystalDocs::DocHtml.markdown(%(```\nputs "hello"\n```))
+
+      code_block_text(html).should eq(%(puts "hello"))
+      html.should_not contain("&amp;quot;")
+    end
+
+    it "renders an ampersand in prose as an ampersand" do
+      html = CrystalDocs::DocHtml.markdown("Tom & Jerry")
+
+      html.should contain("Tom &amp; Jerry")
+      html.should_not contain("&amp;amp;")
+    end
+
+    it "keeps the separators in a link's query string" do
+      html = CrystalDocs::DocHtml.markdown("[x](https://example.com/?a=1&b=2)")
+
+      html.should contain(%(href="https://example.com/?a=1&amp;b=2"))
+    end
+
+    # Decoding the text before re-encoding it is what fixed the quotes, so
+    # these two hold the other half: nothing decoded can arrive as markup.
+    it "leaves a script tag inside a code fence as text" do
+      html = CrystalDocs::DocHtml.markdown("```\n<script>alert(1)</script>\n```")
+
+      html.should_not contain("<script")
+      code_block_text(html).should eq("<script>alert(1)</script>")
+    end
+
+    it "does not decode an escaped script tag back into one" do
+      html = CrystalDocs::DocHtml.sanitize("<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>")
+
+      html.should_not contain("<script")
+      html.should contain("&lt;script&gt;alert(1)&lt;/script&gt;")
+    end
+  end
+
+  describe "highlighting code" do
+    it "highlights a Crystal fence" do
+      html = CrystalDocs::DocHtml.markdown(%(```crystal\ndef greet\n  "hi" # wave\nend\n```))
+
+      html.should contain(%(<code class="language-crystal">))
+      html.should contain(%(<span class="k">def</span>))
+      html.should contain(%(<span class="s">&quot;hi&quot;</span>))
+      html.should contain(%(<span class="c"># wave</span>))
+      # Highlighting must not disturb what the block says.
+      code_block_text(html).should eq(%(def greet\n  "hi" # wave\nend))
+    end
+
+    it "names another language's fence without colouring it" do
+      html = CrystalDocs::DocHtml.markdown("```yaml\ndependencies:\n  kemal:\n```")
+
+      html.should contain(%(<code class="language-yaml">))
+      html.should_not contain("<span")
+    end
+
+    it "renders a Crystal fence the lexer rejects as plain text" do
+      # A README's install block is labelled crystal often enough, and a shell
+      # prompt is not Crystal. The highlighter falls back rather than raising.
+      html = CrystalDocs::DocHtml.markdown("```crystal\n$ shards install\n```")
+
+      html.should_not contain("<span")
+      code_block_text(html).should eq("$ shards install")
+    end
+
+    it "keeps the highlighting the compiler already did" do
+      html = CrystalDocs::DocHtml.sanitize(
+        %(<pre><code class="language-crystal"><span class="k">def</span>) +
+        %(<span class="t">String</span></code></pre>)
+      )
+
+      html.should contain(%(<span class="k">def</span>))
+      html.should contain(%(<span class="t">String</span>))
+    end
+
+    it "drops a class the highlighter never emits" do
+      html = CrystalDocs::DocHtml.sanitize(%(<p><span class="site-header">x</span></p>))
+
+      html.should contain("<span>x</span>")
+    end
+
+    it "drops a class on a code element that does not name a language" do
+      html = CrystalDocs::DocHtml.sanitize(%(<code class="prettyprint">y</code>))
+
+      html.should contain("<code>y</code>")
+    end
+
+    it "rebuilds a language class rather than trusting the fence label" do
+      html = CrystalDocs::DocHtml.sanitize(
+        %(<code class="language-'><img src=x onerror=alert(1)>">y</code>)
+      )
+
+      # The payload's characters survive only as letters inside the slug: the
+      # quote, the angle brackets and the `=` are all gone, so there is no
+      # tag and no attribute, just a language nobody will ever write.
+      html.should contain(%(<code class="language-imgsrcxonerroralert1">y</code>))
+      html.should_not contain("<img")
+      html.should_not contain("onerror=")
     end
   end
 
