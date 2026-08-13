@@ -1,4 +1,4 @@
-class AddPrefixSearchIndexesToShards::V00000000000017 < Avram::Migrator::Migration::V1
+class AddPrefixSearchIndexesToShards::V00000000000018 < Avram::Migrator::Migration::V1
   # The masthead field suggests as the reader types, so its query runs on
   # keystrokes and has to be answered from an index. Nothing on this table
   # could answer it.
