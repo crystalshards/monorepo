@@ -81,6 +81,14 @@ class Shard < BaseModel
   # The registry path for this shard. Legacy rows without identity fall back to
   # the name path, which is the only address they have ever had.
   def url_path : String
+    Shard.url_path(name, canonical_slug)
+  end
+
+  # The same rule, for a caller holding the two columns rather than a row.
+  # The typeahead reads only name and canonical_slug, because loading a whole
+  # shard per suggestion is a page of models to render eight links, and the
+  # link it renders has to be the one this row would render for itself.
+  def self.url_path(name : String, canonical_slug : String?) : String
     if slug = canonical_slug
       "/shards/#{slug}"
     else
