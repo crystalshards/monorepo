@@ -16,20 +16,27 @@
 #                                and a second database being down is not a
 #                                reason to lose it.
 class Docs::Repositories::Show < BrowserAction
+  include Docs::CoreRepository
+
   get "/docs/_/:host/:owner/:repo" do
     slug = "#{host}/#{owner}/#{repo}"
-    registry = CrystalDocs::RegistryPackages.build
-    lookup = registry.find(slug)
 
-    if package = lookup.package
-      show_registered(registry, slug, package)
-    elsif lookup.registry_answered?
-      raise Lucky::RouteNotFoundError.new(context)
+    if core_repository?(slug)
+      redirect to: CrystalDocs::PackagePaths.package_path(CrystalDocs::CORE_PACKAGE), status: 301
     else
-      doc = DocQuery.new.preload_doc_versions.package_name(slug).first?
-      raise Lucky::RouteNotFoundError.new(context) if doc.nil?
+      registry = CrystalDocs::RegistryPackages.build
+      lookup = registry.find(slug)
 
-      redirect_to_current(doc)
+      if package = lookup.package
+        show_registered(registry, slug, package)
+      elsif lookup.registry_answered?
+        raise Lucky::RouteNotFoundError.new(context)
+      else
+        doc = DocQuery.new.preload_doc_versions.package_name(slug).first?
+        raise Lucky::RouteNotFoundError.new(context) if doc.nil?
+
+        redirect_to_current(doc)
+      end
     end
   end
 
