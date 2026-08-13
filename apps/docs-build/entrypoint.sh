@@ -43,31 +43,24 @@
 # place: task level networking is shared by every container in the task, so a
 # sidecar uploader would sit on exactly the same network this one does.
 #
-# What protects it is that the compile cannot reach this process usefully. It
-# runs with an empty environment, ptrace and process_vm_readv are denied to
-# it, and every binary on PATH is root owned so nothing it can write is
-# anything we later run. The only thing it hands back is bytes on a descriptor
-# opened before it started, addressed to a key it cannot choose and validated
-# by the launcher before anything is published.
+# What protects it is that the compile cannot reach this process usefully. The
+# supervisor stays root while every process influenced by the source runs as
+# uid 1000, so the compile cannot read /proc/1/environ or /proc/1/mem. It is
+# execed through `env -i` with only a fixed PATH, its private HOME, the source
+# directory, and optional non-secret compiler inputs. The signed URLs never
+# cross that boundary, and no-egress refuses to start if a DOCS_ variable does.
+# ptrace and process_vm_readv are denied as well, and every binary on PATH is
+# root owned, so nothing the compile can write is anything we later run. The
+# only thing it hands back is bytes on a descriptor opened before it started,
+# addressed to a key it cannot choose and validated by the launcher before
+# anything is published.
 #
-# ONE THING IS NOT CLOSED, AND IT IS WRITTEN DOWN HERE RATHER THAN GLOSSED.
-# The compile runs as the same uid as this script, so it can open
-# /proc/<this pid>/environ and read the three signed urls. There is no fix for
-# that available to an unprivileged, single uid container: PR_SET_DUMPABLE is
-# reset by execve, a pid namespace needs CLONE_NEWUSER which container
-# runtimes deny without CAP_SYS_ADMIN, and hidepid needs a mount namespace. A
-# broker process holding the urls and exposing operations instead would close
-# it, at the cost of a few hundred lines of C in the one container that runs
-# strangers' code, which is the wrong trade for what it buys.
-#
-# What it buys is bounded, and that is why the urls are shaped the way they
-# are. Each is one object, one method, and expires in minutes. Everything they
-# address is this build's own scratch: its own source going in, its own
-# artifact and its own log coming out, all under a per-build prefix the bucket
-# lifecycle rule collects. The launcher downloads and validates the artifact
-# as soon as the execution ends, so a stolen url buys the ability to rewrite
-# an object nobody will read again. It is not a path to the bucket, to another
-# build, or to any Google API, because this identity holds no IAM at all.
+# The signatures are bounded too, as defense in depth around that process
+# boundary. Each names one object, one method, and expires in minutes.
+# Everything they address is this build's own scratch: its source going in,
+# its artifact and log coming out, all under a per-build prefix the bucket
+# lifecycle rule collects. They are not a path to the bucket, another build,
+# or any Google API, because this identity holds no IAM at all.
 #
 # The link-local metadata server matters as much as the internet. It is not
 # reached over a VPC and no egress setting covers it, so a control that blocks
@@ -246,8 +239,8 @@ rm -f "$WORK_DIR/source.tar.gz"
 # -------------------------------------------------------------- compile ----
 # Past this point the shard's own code runs.
 #
-# A clean environment and a HOME of its own, so nothing this process holds is
-# inherited and the compiler's cache does not need this script's scratch.
+# A fresh allowlisted environment and a HOME of its own. Nothing from the
+# supervisor is inherited, and the compiler's cache does not need its scratch.
 #
 # --format=json emits one document on stdout instead of writing an HTML tree.
 # That single file is the entire artifact: documentation is rendered by our own
@@ -273,15 +266,37 @@ if [ "$probe_status" -ne 0 ]; then
     "the compile phase could still reach the network, so the build was stopped before any shard code ran. This is a fault in the build platform, not in the shard."
 fi
 
+# The launcher names optional compile inputs DOCS_* because they are container
+# overrides. Rename them at this boundary: no DOCS_* name enters the confined
+# process, so no-egress can keep treating that prefix as a leaked capability.
 set +e
 env -i \
   PATH="$PATH" \
   HOME="$COMPILE_HOME" \
   TERM=dumb \
   SOURCE_DIR="$SOURCE_DIR" \
+  CORE_CRYSTAL_PATH="${DOCS_CRYSTAL_PATH:-}" \
+  ENTRY_FILE="${DOCS_ENTRY_FILE:-}" \
+  PROJECT_NAME="${DOCS_PROJECT_NAME:-}" \
+  PROJECT_VERSION="${DOCS_PROJECT_VERSION:-}" \
   no-egress --user "$BUILD_USER" /bin/sh -c '
     cd "$SOURCE_DIR" || exit 61
-    crystal docs --format=json || exit 62
+
+    set -- docs --format=json
+    if [ -n "$CORE_CRYSTAL_PATH" ]; then
+      export CRYSTAL_PATH="$CORE_CRYSTAL_PATH"
+    fi
+    if [ -n "$PROJECT_NAME" ]; then
+      set -- "$@" "--project-name=$PROJECT_NAME"
+    fi
+    if [ -n "$PROJECT_VERSION" ]; then
+      set -- "$@" "--project-version=$PROJECT_VERSION"
+    fi
+    if [ -n "$ENTRY_FILE" ]; then
+      set -- "$@" "$ENTRY_FILE"
+    fi
+
+    crystal "$@" || exit 62
   ' >"$DOCS_JSON" 2>>"$COMPILER_LOG"
 compile_status=$?
 set -e
