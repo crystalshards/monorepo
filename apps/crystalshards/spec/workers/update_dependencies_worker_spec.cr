@@ -83,6 +83,29 @@ describe UpdateDependenciesWorker do
       deps.name("whole").first.version_requirement.should eq("2")
     end
 
+    it "refuses to guess by name when a declared source will not parse" do
+      # The dependency said which repository it meant. We could not read it, so
+      # the honest answer is no edge. Attaching it to the shard that happens to
+      # share the bare name would credit a dependent to the wrong repository,
+      # and two shards sharing a name is the ordinary case here.
+      ShardFactory.create &.name("router").repository_url("https://github.com/acme/router")
+      shard = ShardFactory.create &.name("guessing")
+      version = version_with_metadata(shard, <<-JSON)
+        {
+          "name": "guessing",
+          "dependencies": {
+            "router": {"gitlab": "not a repository path at all"}
+          }
+        }
+        JSON
+
+      UpdateDependenciesWorker.new(shard_name: "guessing", version: "1.0.0").perform
+
+      router = DependencyQuery.new.shard_version_id(version.id).name("router").first
+      router.version_requirement.should eq("*")
+      router.dependent_shard_id.should be_nil
+    end
+
     it "links a dependency to the shard it names, when that shard is indexed" do
       kemal = ShardFactory.create &.name("kemal")
       consumer = ShardFactory.create &.name("consumer")
@@ -216,6 +239,49 @@ describe UpdateDependenciesWorker do
       UpdateDependenciesWorker.new(shard_name: "version-test", version: "99.99.99").perform
 
       ShardVersionQuery.new.shard_id(shard.id).version("99.99.99").first?.should be_nil
+    end
+  end
+
+  describe "a manifest that declares an absurd number of dependencies" do
+    it "stores exactly the cap and no more" do
+      # An unpinned bound is a comment, not a bound. A shard.yml comes from a
+      # repository anyone can publish, so without this one manifest turns a
+      # single indexed shard into as many rows and twice as many lookups as it
+      # feels like, inside a sweep whose whole design is a fixed cost per shard.
+      declared = UpdateDependenciesWorker::MAX_DEPENDENCIES + 25
+      dependencies = Hash(String, String).new
+      declared.times { |index| dependencies["dep-#{index}"] = "~> 1.0" }
+
+      shard = ShardFactory.create &.name("absurd")
+      version = version_with_metadata(
+        shard,
+        {name: "absurd", dependencies: dependencies}.to_json
+      )
+
+      UpdateDependenciesWorker.new(shard_name: "absurd", version: "1.0.0").perform
+
+      DependencyQuery.new.shard_version_id(version.id).select_count
+        .should eq(UpdateDependenciesWorker::MAX_DEPENDENCIES)
+    end
+
+    it "counts development dependencies against the same cap" do
+      # Runtime first, then development, one budget between them. Reading the
+      # two keys against separate caps would let a manifest spend the bound
+      # twice.
+      runtime = Hash(String, String).new
+      UpdateDependenciesWorker::MAX_DEPENDENCIES.times { |index| runtime["run-#{index}"] = "~> 1.0" }
+
+      shard = ShardFactory.create &.name("absurd-dev")
+      version = version_with_metadata(
+        shard,
+        {name: "absurd-dev", dependencies: runtime, development_dependencies: {"ameba" => "~> 1.0"}}.to_json
+      )
+
+      UpdateDependenciesWorker.new(shard_name: "absurd-dev", version: "1.0.0").perform
+
+      deps = DependencyQuery.new.shard_version_id(version.id)
+      deps.select_count.should eq(UpdateDependenciesWorker::MAX_DEPENDENCIES)
+      deps.name("ameba").first?.should be_nil
     end
   end
 end
