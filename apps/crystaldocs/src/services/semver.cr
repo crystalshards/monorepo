@@ -237,6 +237,31 @@ module CrystalDocs
         versions.select { |version| satisfied_by?(version) }.max?
       end
 
+      # The lowest version this requirement can be satisfied by, or nil when
+      # it names no lower bound at all, which "*" does not.
+      #
+      # This is the compiler era a shard is read against when no standard
+      # library build exists to name a concrete one. A floor is the
+      # conservative reading: a shard declaring ">= 1.12.0" is compiled by
+      # anything from 1.12.0 upwards, so a dependency release needing more
+      # than the floor cannot be shown to work for every reader of the page.
+      #
+      # ">" contributes its own version rather than the next one above it.
+      # There is no next version to name, and a floor one release too low only
+      # ever rejects more candidates, which is the safe direction.
+      def floor : Version?
+        best : Version? = nil
+
+        clauses.each do |clause|
+          next unless clause.operator.in?(">=", ">", "=")
+
+          current = best
+          best = clause.version if current.nil? || clause.version > current
+        end
+
+        best
+      end
+
       private def allows_prerelease? : Bool
         clauses.any?(&.version.prerelease?)
       end
