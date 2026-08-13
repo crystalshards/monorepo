@@ -15,7 +15,9 @@ class Docs::TypePage < MainLayout
         doc: doc,
         doc_version: doc_version,
         types: document.all_types,
-        current_full_name: type.full_name
+        current_full_name: type.full_name,
+        # This page cannot exist without a document; it renders a type out of it.
+        documented: true
 
       div class: "docs-main" do
         render_header

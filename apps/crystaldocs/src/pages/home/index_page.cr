@@ -1,8 +1,11 @@
 class Home::IndexPage < MainLayout
-  needs total_packages : Int64
-  needs total_versions : Int64
-  needs recent_docs : DocQuery
-  needs popular_docs : DocQuery
+  # Nil when the shard index could not be reached. No figure is printed then:
+  # this app's own row count is a fraction of the ecosystem and showing it
+  # under "Packages" is the disagreement this page had with crystalshards.
+  needs total_packages : Int64?
+  needs built_versions : Int64
+  needs recent_entries : Array(CrystalDocs::PackageCatalogue::Entry)
+  needs popular_entries : Array(CrystalDocs::PackageCatalogue::Entry)
 
   def page_title
     "Crystal Shard Documentation"
@@ -37,20 +40,26 @@ class Home::IndexPage < MainLayout
       end
 
       dl class: "intro-stats" do
-        div do
-          tag "dt" do
-            text "Packages"
-          end
-          tag "dd" do
-            text format_number(total_packages)
+        if packages = total_packages
+          div do
+            tag "dt" do
+              text "Packages"
+            end
+            tag "dd" do
+              text format_number(packages)
+            end
           end
         end
+
         div do
+          # Named for what it counts. This is documentation this site has
+          # built, not releases the ecosystem has published, and the two
+          # numbers are far apart.
           tag "dt" do
-            text "Versions"
+            text "Built versions"
           end
           tag "dd" do
-            text format_number(total_versions)
+            text format_number(built_versions)
           end
         end
       end
@@ -107,10 +116,10 @@ class Home::IndexPage < MainLayout
     section class: "section" do
       h2 "Recently Updated"
 
-      if recent_docs.any?
+      if recent_entries.any?
         div class: "doc-grid" do
-          recent_docs.each do |doc|
-            mount Components::DocCard, doc: doc, heading_level: 3
+          recent_entries.each do |entry|
+            mount Components::DocCard, entry: entry, heading_level: 3
           end
         end
       else
@@ -130,10 +139,10 @@ class Home::IndexPage < MainLayout
     section class: "section" do
       h2 "Popular Packages"
 
-      if popular_docs.any?
+      if popular_entries.any?
         div class: "doc-grid" do
-          popular_docs.each do |doc|
-            mount Components::DocCard, doc: doc, heading_level: 3
+          popular_entries.each do |entry|
+            mount Components::DocCard, entry: entry, heading_level: 3
           end
         end
       else

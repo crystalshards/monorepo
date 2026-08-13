@@ -73,17 +73,25 @@ describe Docs::Version do
     response.body.should contain("breadcrumb")
   end
 
-  it "shows build status in sidebar" do
+  # The short badge is the fallback voice, for the case where there is no
+  # build request to explain the page: the storage lookup failed, so we cannot
+  # say a build is happening and cannot show documentation either. Whenever a
+  # request exists the section below speaks instead, because it can say what
+  # happens next, and two voices reading from two tables disagreed.
+  it "falls back to the short build status when there is no request to explain the page" do
     doc = DocFactory.create &.package_name("test-package")
 
-    version = DocVersionFactory.create &.doc_id(doc.id)
+    DocVersionFactory.create &.doc_id(doc.id)
       .version("1.0.0")
-      .build_status("success")
+      .build_status("failed")
+
+    StubDocsStorage.unreachable.install
 
     response = BrowserClient.exec(Docs::Version.with(package_name: "test-package", version: "1.0.0"))
 
     response.status_code.should eq(200)
     response.body.should contain("Build:")
+    response.body.should_not contain("Documentation is being built")
   end
 
   it "increments view count" do

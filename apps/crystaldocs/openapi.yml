@@ -51,8 +51,15 @@ paths:
 
   /api/docs:
     get:
-      summary: List all documentation packages
-      description: Get a paginated list of all documented shards
+      summary: List the shard catalogue
+      description: |
+        A paginated list of the shards in the crystalshards registry, which is
+        the set of shards that exist rather than the subset this site has
+        already built documentation for.
+
+        A package with no documentation built yet is still listed. Its
+        `current_version` is the registry's current release, and the fields
+        that only a build can fill in are null.
       tags:
         - docs
       parameters:
@@ -73,6 +80,14 @@ paths:
             minimum: 1
             maximum: 100
             default: 20
+        - name: query
+          in: query
+          description: |
+            Filter the catalogue. Matches the shard name, its repository slug
+            or its description, case insensitively.
+          required: false
+          schema:
+            type: string
       responses:
         '200':
           description: Successful response
@@ -87,6 +102,16 @@ paths:
                       $ref: '#/components/schemas/DocSummary'
                   meta:
                     $ref: '#/components/schemas/PaginationMeta'
+        '503':
+          description: |
+            The shard registry could not be reached, so the catalogue cannot
+            be listed. Reported rather than returned as an empty list, which a
+            client could not tell apart from a registry that holds no matching
+            shard.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /api/docs/{package_name}:
     get:
@@ -171,22 +196,50 @@ components:
 
     DocSummary:
       type: object
+      description: |
+        A package in the catalogue. The nullable fields are the ones that come
+        from this site's own tables, and a shard nobody has opened here yet
+        has no row to read them from.
       properties:
         package_name:
           type: string
-          example: kemal
+          description: |
+            The repository this package comes from, host qualified. Bare names
+            appear only for the handful of packages predating that identity.
+          example: github.com/kemalcr/kemal
         description:
           type: string
+          nullable: true
           example: Fast, Effective, Simple web framework for Crystal
-        latest_version:
+        current_version:
           type: string
+          nullable: true
+          description: |
+            The registry's current release: the highest stable one, or the
+            highest prerelease when nothing stable has been tagged.
           example: 1.4.0
+        repository_url:
+          type: string
+          nullable: true
+          example: https://github.com/kemalcr/kemal
+        total_views:
+          type: integer
+          format: int64
+          description: Zero for a package this site holds no row for.
+          example: 0
+        last_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When documentation was last built. Null if never.
         created_at:
           type: string
           format: date-time
+          nullable: true
         updated_at:
           type: string
           format: date-time
+          nullable: true
 
     DocDetail:
       allOf:

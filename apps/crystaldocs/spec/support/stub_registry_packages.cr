@@ -9,6 +9,8 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
   alias Package = CrystalDocs::RegistryPackages::Package
   alias Release = CrystalDocs::RegistryPackages::Release
   alias Lookup = CrystalDocs::RegistryPackages::Lookup
+  alias Listing = CrystalDocs::RegistryPackages::Listing
+  alias Catalogue = CrystalDocs::RegistryPackages::Catalogue
 
   getter packages : Hash(String, Package)
   getter releases : Hash(String, Array(Release))
@@ -45,6 +47,82 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
     return [] of Release unless reachable?
 
     @releases[slug]? || [] of Release
+  end
+
+  # The browse catalogue, answered from the same scripted packages.
+  #
+  # Overridden rather than inherited, and that is load bearing. The real
+  # reader would consult `RegistryDatabase`, which in this suite is either
+  # unconfigured, making every browse example assert against the outage page,
+  # or configured, making them read a database another app owns and truncates.
+  # Neither tests this app's listing.
+  #
+  # Ordering, the search arm and the offset window are reproduced here because
+  # they are what the examples are about. They mirror `CATALOGUE_SQL`:
+  # documented packages first, then name ascending with a stable tiebreaker,
+  # matching on slug, name or description.
+  #
+  # The documented arm has to be mirrored too. Without it this stub would
+  # order by name alone, and the examples that assert a documented package
+  # leads the page would pass against a stub that cannot express the thing
+  # they are testing.
+  def catalogue(term : String?, limit : Int32, offset : Int32, documented : Array(String) = [] of String) : Catalogue
+    return Catalogue.unavailable unless reachable?
+
+    matched = @packages.values.select { |package| matches?(package, term) }
+      .sort_by { |package| {documented.includes?(package.slug) ? 0 : 1, package.name, package.slug} }
+
+    listings = matched[offset, limit]? || [] of Package
+
+    Catalogue.answered(
+      listings.map do |package|
+        Listing.new(
+          slug: package.slug,
+          name: package.name,
+          description: package.description,
+          repository_url: package.repository_url,
+          latest_version: latest_version_for(package.slug),
+        )
+      end,
+      matched.size.to_i64
+    )
+  end
+
+  # Overridden for the same reason as `catalogue`: inherited, it would consult
+  # `RegistryDatabase` and answer nil in this suite, so the landing page would
+  # print no package count in every example and nothing would be asserting on
+  # the number this change exists to correct.
+  def total_packages : Int64?
+    return nil unless reachable?
+
+    @packages.size.to_i64
+  end
+
+  private def matches?(package : Package, term : String?) : Bool
+    return true unless term
+
+    stripped = term.strip
+    return true if stripped.empty?
+
+    needle = stripped.downcase
+
+    package.name.downcase.includes?(needle) ||
+      package.slug.downcase.includes?(needle) ||
+      !!package.description.try(&.downcase.includes?(needle))
+  end
+
+  # Stands in for `shards.latest_version`, which the registry writes when it
+  # indexes a shard.
+  #
+  # Resolved with `default_release` rather than by taking the last one
+  # published, so the stub answers by precedence exactly as the repository
+  # route does when it decides where the card's link lands. Taking insertion
+  # order would let an example script releases out of order and assert a
+  # badge the real site would never show.
+  private def latest_version_for(slug : String) : String?
+    releases = @releases[slug]? || [] of Release
+
+    CrystalDocs::RegistryPackages.default_release(releases).try(&.version)
   end
 
   # Registers a repository, and optionally its releases. Versions are given as

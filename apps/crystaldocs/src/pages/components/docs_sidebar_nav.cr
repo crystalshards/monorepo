@@ -4,6 +4,14 @@ class Components::DocsSidebarNav < Lucky::BaseComponent
   needs types : Array(CrystalDocs::DocType)
   needs current_full_name : String?
 
+  # Whether there is a document at all. An empty type list means two entirely
+  # different things depending on this, and the sidebar said the same sentence
+  # for both: a package with a document that declares nothing public, and a
+  # package whose documentation has not been built. The second is a statement
+  # about our own storage dressed up as a fact about somebody's shard, and it
+  # appeared on the same page as "Documentation is being built".
+  needs documented : Bool
+
   # Returned instead of a fresh empty array for the common case, a type with no
   # nested types. The standard library is one of the packages rendered through
   # this component, so "once per leaf" is thousands of allocations.
@@ -53,8 +61,13 @@ class Components::DocsSidebarNav < Lucky::BaseComponent
       end
 
       if roots.empty?
-        para class: "docs-nav-empty" do
-          text "This package defines no public types."
+        # Silent when there is no document: the page body is already explaining
+        # that the build has not produced one, and a second voice here claiming
+        # the package declares nothing contradicts it.
+        if documented?
+          para class: "docs-nav-empty" do
+            text "This package defines no public types."
+          end
         end
       else
         # Empty until the filter fills it. It is in the markup from the start

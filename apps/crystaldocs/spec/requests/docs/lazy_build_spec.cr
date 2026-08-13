@@ -64,10 +64,17 @@ describe "building documentation on first request" do
       response.headers["Refresh"]?.should eq(Docs::LazyBuild::REFRESH_SECONDS.to_s)
     end
 
-    # The switcher and the build badge are how a reader moves between versions
-    # and learns a build failed. An earlier revision routed this state to its
-    # own page and lost both.
-    it "keeps the version switcher and the build badge" do
+    # The switcher and an explanation of the build are how a reader moves
+    # between versions and learns what happened. An earlier revision routed
+    # this state to its own page and lost both.
+    #
+    # One explanation, though. The page used to carry a short "Build: <status>"
+    # badge as well as the section below it, reading from a different table,
+    # and the two disagreed whenever a stale claim was reclaimed for retry: the
+    # badge said failed while the section said the documentation was being
+    # built. The section wins, because it is the one that can say what happens
+    # next.
+    it "keeps the version switcher and explains the build exactly once" do
       planted.call
       StubDocsStorage.empty.install
       RecordingBuildQueue.install
@@ -75,7 +82,8 @@ describe "building documentation on first request" do
       response = get.call(version_url)
 
       response.body.should contain("Version:")
-      response.body.should contain("Build:")
+      response.body.should contain("Documentation is being built")
+      response.body.should_not contain("Build:")
     end
   end
 

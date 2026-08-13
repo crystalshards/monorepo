@@ -241,19 +241,18 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
    Where :has() is unsupported the masthead simply stays clamped, which is the
    same graceful outcome the content rule already accepts.
 
-   The field also stops being centred here, and that is the point rather than a
-   side effect. Viewport centring is right on a page whose content is one
-   centred column, because the field sits over the thing it searches. A
-   documentation page is a left rail and a reading column, so a field floating
-   in the middle of the bar lines up with nothing at all. It belongs at the
-   left, over the rail, which is what it filters into.
+   The field stays centred here, on the viewport's own centre line. It is the
+   same masthead on every page of the site and it should not move when the
+   content underneath it changes shape; a search field that sits in a
+   different place on documentation pages reads as a different header.
 
-   auto auto 1fr: brand and field take their own widths at the left edge, and
-   the remaining track pushes the menu to the right. */
+   1fr auto 1fr, matching the clamped rule above: equal outer tracks put the
+   field on the real centre line rather than centring it in whatever the brand
+   and menu happen to leave. Because this bar is full bleed, that centre is
+   the viewport's, so the field lands in the same place on both page types. */
 body:has(.docs-shell) .navbar {
   max-width: none;
   margin: 0;
-  grid-template-columns: auto minmax(0, 26rem) 1fr;
   gap: 1.5rem;
 }
 
@@ -484,6 +483,20 @@ body:has(.docs-shell) .navbar {
   outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
+
+/* The repository under the shard name. Monospaced and quiet: it is an
+   identifier the reader scans for a host and an owner, not prose, and it is
+   secondary to the name the catalogue is ordered by. */
+.doc-slug {
+  font: 400 0.78rem/1.4 var(--mono);
+  color: var(--ink-muted);
+  margin: 0.3rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+/* Most of the catalogue has no documentation built yet, so this is the common
+   state and must not read as an error. */
+.doc-unbuilt { color: var(--ink-muted); }
 
 .doc-description {
   color: var(--ink-muted); font-size: 0.9rem; line-height: 1.55;
