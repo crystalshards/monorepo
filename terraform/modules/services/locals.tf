@@ -180,8 +180,9 @@ locals {
   # question "what is actually serving" unanswerable from the plan.
   app_images = { for app in local.apps : app => "${var.image_repository}/${app}:${var.image_tag}" }
 
-  docs_launcher_image = "${var.image_repository}/${var.docs_launcher_image_name}:${var.image_tag}"
-  docs_build_image    = "${var.image_repository}/${var.docs_build_image_name}:${var.image_tag}"
+  docs_launcher_image   = "${var.image_repository}/${var.docs_launcher_image_name}:${var.image_tag}"
+  docs_build_image      = "${var.image_repository}/${var.docs_build_image_name}:${var.image_tag}"
+  docs_build_core_image = "${var.image_repository}/${var.docs_build_core_image_name}:${var.image_tag}"
 
   # Present on every application revision.
   #
@@ -435,10 +436,16 @@ locals {
     DOCS_LAUNCHER_AUDIENCE     = local.docs_launcher_audience
     DOCS_TASKS_SERVICE_ACCOUNT = google_service_account.docs_tasks.email
 
-    JOB_ADS_URL                = var.job_ads_url
-    DOCS_BUCKET                = var.docs_bucket_name
-    PACKAGES_BUCKET            = var.packages_bucket_name
-    DOCS_BUILD_JOB             = google_cloud_run_v2_job.docs_build.name
+    JOB_ADS_URL     = var.job_ads_url
+    DOCS_BUCKET     = var.docs_bucket_name
+    PACKAGES_BUCKET = var.packages_bucket_name
+    DOCS_BUILD_JOB  = google_cloud_run_v2_job.docs_build.name
+    # The Crystal standard library's own documentation. A distinct Job
+    # rather than an override of docs_build: it runs a distinct image, with
+    # llvm-dev and llvm-static baked in at build time for the one repository
+    # that needs them, and CrystalShards::CoreDocs is the only caller that
+    # ever points CloudRunJobDocsSandbox at it.
+    DOCS_BUILD_CORE_JOB        = google_cloud_run_v2_job.docs_build_core.name
     DOCS_BUILD_JOB_REGION      = var.region
     DOCS_BUILD_MAX_CONCURRENCY = tostring(var.docs_build_concurrency)
     DOCS_SANDBOX               = "cloudrun"

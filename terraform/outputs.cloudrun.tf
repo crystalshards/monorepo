@@ -28,6 +28,11 @@ output "docs_build_job" {
   value       = module.services.docs_build_job
 }
 
+output "publish_core_docs_job" {
+  description = "Name of the trusted bootstrap Job that publishes the Crystal standard library's own documentation"
+  value       = module.services.publish_core_docs_job
+}
+
 output "migrate_jobs" {
   description = "Map of app slug to the name of its schema migration Job"
   value       = module.services.migrate_jobs

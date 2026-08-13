@@ -224,6 +224,18 @@ jobs:
           # images its runtime stage keeps the Crystal toolchain.
           - image: docs-build
             context: apps/docs-build
+          # Same Dockerfile and context as docs-build, a distinct image only
+          # because EXTRA_PACKAGES bakes llvm-dev and llvm-static in at build
+          # time. That ARG is what CrystalShards::CoreDocs needs and nothing
+          # else does: src/docs_main.cr requires the whole standard library,
+          # which pulls in src/llvm.cr, whose macros shell out to llvm-config
+          # at compile time. Every other entry in this matrix carries no
+          # build_args at all, which is what keeps their image byte-identical
+          # to what building this Dockerfile has always produced.
+          - image: docs-build-core
+            context: apps/docs-build
+            build_args: |
+              EXTRA_PACKAGES=llvm-dev llvm-static
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -290,9 +302,17 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.image.outputs.ref }}
+          # Empty for every matrix entry but docs-build-core, which is what
+          # keeps docs-build's own image byte-identical to a build with no
+          # build_args at all: an unset ARG in the Dockerfile defaults empty.
+          build-args: ${{ matrix.build_args }}
           provenance: false
-          cache-from: type=gha,scope=${{ matrix.image }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+          # Scoped to context rather than image name: docs-build and
+          # docs-build-core share a Dockerfile and a context, so scoping the
+          # cache to the image name would build the untrusted image's layers
+          # twice over instead of reusing them for the ARG-only difference.
+          cache-from: type=gha,scope=${{ matrix.context }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.context }}
 
       - name: Assert the pushed image is resolvable
         shell: bash
@@ -735,6 +755,8 @@ jobs:
       migrate_jobs: ${{ steps.outputs.outputs.migrate_jobs }}
       docs_build_job: ${{ steps.outputs.outputs.docs_build_job }}
       docs_status_reconcile_job: ${{ steps.outputs.outputs.docs_status_reconcile_job }}
+      docs_build_core_job: ${{ steps.outputs.outputs.docs_build_core_job }}
+      publish_core_docs_job: ${{ steps.outputs.outputs.publish_core_docs_job }}
       docs_launcher_service: ${{ steps.outputs.outputs.docs_launcher_service }}
       load_balancer_ip: ${{ steps.outputs.outputs.load_balancer_ip }}
       managed_certificates: ${{ steps.outputs.outputs.managed_certificates }}
@@ -851,6 +873,8 @@ jobs:
           emit_json public_hostnames
           emit_raw docs_build_job
           emit_raw docs_status_reconcile_job
+          emit_raw docs_build_core_job
+          emit_raw publish_core_docs_job
           emit_raw docs_launcher_service
           emit_raw load_balancer_ip
 
@@ -1455,6 +1479,51 @@ jobs:
 
           echo "${DOCS_BUILD_JOB}: ${configured}"
 
+      - name: Update the docs-build-core Job image
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          REGISTRY_URL: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          DOCS_BUILD_CORE_JOB: ${{ needs.infra.outputs.docs_build_core_job }}
+        run: |
+          set -euo pipefail
+
+          image="${REGISTRY_URL}/docs-build-core:${SHA}"
+
+          gcloud run jobs update "$DOCS_BUILD_CORE_JOB" --region "$REGION" --image "$image" --quiet
+
+          # Same read back and the same reason as the docs-build step above:
+          # a successful update is not the same as the template holding the
+          # image the next execution will actually run.
+          job_json="$(gcloud run jobs describe "$DOCS_BUILD_CORE_JOB" --region "$REGION" --format=json)"
+          configured="$(jq -r '
+            (.spec.template.spec.template.spec.containers[0].image
+             // .spec.template.template.containers[0].image
+             // .template.template.containers[0].image
+             // ([.. | objects | select(has("containers")) | .containers[0].image?]
+                 | map(select(. != null)) | first)
+             // empty)' <<< "$job_json")"
+
+          if [ -z "$configured" ]; then
+            echo "Could not read the container image of Job ${DOCS_BUILD_CORE_JOB}." >&2
+            echo "Top level keys: $(jq -r 'keys | join(", ")' <<< "$job_json")" >&2
+            exit 1
+          fi
+
+          if [ "$configured" != "$image" ]; then
+            echo "Job ${DOCS_BUILD_CORE_JOB} is configured with '${configured}', expected '${image}'." >&2
+            exit 1
+          fi
+          case "$configured" in
+            *:latest)
+              echo "Job ${DOCS_BUILD_CORE_JOB} is pinned to 'latest'; images must be pinned to a commit SHA." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "${DOCS_BUILD_CORE_JOB}: ${configured}"
+
       - name: Update the discover-shards Job image
         shell: bash
         env:
@@ -1507,6 +1576,48 @@ jobs:
           esac
 
           echo "${job}: ${configured}"
+
+      - name: Update the publish-core-docs Job image
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          REGISTRY_URL: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}
+          SHA: ${{ needs.gate.outputs.sha }}
+          JOB: ${{ needs.infra.outputs.publish_core_docs_job }}
+        run: |
+          set -euo pipefail
+
+          image="${REGISTRY_URL}/crystalshards:${SHA}"
+
+          gcloud run jobs update "$JOB" --region "$REGION" --image "$image" --quiet
+
+          job_json="$(gcloud run jobs describe "$JOB" --region "$REGION" --format=json)"
+          configured="$(jq -r '
+            (.spec.template.spec.template.spec.containers[0].image
+             // .spec.template.template.containers[0].image
+             // .template.template.containers[0].image
+             // ([.. | objects | select(has("containers")) | .containers[0].image?]
+                 | map(select(. != null)) | first)
+             // empty)' <<< "$job_json")"
+
+          if [ -z "$configured" ]; then
+            echo "Could not read the container image of Job ${JOB}." >&2
+            echo "Top level keys: $(jq -r 'keys | join(", ")' <<< "$job_json")" >&2
+            exit 1
+          fi
+
+          if [ "$configured" != "$image" ]; then
+            echo "Job ${JOB} is configured with '${configured}', expected '${image}'." >&2
+            exit 1
+          fi
+          case "$configured" in
+            *:latest)
+              echo "Job ${JOB} is pinned to 'latest'; images must be pinned to a commit SHA." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "${JOB}: ${configured}"
 
       - name: Update the docs-status reconciliation Job image
         shell: bash
