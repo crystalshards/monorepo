@@ -221,11 +221,23 @@ module CrystalDocs
     # that express it, pushed_at and latest_version, are only written once the
     # registry has indexed a shard, which is a minority of the rows; ordering
     # by one would sort those and shuffle the rest arbitrarily.
+    # Documented packages lead, then name, then id.
+    #
+    # The leading term is the whole reason a visitor sees documentation on the
+    # first page. Sorted by name alone the front of this catalogue was a run
+    # of packages with nothing built, so the site read as empty while holding
+    # plenty. `$4` carries the keys this app has actually built, read from the
+    # other database, because build state and the catalogue do not live
+    # together and no single statement can join them.
+    #
+    # An empty array is the neutral case rather than a special one: every row
+    # scores the same and the order falls back to name.
     CATALOGUE_SQL = <<-SQL
       WITH filtered AS (
         SELECT shards.id, shards.canonical_slug, shards.name,
                shards.description, shards.repository_url,
-               shards.latest_version
+               shards.latest_version,
+               (COALESCE(shards.canonical_slug, shards.name) = ANY($4)) AS documented
         FROM shards
         WHERE #{CATALOGUE_WHERE}
       ),
@@ -234,14 +246,14 @@ module CrystalDocs
       ),
       page AS (
         SELECT * FROM filtered
-        ORDER BY filtered.name ASC, filtered.id ASC
+        ORDER BY filtered.documented DESC, filtered.name ASC, filtered.id ASC
         LIMIT $2 OFFSET $3
       )
       SELECT counted.total, page.canonical_slug, page.name,
              page.description, page.repository_url, page.latest_version
       FROM counted
       LEFT JOIN page ON true
-      ORDER BY page.name ASC, page.id ASC
+      ORDER BY page.documented DESC, page.name ASC, page.id ASC
       SQL
 
     # How many shards the registry holds.
@@ -341,7 +353,7 @@ module CrystalDocs
     # degradation here. Those rows are build state, they are a fraction of the
     # ecosystem, and presenting them as the catalogue is the divergence this
     # path exists to remove.
-    def catalogue(term : String?, limit : Int32, offset : Int32) : Catalogue
+    def catalogue(term : String?, limit : Int32, offset : Int32, documented : Array(String) = [] of String) : Catalogue
       return Catalogue.unavailable unless RegistryDatabase.configured?
 
       rows = RegistryDatabase.query_all(
@@ -349,6 +361,7 @@ module CrystalDocs
         search_pattern(term),
         limit,
         offset,
+        documented,
         as: {Int64, String?, String?, String?, String?, String?}
       )
 

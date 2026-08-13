@@ -18,7 +18,8 @@ class Docs::VersionPage < MainLayout
         doc: doc,
         doc_version: doc_version,
         types: document.try(&.all_types) || [] of CrystalDocs::DocType,
-        current_full_name: nil
+        current_full_name: nil,
+        documented: !document.nil?
 
       div class: "docs-main" do
         render_header
@@ -106,18 +107,20 @@ class Docs::VersionPage < MainLayout
   # A failed or pending build is the explanation for a thin page, so it is
   # stated rather than left for the reader to infer.
   #
-  # Two things were wrong here. Nothing ever wrote doc_versions.build_status
-  # after registration, so it said "pending" for every version forever; that
-  # is fixed where the outcome is known, in the builder. And this ran even
-  # when the page had the document in hand, so a page rendering an API section
-  # sat under a badge insisting nothing had been built. That is what "still no
-  # docs" looked like: documentation on screen, over a badge calling it
-  # pending.
+  # Said once, though. This page has a build-state section further down that
+  # explains what is happening in a sentence, and this badge is a second voice
+  # saying a shorter version of the same thing from a different column. They
+  # disagreed constantly: a stale claim reclaimed for retry moves the request
+  # row back to pending while the version row still holds the failure, so the
+  # page read "Build: failed" directly above "Documentation is being built",
+  # and the sidebar added "This package defines no public types" underneath.
+  # Three claims, one page, no two agreeing.
   #
-  # If the document is here, the build plainly finished. Saying so needs no
-  # status at all.
+  # The build-state section wins because it can say what happens next. This
+  # badge only appears when there is no such section to defer to.
   private def render_build_status
     return if document
+    return if build_request
 
     para class: "docs-build-status" do
       text "Build: "

@@ -58,13 +58,19 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
   # Neither tests this app's listing.
   #
   # Ordering, the search arm and the offset window are reproduced here because
-  # they are what the examples are about. They mirror `CATALOGUE_SQL`: name
-  # ascending with a stable tiebreaker, matching on slug, name or description.
-  def catalogue(term : String?, limit : Int32, offset : Int32) : Catalogue
+  # they are what the examples are about. They mirror `CATALOGUE_SQL`:
+  # documented packages first, then name ascending with a stable tiebreaker,
+  # matching on slug, name or description.
+  #
+  # The documented arm has to be mirrored too. Without it this stub would
+  # order by name alone, and the examples that assert a documented package
+  # leads the page would pass against a stub that cannot express the thing
+  # they are testing.
+  def catalogue(term : String?, limit : Int32, offset : Int32, documented : Array(String) = [] of String) : Catalogue
     return Catalogue.unavailable unless reachable?
 
     matched = @packages.values.select { |package| matches?(package, term) }
-      .sort_by { |package| {package.name, package.slug} }
+      .sort_by { |package| {documented.includes?(package.slug) ? 0 : 1, package.name, package.slug} }
 
     listings = matched[offset, limit]? || [] of Package
 

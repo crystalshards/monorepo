@@ -122,9 +122,41 @@ module CrystalDocs
       updated_at : Time,
       built_versions : Int32
 
+    # Which packages already have documentation built.
+    #
+    # The catalogue lives in the registry and build state lives here, in two
+    # different databases, so nothing can order one by the other in a single
+    # statement. This reads the keys first and hands them to the registry as
+    # the leading sort term.
+    #
+    # It matters more than an aesthetic preference about ordering. Sorted by
+    # name alone, the first page of a documentation site was whatever sorted
+    # first alphabetically, which on this catalogue is a run of packages with
+    # nothing built: a visitor clicked the first card and landed on an empty
+    # page, then the second, and concluded the site had no documentation on it
+    # at all. It has plenty. It was showing the wrong end of the list.
+    #
+    # The set is the packages we have built, not the whole catalogue, so it
+    # stays proportional to what has actually been documented.
+    DOCUMENTED_KEYS_SQL = <<-SQL
+      SELECT DISTINCT docs.package_name
+      FROM docs
+      JOIN doc_versions ON doc_versions.doc_id = docs.id
+      WHERE doc_versions.build_status = 'success'
+      SQL
+
+    def self.documented_keys : Array(String)
+      AppDatabase.query_all(DOCUMENTED_KEYS_SQL, as: String)
+    rescue ex : Exception
+      # An ordering preference is not worth failing a page for. The catalogue
+      # is still correct without it, just alphabetical.
+      Log.error(exception: ex) { "PackageCatalogue: could not read which packages are documented; listing falls back to name order" }
+      [] of String
+    end
+
     def self.page(query : String?, page : Int32, per_page : Int32) : Page
       offset = (page - 1) * per_page
-      catalogue = RegistryPackages.build.catalogue(query, per_page, offset)
+      catalogue = RegistryPackages.build.catalogue(query, per_page, offset, documented_keys)
 
       unless catalogue.registry_answered?
         return Page.new([] of Entry, 0_i64, available: false)
