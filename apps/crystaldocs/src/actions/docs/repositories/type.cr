@@ -14,23 +14,30 @@
 # keyed on the version rather than on the path.
 class Docs::Repositories::Type < BrowserAction
   include Docs::TypeRendering
+  include Docs::CoreRepository
 
   get "/docs/_/:host/:owner/:repo/:version/:top_level/*:rest" do
     slug = "#{host}/#{owner}/#{repo}"
 
-    doc = DocQuery.new
-      .preload_doc_versions
-      .package_name(slug)
-      .first?
-
-    raise Lucky::RouteNotFoundError.new(context) if doc.nil?
-
-    doc_version = doc.doc_versions.find { |candidate| candidate.version == version }
-
-    if doc_version.nil?
-      redirect_to_current_version(doc)
+    if core_repository?(slug)
+      # Carries the type through, so a link to a specific core type lands on
+      # that type rather than the front of the library.
+      redirect to: CrystalDocs::PackagePaths.type_path(CrystalDocs::CORE_PACKAGE, version, requested_path), status: 301
     else
-      render_type(doc, doc_version, requested_path)
+      doc = DocQuery.new
+        .preload_doc_versions
+        .package_name(slug)
+        .first?
+
+      raise Lucky::RouteNotFoundError.new(context) if doc.nil?
+
+      doc_version = doc.doc_versions.find { |candidate| candidate.version == version }
+
+      if doc_version.nil?
+        redirect_to_current_version(doc)
+      else
+        render_type(doc, doc_version, requested_path)
+      end
     end
   end
 
