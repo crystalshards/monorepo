@@ -54,7 +54,7 @@ jobs:
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
             minio/minio:latest server /data
-          for i in $(seq 1 30); do
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
               echo "Object storage is up"
               exit 0
@@ -147,6 +147,15 @@ jobs:
       - name: Test the docs-launcher audience selectors
         shell: bash
         run: bash .github/jq/selectors_test.sh
+
+      # Terraform validate cannot see this: it checks the configuration, not
+      # what the workflow reads out of it. A release job asking for a root
+      # output that only exists on a module passes every check in this file
+      # and then kills the deploy after the images are built and the
+      # production databases are migrated.
+      - name: Check the deploy's terraform output wiring
+        shell: bash
+        run: bash .github/deploy_outputs_test.sh
 
   # Security scanning
   security:
