@@ -156,6 +156,46 @@ module CrystalDocs
       find(package_name, version) || raise "doc_build_requests row for #{package_name} #{version} disappeared immediately after being claimed."
     end
 
+    # Ask for documentation for this combination, and for the documentation a
+    # reader of it will immediately want to follow a link into: the
+    # dependencies this exact release declared, and the standard library for
+    # the Crystal it targets.
+    #
+    # A page whose dependencies are unbuilt is a page whose cross links are
+    # plain text. `DependencyIndex` only maps a name to a page when the owning
+    # package has a version with a successful build, so a reader on kemal saw
+    # `Radix::Tree` as dead text and nothing about reading kemal changed it.
+    # Commissioning is where the two get connected, because it is the only
+    # moment we know which release of which dependency this reader's page
+    # needs.
+    #
+    # DIRECT DEPENDENCIES ONLY, and never a transitive walk.
+    #
+    # A reader is waiting on this call. A transitive closure is a graph
+    # traversal of unknown depth with a registry round trip per node, on a
+    # request whose whole job is to render one page and enqueue at most a
+    # handful of builds, and its cost is set by whatever the dependency graph
+    # happens to look like rather than by anything the reader did. Direct only
+    # costs two statements against the registry, no matter what the graph
+    # looks like.
+    #
+    # What direct only gives up, stated honestly: the closure is not complete
+    # after one call. It completes as each dependency is itself commissioned,
+    # which happens when a reader opens that dependency's page, or when
+    # another package that depends on it is commissioned. Every commissioning
+    # widens the built set by one level, and crossing an edge that has already
+    # been crossed costs one INSERT that changes nothing.
+    #
+    # The parent is committed before any of this, and the cascade cannot
+    # unmake it. The reader asked for the parent; the dependencies are our
+    # inference about what they will want next, and an inference must not be
+    # able to fail the thing it was inferred from.
+    def request_with_dependencies(package_name : String, version : String) : DocBuildRequest
+      requested = request(package_name, version)
+      commission_dependencies(package_name, version)
+      requested
+    end
+
     def find(package_name : String, version : String) : DocBuildRequest?
       DocBuildRequestQuery.new
         .package_name(package_name)
@@ -195,6 +235,102 @@ module CrystalDocs
       return if job_id.nil?
 
       AppDatabase.exec(RECORD_JOB_SQL, id, job_id, now)
+    end
+
+    # Everything beyond the package the reader named.
+    #
+    # Termination is the property to be clear about, because the dependency
+    # graph has cycles in it and nothing here checks for one. It terminates
+    # for two independent reasons, and either alone is sufficient:
+    #
+    #   * There is no recursion. This commissions direct dependencies with
+    #     `request`, which enqueues and returns; it never re-enters itself. A
+    #     cycle would have to be traversed by successive calls from outside.
+    #   * `request` is idempotent per (package, version). The unique index
+    #     makes the INSERT a no-op for a row that exists, and the retry UPDATE
+    #     matches only a failed or abandoned row, so a pending, building or
+    #     succeeded combination enqueues nothing. Crossing the same edge again
+    #     costs one INSERT that changes nothing.
+    #
+    # So A depending on B depending on A commissions each exactly once,
+    # whichever of them a reader arrives at first and however many times they
+    # reload.
+    #
+    # Rescued as a whole, and this is the only rescue on the path. The parent
+    # was committed before this ran. A registry that is unreachable, or that
+    # breaks mid-statement, must cost the cascade and nothing else, because
+    # the parent is what the reader asked for and it is already enqueued.
+    private def commission_dependencies(package_name : String, version : String) : Nil
+      declaration = RegistryPackages.build.declaration(package_name, version)
+
+      if core = core_version_for(declaration.crystal_requirement)
+        request(CORE_PACKAGE, core)
+      end
+
+      declaration.dependencies.each do |dependency|
+        request(dependency.package_name, dependency.version)
+      end
+    rescue ex
+      Log.warn { "Could not commission the dependencies of #{package_name} #{version}: #{ex.message}" }
+    end
+
+    # Which Crystal release to document alongside a package that declared
+    # `crystal: <requirement>`, or nil when there is nothing to commission.
+    #
+    # Nil when we already hold one that satisfies. `DependencyIndex` links
+    # core types to the HIGHEST core version with a successful build that
+    # satisfies the reader's package requirement, so once any satisfying
+    # version exists the reader's links already resolve, and a second build
+    # lower down the range would be selected by nothing. Skipping it is not an
+    # optimisation, it is refusing to compile an old compiler for a page that
+    # would never link to it.
+    #
+    # Otherwise the floor: the lowest release the declaration admits. That is
+    # the only concrete Crystal release the declaration actually names.
+    # Choosing anything higher means choosing from the list of Crystal releases
+    # that exist, and this app has no such list: the registry indexes shards
+    # and crystal-lang/crystal is not one of them, so ">= 1.12.0" resolves to
+    # 1.12.0 or to a guess. A floor is also the conservative reading of the
+    # declaration, since a type present in the Crystal a shard declares
+    # support for is present in every later one.
+    #
+    # Nil again when the requirement names no floor at all. "*", a bare
+    # ceiling like "< 2.0.0" and a strict ">" name no release we could commit
+    # to, and the floor is checked against the requirement rather than
+    # assumed, so a requirement whose lowest bound it does not itself satisfy
+    # commissions nothing rather than a version that cannot be right.
+    private def core_version_for(crystal_requirement : String?) : String?
+      requirement = Semver::Requirement.parse?(crystal_requirement)
+      return nil unless requirement
+      return nil if core_already_satisfies?(requirement)
+
+      floor = requirement.clauses
+        .select { |clause| clause.operator == ">=" || clause.operator == "=" }
+        .map(&.version)
+        .max?
+      return nil unless floor
+      return nil unless requirement.satisfied_by?(floor)
+
+      floor.to_s
+    end
+
+    # Read from doc_versions rather than from doc_build_requests, because this
+    # asks whether a reader's cross link would resolve, and that is decided by
+    # exactly the column `DependencyIndex` reads. A succeeded request row whose
+    # version row was never marked is a version this site will not link to.
+    CORE_VERSIONS_SQL = <<-SQL
+      SELECT doc_versions.version
+      FROM doc_versions
+      JOIN docs ON docs.id = doc_versions.doc_id
+      WHERE docs.package_name = $1
+        AND doc_versions.build_status = 'success'
+      SQL
+
+    private def core_already_satisfies?(requirement : Semver::Requirement) : Bool
+      AppDatabase.query_all(CORE_VERSIONS_SQL, CORE_PACKAGE, as: String).any? do |raw|
+        version = Semver::Version.parse?(raw)
+        !version.nil? && requirement.satisfied_by?(version)
+      end
     end
   end
 end
