@@ -19,6 +19,7 @@ set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 configured="${here}/docs-launcher-configured-audience.jq"
 accepted="${here}/docs-launcher-accepted-audiences.jq"
+completed="${here}/cloud-run-execution-completed.jq"
 
 failures=0
 
@@ -124,6 +125,42 @@ check "$accepted" "a service with none reports none" \
 check "$accepted" "an unparseable annotation says so" \
   "UNPARSEABLE: not json" \
   '{"metadata":{"annotations":{"run.googleapis.com/custom-audiences":"not json"}}}'
+
+# --- whether a Job execution actually succeeded -------------------------------
+
+# The exact document gcloud returned for reconcile-docs-status-znndb, trimmed to
+# the conditions. Reading `.state` off this produced null, printed "unknown",
+# and failed a deploy whose reconciliation had completed successfully.
+check "$completed" "v2: a successful execution reports Completed True" \
+  "True" \
+  '{"conditions":[
+     {"type":"Completed","status":"True","message":"Execution completed successfully in 1m45.83s."},
+     {"type":"ResourcesAvailable","status":"True"},
+     {"type":"Started","status":"True"},
+     {"type":"ContainerReady","status":"True"}]}'
+
+check "$completed" "a failed execution reports Completed False" \
+  "False" \
+  '{"conditions":[
+     {"type":"Completed","status":"False","message":"Task failed with exit code 2."},
+     {"type":"Started","status":"True"}]}'
+
+check "$completed" "conditions nested under status are read" \
+  "True" \
+  '{"status":{"conditions":[{"type":"Completed","status":"True"}]}}'
+
+# The false pass this must never allow: every other condition is True on an
+# execution whose task then failed, so "something is True" is not an outcome.
+check "$completed" "a started execution is not a completed one" \
+  "" \
+  '{"conditions":[
+     {"type":"Started","status":"True"},
+     {"type":"ContainerReady","status":"True"},
+     {"type":"ResourcesAvailable","status":"True"}]}'
+
+check "$completed" "an execution with no conditions reports nothing" \
+  "" \
+  '{"conditions":[]}'
 
 if [ "$failures" -ne 0 ]; then
   printf '\n%d selector test(s) failed.\n' "$failures" >&2
