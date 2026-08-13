@@ -57,16 +57,28 @@ module CrystalShards
       end
     end
 
+    # Resolve each store on first use. The dedicated core-docs publisher has no
+    # role on the packages bucket, so an eager default would demand an unrelated
+    # PACKAGES_BUCKET before its docs upload. The accessors still fail closed on
+    # the first operation that actually needs an unconfigured store.
     def initialize(
-      @packages : CrystalStorage::ObjectStore = CrystalStorage.packages,
-      @docs : CrystalStorage::ObjectStore = CrystalStorage.docs,
+      @packages : CrystalStorage::ObjectStore? = nil,
+      @docs : CrystalStorage::ObjectStore? = nil,
     )
+    end
+
+    private def packages : CrystalStorage::ObjectStore
+      @packages ||= CrystalStorage.packages
+    end
+
+    private def docs : CrystalStorage::ObjectStore
+      @docs ||= CrystalStorage.docs
     end
 
     # Upload a published package tarball. Returns the object key.
     def upload_package_from_io(shard_name : String, version : String, content : String) : String
       key = CrystalStorage::Keys.package(shard_name, version)
-      @packages.put(key, content, "application/gzip")
+      packages.put(key, content, "application/gzip")
       key
     end
 
@@ -76,7 +88,7 @@ module CrystalShards
     # enforce uniform bucket level access with public access prevention, so
     # there is no such thing as a publicly readable object to link to.
     def package_download_url(shard_name : String, version : String, expires_in : Time::Span = 1.hour) : String
-      @packages.signed_url(
+      packages.signed_url(
         CrystalStorage::Keys.package(shard_name, version),
         method: "GET",
         expires_in: expires_in
@@ -91,7 +103,7 @@ module CrystalShards
     # Returns the object key.
     def upload_docs_json(shard_name : String, version : String, docs_json_path : String) : String
       key = CrystalStorage::Keys.docs_json(shard_name, version)
-      @docs.put(key, File.read(docs_json_path), "application/json")
+      docs.put(key, File.read(docs_json_path), "application/json")
       key
     end
 
@@ -99,11 +111,11 @@ module CrystalShards
     # documentation back out. Keys are build-scoped, so nothing here is
     # durable.
     def upload_scratch(key : String, content : String)
-      @docs.put(key, content, "application/gzip")
+      docs.put(key, content, "application/gzip")
     end
 
     def download_scratch(key : String) : String
-      @docs.get_string(key) || raise CrystalStorage::Unavailable.new(
+      docs.get_string(key) || raise CrystalStorage::Unavailable.new(
         "find", key, "the build produced no object at this key"
       )
     end
@@ -118,7 +130,7 @@ module CrystalShards
     # died before any ensure block could run. Failing a completed build over a
     # failed tidy-up would be the wrong trade.
     def delete_scratch_prefix(prefix : String)
-      @docs.delete_prefix(prefix)
+      docs.delete_prefix(prefix)
     rescue ex : CrystalStorage::Unavailable
       Log.info { "Scratch cleanup skipped for #{prefix}: #{ex.message}. The bucket lifecycle rule collects it." }
     end
@@ -127,7 +139,7 @@ module CrystalShards
     # `content_type` is covered by the signature, so the build must send that
     # header verbatim or the store rejects the request.
     def scratch_signed_url(key : String, method : String, content_type : String? = nil) : String
-      @docs.signed_url(
+      docs.signed_url(
         key,
         method: method,
         expires_in: SCRATCH_URL_TTL,
