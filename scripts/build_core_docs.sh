@@ -4,97 +4,68 @@
 # the `crystal` package, so core types resolve to pages on this site instead
 # of linking out to crystal-lang.org.
 #
-# The standard library needs a different invocation from a shard, and each
-# difference is load bearing:
+# This used to run the whole recipe itself: clone, invoke the compiler,
+# validate, then shell out to `docker run minio/mc` to publish. That worked on
+# a laptop and nowhere else, which was the problem: nothing in production ever
+# ran it, so the `crystal` key held nothing there and every core cross link on
+# the live site rendered as plain text.
 #
-#   * the entrypoint is src/docs_main.cr, which requires the whole library
-#   * CRYSTAL_PATH must point at the CLONE's src, not the installed compiler's.
-#     Without it the prelude resolves to the installed standard library while
-#     docs_main.cr requires the clone's, both get loaded, and the build dies on
+# The recipe did not change; where it lives did. It is now
+# CrystalShards::CoreDocs (apps/crystalshards/src/services/core_docs.cr), and
+# every reason each step exists is documented there rather than restated here:
+#
+#   * CRYSTAL_PATH must point at the CLONE's src and lib, not the installed
+#     compiler's, or the standard library loads twice and the build dies on
 #     "already initialized constant Array::SMALL_ARRAY_SIZE"
 #   * --project-name and --project-version are required, since the Crystal
 #     repository has no shard.yml to infer them from
+#   * an artifact that parses but is missing the most referenced types in the
+#     language is refused rather than published, because it would turn every
+#     core cross link into plain text with nothing to say why
 #
-# Unlike a shard build this is NOT sandboxed, and that exception is only
-# defensible because the input cannot be anything other than the Crystal
-# compiler's own source at a pinned tag from its official repository, which
-# is the same code already running this script. The URL is therefore a
-# constant with no environment override: making it configurable would turn a
-# reasoned exception into an arbitrary code execution switch.
+# Publishing now goes through CrystalShards::StorageService, the same object
+# store interface apps/crystalshards uses for a shard's documentation, rather
+# than a container shelling out to `mc`. Registration and the build status
+# that makes a version readable on the site go through the same
+# CrystalShards::DocsBuildStatus a shard build already uses: there is no
+# second "make seed" step to remember, because this script's own run leaves
+# the database exactly where a production build would.
+#
+# In production the identical code runs inside the docs-build-core Cloud Run
+# Job, reached through docs-launcher when a build request names the `crystal`
+# package. This script drives the same CrystalShards::CoreDocs entrypoint
+# (src/publish_core_docs.cr) locally and unsandboxed, which is the one thing
+# production never does: `crystal docs` still expands Crystal's own macros,
+# including llvm.cr shelling out to llvm-config, and running that with no
+# confinement is a choice this script is allowed to make about this machine
+# and production is not allowed to make about a Cloud Run Job.
 set -euo pipefail
 
-readonly REPO="https://github.com/crystal-lang/crystal.git"
-readonly PACKAGE="crystal"
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$here/apps/crystalshards"
 
-VERSION="${1:-$(crystal --version | head -1 | awk '{print $2}')}"
+# Local object storage and databases, the same backend-neutral names and
+# defaults every other script and the Makefile use. This script is a
+# development tool; production never sets DOCS_SANDBOX_ALLOW_UNSAFE and never
+# reaches this file.
+export STORAGE_ENDPOINT="${STORAGE_ENDPOINT:-http://localhost:9000}"
+export STORAGE_ACCESS_KEY="${STORAGE_ACCESS_KEY:-minioadmin}"
+export STORAGE_SECRET_KEY="${STORAGE_SECRET_KEY:-minioadmin}"
+export DOCS_BUCKET="${DOCS_BUCKET:-crystal-docs}"
+export DATABASE_URL="${DATABASE_URL:-postgresql://postgres:password@localhost:5432/crystalshards_development}"
+export DOCS_DATABASE_URL="${DOCS_DATABASE_URL:-postgresql://postgres:password@localhost:5432/crystaldocs_development}"
 
-: "${STORAGE_ENDPOINT:?set STORAGE_ENDPOINT (the Makefile passes it)}"
-: "${STORAGE_ACCESS_KEY:?set STORAGE_ACCESS_KEY, this script will not guess credentials}"
-: "${STORAGE_SECRET_KEY:?set STORAGE_SECRET_KEY, this script will not guess credentials}"
-DOCS_BUCKET="${DOCS_BUCKET:-crystal-docs}"
+# The one sandbox choice available outside production. CoreDocs.build_and_publish
+# refuses to run without it being made explicitly; see the comment on
+# CrystalShards::CoreDocs.resolve_sandbox for why docker is not offered here
+# (that sandbox image carries no LLVM).
+export DOCS_SANDBOX="${DOCS_SANDBOX:-none}"
+export DOCS_SANDBOX_ALLOW_UNSAFE="${DOCS_SANDBOX_ALLOW_UNSAFE:-true}"
 
-workdir="$(mktemp -d)"
-trap 'rm -rf "$workdir"' EXIT
-
-echo "Building Crystal ${VERSION} standard library documentation..."
-
-if ! git clone --depth 1 --branch "$VERSION" --quiet "$REPO" "$workdir/crystal" 2>/dev/null; then
-  echo "  could not clone ${REPO} at tag ${VERSION}" >&2
-  exit 1
-fi
-
-artifact="$workdir/docs.json"
-
-if ! (cd "$workdir/crystal" && CRYSTAL_PATH="$workdir/crystal/src:$workdir/crystal/lib" \
-      crystal docs --format=json \
-        --project-name="$PACKAGE" \
-        --project-version="$VERSION" \
-        src/docs_main.cr > "$artifact" 2>"$workdir/build.log"); then
-  echo "  build failed:" >&2
-  tail -5 "$workdir/build.log" >&2
-  exit 1
-fi
-
-if [ ! -s "$artifact" ]; then
-  echo "  build produced no documentation" >&2
-  exit 1
-fi
-
-# `crystal docs` can exit 0 having written something unusable, and a core
-# artifact that is missing the most referenced types in the language would
-# quietly turn every core cross link into plain text. Check before publishing.
-if ! python3 - "$artifact" <<'PY'
-import json, sys
-
-document = json.load(open(sys.argv[1]))
-
-def walk(types, found):
-    for type in types or []:
-        name = type["full_name"]
-        found.add(name.split("(")[0].strip())
-        walk(type.get("types"), found)
-    return found
-
-names = walk(document["program"].get("types"), set())
-required = ["Array", "String", "Hash", "Int32", "IO", "Enumerable",
-            "Comparable", "Indexable::Mutable", "HTTP::Server", "JSON::Any"]
-missing = [name for name in required if name not in names]
-
-if missing:
-    print(f"  artifact is incomplete, missing: {', '.join(missing)}", file=sys.stderr)
-    sys.exit(1)
-
-print(f"  {len(names)} types, including every required core type")
-PY
-then
-  exit 1
-fi
-
-docker run --rm --network host -v "$workdir:/in:ro" --entrypoint sh minio/mc:latest -c \
-  "mc alias set local ${STORAGE_ENDPOINT} ${STORAGE_ACCESS_KEY} ${STORAGE_SECRET_KEY} >/dev/null && \
-   mc mb --ignore-existing local/${DOCS_BUCKET} >/dev/null && \
-   mc cp --quiet /in/docs.json local/${DOCS_BUCKET}/${PACKAGE}/${VERSION}/docs.json >/dev/null"
-
-printf '%-14s %-15s %8s bytes  ok\n' "$PACKAGE" "$VERSION" "$(wc -c < "$artifact" | tr -d ' ')"
+echo "Building and publishing the Crystal standard library's documentation..."
+echo "  compiler: $(crystal --version | head -1)"
+echo "  storage:  ${STORAGE_ENDPOINT} (bucket ${DOCS_BUCKET})"
+echo "  database: ${DOCS_DATABASE_URL}"
 echo ""
-echo "Run 'make seed' to register it, then core types link to /docs/${PACKAGE}/${VERSION}/..."
+
+exec crystal run src/publish_core_docs.cr

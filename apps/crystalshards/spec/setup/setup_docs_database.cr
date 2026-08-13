@@ -1,13 +1,22 @@
 # The second database this suite writes to.
 #
-# crystaldocs owns doc_build_requests and doc_versions; this app is the only
-# process that knows whether a build started, finished or failed, so it writes
-# the outcome columns of both over `DocsDatabase`. Until this file existed no
-# spec in this app had those tables at all: every write raised "relation
-# doc_build_requests does not exist", the writer swallowed it, and the one thing
-# the builder tells the documentation site went untested in both apps. That is
-# how doc_versions.build_status stayed 'pending' for the entire catalogue
-# without a single red spec.
+# crystaldocs owns doc_build_requests, doc_versions and docs; this app writes
+# three distinct slices of them. It is the only process that knows whether a
+# build started, finished or failed, so it writes the outcome columns of
+# doc_build_requests and doc_versions over `DocsDatabase`. Until that existed
+# no spec in this app had those tables at all: every write raised "relation
+# doc_build_requests does not exist", the writer swallowed it, and the one
+# thing the builder tells the documentation site went untested in both apps.
+# That is how doc_versions.build_status stayed 'pending' for the entire
+# catalogue without a single red spec.
+#
+# CrystalShards::CoreDocs::Registration is the second writer, added for the
+# standard library: current_version, description and repository_url on docs,
+# the same three columns `CrystalDocs::PackageRegistration` sets from a
+# registry release for a shard. The standard library has no registry entry to
+# set them from a reader's request, so this app sets them itself before the
+# first build, which is why this app now writes columns on `docs` it never
+# used to.
 #
 # The tables are created here rather than by running crystaldocs's migrations,
 # which are not in this app's source and must not be. Only the columns this app
@@ -28,6 +37,10 @@ module DocsTestDatabase
     CREATE TABLE IF NOT EXISTS docs (
       id bigserial PRIMARY KEY,
       package_name text NOT NULL UNIQUE,
+      current_version text,
+      description text,
+      repository_url text,
+      total_views bigint NOT NULL DEFAULT 0,
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL
     )
@@ -37,6 +50,7 @@ module DocsTestDatabase
       id bigserial PRIMARY KEY,
       doc_id bigint NOT NULL REFERENCES docs (id) ON DELETE CASCADE,
       version text NOT NULL,
+      published_at timestamptz NOT NULL,
       build_status text NOT NULL DEFAULT 'pending',
       storage_path text NOT NULL,
       created_at timestamptz NOT NULL,

@@ -10,7 +10,7 @@
 # container docker compose runs; production is Google Cloud Storage, selected
 # by LUCKY_ENV=production and never reachable from here.
 
-.PHONY: help setup install-deps build start stop services migrate seed reset test lint format dev clean logs db-console docs.real
+.PHONY: help setup install-deps build start stop services migrate seed reset test lint format dev clean logs db-console docs.real docs.core
 
 APPS       := crystalshards crystaldocs crystalgigs crystalbits
 DB_USER    ?= postgres
@@ -147,6 +147,9 @@ docs.real: ## Generate real shard docs in the sandbox and upload to object stora
 	@$(STORAGE_ENV) ./scripts/build_real_docs.sh
 	@echo ""
 	@echo "Re-run 'make seed' to sync crystaldocs rows with what is now in storage."
+
+docs.core: ## Build and publish the Crystal standard library's own documentation (scripts/build_core_docs.sh)
+	@./scripts/build_core_docs.sh
 
 reset: ## Drop, recreate, migrate and seed every development database
 	@for app in $(APPS); do \

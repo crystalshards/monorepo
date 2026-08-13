@@ -2,6 +2,7 @@ require "./base_worker"
 require "../services/docs_builder"
 require "../services/storage_service"
 require "../services/docs_build_status"
+require "../services/core_docs"
 
 struct BuildDocsWorker < BaseJob
   # The only job that is never run where it was asked for.
@@ -46,6 +47,15 @@ struct BuildDocsWorker < BaseJob
   # how the site knows documentation exists.
   def perform
     log_info "Building docs for: #{@shard_name}@#{@version}"
+
+    # The standard library is not a registry shard: it has no ShardQuery
+    # entry, no commit_sha, and no `docs` row until something writes one.
+    # CrystalShards::CoreDocs owns that whole lifecycle, including its own
+    # registration and its own DocsBuildStatus writes, so this hands off
+    # entirely rather than threading a special case through ShardQuery and
+    # DocsBuilder below, both of which assume a registry entry exists.
+    return perform_core_build if CrystalShards::CoreDocs.package?(@shard_name)
+
     docs_status.building
 
     shard = ShardQuery.new.resolve(@shard_name)
@@ -116,6 +126,26 @@ struct BuildDocsWorker < BaseJob
       # queue.
     end
 
+    raise ex
+  end
+
+  # CrystalShards::CoreDocs.build_and_publish already registers the version,
+  # writes 'building' before it clones anything, and writes 'succeeded' or
+  # 'failed' through the same DocsBuildStatus every shard build uses, so
+  # nothing here duplicates those writes. This only logs the outcome and
+  # re-raises on failure, matching `perform`'s own contract: raising is what
+  # puts a redelivered request back through Cloud Tasks.
+  private def perform_core_build
+    published = CrystalShards::CoreDocs.build_and_publish(@version)
+    if published.reused_existing
+      log_info "The standard library #{@shard_name}@#{@version} was already present at #{published.key}; " \
+               "marked success from the artifact and skipped rebuilding"
+    else
+      log_info "Successfully published the standard library #{@shard_name}@#{@version}: " \
+               "#{published.key} (#{published.bytes} bytes, #{published.types} types)"
+    end
+  rescue ex : Exception
+    log_error "Failed to publish the standard library #{@shard_name}@#{@version}", ex
     raise ex
   end
 

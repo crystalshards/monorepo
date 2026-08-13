@@ -17,13 +17,15 @@ RUN cd lib/avram && patch -p1 < /tmp/avram-nilable-fix.patch
 # Copy source code
 COPY . .
 
-# Build the server, the migration entrypoint, the discovery sweep entrypoint and the
-# documentation status reconciliation entrypoint.
+# Build the server, the migration entrypoint, the discovery sweep entrypoint, the
+# documentation status reconciliation entrypoint, and the core documentation
+# publish entrypoint.
 #
-# The extra three are separate binaries and none is optional: the crystalshards-migrate
+# The extra four are separate binaries and none is optional: the crystalshards-migrate
 # Cloud Run Job runs `./migrate`, the discover-shards Job runs `./discover-shards`, a
-# one-off Job execution runs `./reconcile-docs-status`, and this runtime stage carries
-# no Crystal toolchain and no lucky CLI. src/migrate.cr
+# one-off Job execution runs `./reconcile-docs-status`, another runs
+# `./publish-core-docs`, and this runtime stage carries no Crystal toolchain and no
+# lucky CLI. src/migrate.cr
 # requires db/migrations/** at compile time, so the migrations are linked into the
 # binary rather than read from disk, and it requires only the database config, so the
 # Job needs only DATABASE_URL. src/discover_shards.cr requires the models, queries and
@@ -32,6 +34,9 @@ COPY . .
 # optional: a host without one is skipped by name and the run still succeeds.
 # src/reconcile_docs_status.cr reads the docs database and lists the docs bucket, so it
 # needs DOCS_DATABASE_URL and DOCS_BUCKET alongside DATABASE_URL, and nothing else.
+# src/publish_core_docs.cr needs the same three plus DOCS_SANDBOX pointed at
+# docs-build-core, which is how it reaches CrystalShards::CoreDocs the same way
+# docs-launcher does.
 #
 # Deliberately not tasks.cr for any of them: that loads the entire app, every config/ file
 # runs at load time, and each one raises without its own production variable. It also
@@ -43,7 +48,8 @@ COPY . .
 RUN crystal build src/crystalshards.cr --no-debug -o crystalshards && \
     crystal build src/migrate.cr --no-debug -o migrate && \
     crystal build src/discover_shards.cr --no-debug -o discover-shards && \
-    crystal build src/reconcile_docs_status.cr --no-debug -o reconcile-docs-status
+    crystal build src/reconcile_docs_status.cr --no-debug -o reconcile-docs-status && \
+    crystal build src/publish_core_docs.cr --no-debug -o publish-core-docs
 
 # Prove each artifact is an executable file before it is ever copied into the runtime
 # stage.
@@ -53,7 +59,7 @@ RUN crystal build src/crystalshards.cr --no-debug -o crystalshards && \
 # `exec: is a directory` at start time. That is not hypothetical here: it is what
 # `-o tasks` did against the app's tasks/ directory. Checking in the builder means a
 # name that collides with a directory fails the build rather than the deploy.
-RUN for binary in crystalshards migrate discover-shards reconcile-docs-status; do \
+RUN for binary in crystalshards migrate discover-shards reconcile-docs-status publish-core-docs; do \
       test -f "$binary" || { echo "$binary is not a file"; exit 1; }; \
       test ! -d "$binary" || { echo "$binary is a directory, not a binary"; exit 1; }; \
       test -x "$binary" || { echo "$binary is not executable"; exit 1; }; \
@@ -123,6 +129,7 @@ COPY --from=builder --chown=1000:1000 /app/crystalshards ./crystalshards
 COPY --from=builder --chown=1000:1000 /app/migrate ./migrate
 COPY --from=builder --chown=1000:1000 /app/discover-shards ./discover-shards
 COPY --from=builder --chown=1000:1000 /app/reconcile-docs-status ./reconcile-docs-status
+COPY --from=builder --chown=1000:1000 /app/publish-core-docs ./publish-core-docs
 
 # Static assets. Lucky serves these from the relative path ./public at runtime
 # (see Lucky::StaticFileHandler in src/app_server.cr), so omitting them makes every
@@ -134,8 +141,8 @@ COPY --from=builder --chown=1000:1000 /app/public ./public
 # stayed invisible until the container tried to exec it, so this is asserted on both
 # sides: in the builder where the artifact is produced, and here where a COPY of a
 # directory would otherwise arrive silently and only fail at `docker run`.
-RUN chmod +x ./crystalshards ./migrate ./discover-shards ./reconcile-docs-status && \
-    for binary in ./crystalshards ./migrate ./discover-shards ./reconcile-docs-status; do \
+RUN chmod +x ./crystalshards ./migrate ./discover-shards ./reconcile-docs-status ./publish-core-docs && \
+    for binary in ./crystalshards ./migrate ./discover-shards ./reconcile-docs-status ./publish-core-docs; do \
       test -f "$binary" || { echo "$binary is not a file"; exit 1; }; \
       test ! -d "$binary" || { echo "$binary is a directory, not a binary"; exit 1; }; \
       test -x "$binary" || { echo "$binary is not executable"; exit 1; }; \
