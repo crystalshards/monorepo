@@ -44,6 +44,11 @@ class Head < Lucky::BaseComponent
       meta name: "theme-color", content: "#f4f6f6", media: "(prefers-color-scheme: light)"
       meta name: "theme-color", content: "#070a0b", media: "(prefers-color-scheme: dark)"
 
+      # Progressive enhancement, and only that. The masthead field is a plain
+      # GET form that submits to /shards; this adds the suggestion list on top
+      # of it and does nothing else.
+      tag "script", src: asset("js/search_suggest.js"), defer: "defer"
+
       render_csrf_meta_tags
     end
   end

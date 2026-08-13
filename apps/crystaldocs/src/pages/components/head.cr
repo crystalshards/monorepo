@@ -56,6 +56,11 @@ class Components::Head < Lucky::BaseComponent
       # page that has no sidebar.
       tag "script", src: asset("js/docs_nav.js"), defer: "defer"
 
+      # The masthead field's typeahead, on the same terms. The field is a
+      # working GET form that submits to /docs without it; this adds the
+      # suggestion list and nothing else.
+      tag "script", src: asset("js/search_suggest.js"), defer: "defer"
+
       csrf_meta_tags
     end
   end
