@@ -43,11 +43,11 @@
  *   3. Borrow an fd we already opened. We refuse to start if any inherited
  *      descriptor is a routable socket, and close every other inherited
  *      descriptor above stderr.
- *   4. Reach into the parent, which still holds the signed URLs. ptrace and
- *      process_vm_readv/writev are denied here. /proc/<parent>/environ is NOT
- *      closed, because the parent runs as the same uid and nothing available
- *      to an unprivileged container closes that; entrypoint.sh says what a
- *      url read that way is worth, which is very little.
+ *   4. Reach into the root parent, which still holds the signed URLs. ptrace
+ *      and process_vm_readv/writev are denied here, and the compile runs as
+ *      uid 1000 while the parent stays root, so /proc/<parent>/environ and
+ *      /proc/<parent>/mem are unreadable. The image containment spec proves
+ *      those refusals in the real process tree.
  *   5. Regain privilege through a setuid binary. no_new_privs forbids it.
  *   6. Find a kernel bug in seccomp or io_uring. That is the residual, and it
  *      is the same residual every container has.
@@ -60,6 +60,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
@@ -68,7 +69,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
-#include <grp.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -139,32 +139,48 @@ enum {
 #define JT(from, to) ((to) - (from) - 1)
 
 static struct sock_filter filter[] = {
-    [L_LOAD_ARCH] = BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
-    [L_TEST_ARCH] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, GUARD_AUDIT_ARCH, JT(L_TEST_ARCH, L_LOAD_NR), 0),
+    [L_LOAD_ARCH] =
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, arch)),
+    [L_TEST_ARCH] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, GUARD_AUDIT_ARCH,
+                             JT(L_TEST_ARCH, L_LOAD_NR), 0),
     /* A syscall arriving under a different personality is not something this
      * filter has been reasoned about for, so it ends the process rather than
      * being allowed through unexamined. */
     [L_KILL_ARCH] = BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
 
-    [L_LOAD_NR] = BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
+    [L_LOAD_NR] =
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, nr)),
     /* Forward jump, because BPF offsets are unsigned: the kill this reaches
      * for is the one at the tail, not L_KILL_ARCH above. */
-    [L_TEST_X32] = BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, __X32_SYSCALL_BIT, JT(L_TEST_X32, L_KILL_X32), 0),
+    [L_TEST_X32] = BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, __X32_SYSCALL_BIT,
+                            JT(L_TEST_X32, L_KILL_X32), 0),
 
     /* socket(2) and socketpair(2) both take the address family in arg 0. */
-    [L_IS_SOCKET] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket, JT(L_IS_SOCKET, L_LOAD_DOMAIN), 0),
-    [L_IS_SOCKETPAIR] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socketpair, JT(L_IS_SOCKETPAIR, L_LOAD_DOMAIN), 0),
+    [L_IS_SOCKET] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socket,
+                             JT(L_IS_SOCKET, L_LOAD_DOMAIN), 0),
+    [L_IS_SOCKETPAIR] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_socketpair,
+                                 JT(L_IS_SOCKETPAIR, L_LOAD_DOMAIN), 0),
 
     /* io_uring submits socket, connect and send as ring opcodes. None of them
      * reach a filter, so the ring itself is what has to be unavailable. */
-    [L_IS_URING_SETUP] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_io_uring_setup, JT(L_IS_URING_SETUP, L_DENY_PERM), 0),
-    [L_IS_URING_ENTER] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_io_uring_enter, JT(L_IS_URING_ENTER, L_DENY_PERM), 0),
-    [L_IS_URING_REGISTER] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_io_uring_register, JT(L_IS_URING_REGISTER, L_DENY_PERM), 0),
+    [L_IS_URING_SETUP] =
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_io_uring_setup,
+                 JT(L_IS_URING_SETUP, L_DENY_PERM), 0),
+    [L_IS_URING_ENTER] =
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_io_uring_enter,
+                 JT(L_IS_URING_ENTER, L_DENY_PERM), 0),
+    [L_IS_URING_REGISTER] =
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_io_uring_register,
+                 JT(L_IS_URING_REGISTER, L_DENY_PERM), 0),
 
     /* The parent is still holding the signed upload URL while this runs. */
-    [L_IS_PTRACE] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_ptrace, JT(L_IS_PTRACE, L_DENY_PERM), 0),
-    [L_IS_VM_READV] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_readv, JT(L_IS_VM_READV, L_DENY_PERM), 0),
-    [L_IS_VM_WRITEV] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_writev, JT(L_IS_VM_WRITEV, L_DENY_PERM), 0),
+    [L_IS_PTRACE] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_ptrace,
+                             JT(L_IS_PTRACE, L_DENY_PERM), 0),
+    [L_IS_VM_READV] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_readv,
+                               JT(L_IS_VM_READV, L_DENY_PERM), 0),
+    [L_IS_VM_WRITEV] =
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, __NR_process_vm_writev,
+                 JT(L_IS_VM_WRITEV, L_DENY_PERM), 0),
 
     /* Everything else is a normal compile doing normal things. This is a
      * filter against leaving the machine, not a general syscall allowlist:
@@ -174,15 +190,21 @@ static struct sock_filter filter[] = {
 
     /* The kernel takes the family as an int, so comparing the low word is the
      * same truncation the syscall itself performs. */
-    [L_LOAD_DOMAIN] = BPF_STMT(BPF_LD | BPF_W | BPF_ABS, offsetof(struct seccomp_data, args[0])),
-    [L_IS_UNIX] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX, JT(L_IS_UNIX, L_ALLOW_SOCKET), 0),
-    [L_IS_NETLINK] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_NETLINK, JT(L_IS_NETLINK, L_ALLOW_SOCKET), 0),
+    [L_LOAD_DOMAIN] = BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+                               offsetof(struct seccomp_data, args[0])),
+    [L_IS_UNIX] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_UNIX,
+                           JT(L_IS_UNIX, L_ALLOW_SOCKET), 0),
+    [L_IS_NETLINK] = BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AF_NETLINK,
+                              JT(L_IS_NETLINK, L_ALLOW_SOCKET), 0),
     /* AF_INET, AF_INET6, AF_PACKET and AF_VSOCK all land here. AF_VSOCK
      * matters as much as the others: on a microVM host it is a channel to the
-     * hypervisor, not to the internet, so an internet-shaped block misses it. */
-    [L_DENY_FAMILY] = BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EAFNOSUPPORT & SECCOMP_RET_DATA)),
+     * hypervisor, not to the internet, so an internet-shaped block misses it.
+     */
+    [L_DENY_FAMILY] = BPF_STMT(
+        BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EAFNOSUPPORT & SECCOMP_RET_DATA)),
 
-    [L_DENY_PERM] = BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA)),
+    [L_DENY_PERM] = BPF_STMT(BPF_RET | BPF_K,
+                             SECCOMP_RET_ERRNO | (EPERM & SECCOMP_RET_DATA)),
     [L_ALLOW_SOCKET] = BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
     [L_KILL_X32] = BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),
 };
@@ -196,7 +218,8 @@ _Static_assert(sizeof(filter) / sizeof(filter[0]) == L_COUNT,
 static int refuse_inherited_sockets(void) {
   DIR *dir = opendir("/proc/self/fd");
   if (dir == NULL) {
-    fprintf(stderr, "no-egress: cannot read /proc/self/fd, refusing to guess what is open\n");
+    fprintf(stderr, "no-egress: cannot read /proc/self/fd, refusing to guess "
+                    "what is open\n");
     return -1;
   }
 
@@ -206,13 +229,16 @@ static int refuse_inherited_sockets(void) {
 
   while ((entry = readdir(dir)) != NULL) {
     int fd = atoi(entry->d_name);
-    if (fd <= STDERR_FILENO || fd == dirfd(dir)) continue;
+    if (fd <= STDERR_FILENO || fd == dirfd(dir))
+      continue;
 
     int domain = 0;
     socklen_t len = sizeof(domain);
     if (getsockopt(fd, SOL_SOCKET, SO_DOMAIN, &domain, &len) == 0 &&
-        (domain == AF_INET || domain == AF_INET6 || domain == AF_PACKET || domain == AF_VSOCK)) {
-      if (first_leaked < 0) first_leaked = fd;
+        (domain == AF_INET || domain == AF_INET6 || domain == AF_PACKET ||
+         domain == AF_VSOCK)) {
+      if (first_leaked < 0)
+        first_leaked = fd;
       leaked_count++;
       continue;
     }
@@ -228,7 +254,9 @@ static int refuse_inherited_sockets(void) {
   closedir(dir);
 
   if (leaked_count > 0) {
-    fprintf(stderr, "no-egress: refusing to run, %d inherited descriptor(s) are routable sockets, first is fd %d\n",
+    fprintf(stderr,
+            "no-egress: refusing to run, %d inherited descriptor(s) are "
+            "routable sockets, first is fd %d\n",
             leaked_count, first_leaked);
     return -1;
   }
@@ -265,12 +293,16 @@ static int prove_filter(void) {
     errno = 0;
     int fd = socket(routable[i].domain, SOCK_STREAM, 0);
     if (fd >= 0) {
-      fprintf(stderr, "no-egress: %s socket was still created, the filter did not take effect\n", routable[i].name);
+      fprintf(stderr,
+              "no-egress: %s socket was still created, the filter did not take "
+              "effect\n",
+              routable[i].name);
       close(fd);
       proven = 0;
     } else if (errno != EAFNOSUPPORT) {
       fprintf(stderr,
-              "no-egress: %s failed with %s, which is not this filter's refusal, so the filter cannot be shown to be in force\n",
+              "no-egress: %s failed with %s, which is not this filter's "
+              "refusal, so the filter cannot be shown to be in force\n",
               routable[i].name, strerror(errno));
       proven = 0;
     }
@@ -283,12 +315,14 @@ static int prove_filter(void) {
   errno = 0;
   int ring = syscall(__NR_io_uring_setup, 8, NULL);
   if (ring >= 0) {
-    fprintf(stderr, "no-egress: io_uring_setup still succeeded, the ring can submit socket and connect\n");
+    fprintf(stderr, "no-egress: io_uring_setup still succeeded, the ring can "
+                    "submit socket and connect\n");
     close(ring);
     proven = 0;
   } else if (errno != EPERM) {
     fprintf(stderr,
-            "no-egress: io_uring_setup failed with %s rather than this filter's refusal, so the ring is not provably closed\n",
+            "no-egress: io_uring_setup failed with %s rather than this "
+            "filter's refusal, so the ring is not provably closed\n",
             strerror(errno));
     proven = 0;
   }
@@ -300,7 +334,9 @@ static int prove_filter(void) {
   errno = 0;
   int local = socket(AF_UNIX, SOCK_STREAM, 0);
   if (local < 0) {
-    fprintf(stderr, "no-egress: AF_UNIX is denied too (%s), so this filter is not the one that was reviewed\n",
+    fprintf(stderr,
+            "no-egress: AF_UNIX is denied too (%s), so this filter is not the "
+            "one that was reviewed\n",
             strerror(errno));
     proven = 0;
   } else {
@@ -334,12 +370,15 @@ static int drop_to(const char *spec) {
   }
   long gid = strtol(end + 1, &end, 10);
   if (end == NULL || *end != '\0' || uid <= 0 || gid <= 0) {
-    fprintf(stderr, "no-egress: --user wants a non-root UID:GID, got %s\n", spec);
+    fprintf(stderr, "no-egress: --user wants a non-root UID:GID, got %s\n",
+            spec);
     return -1;
   }
 
-  if (setgroups(0, NULL) != 0 || setgid((gid_t)gid) != 0 || setuid((uid_t)uid) != 0) {
-    fprintf(stderr, "no-egress: could not become %s: %s\n", spec, strerror(errno));
+  if (setgroups(0, NULL) != 0 || setgid((gid_t)gid) != 0 ||
+      setuid((uid_t)uid) != 0) {
+    fprintf(stderr, "no-egress: could not become %s: %s\n", spec,
+            strerror(errno));
     return -1;
   }
 
@@ -348,13 +387,15 @@ static int drop_to(const char *spec) {
    * correct. */
   if (getuid() != (uid_t)uid || geteuid() != (uid_t)uid ||
       getgid() != (gid_t)gid || getegid() != (gid_t)gid) {
-    fprintf(stderr, "no-egress: still %d:%d after asking for %s\n", getuid(), getgid(), spec);
+    fprintf(stderr, "no-egress: still %d:%d after asking for %s\n", getuid(),
+            getgid(), spec);
     return -1;
   }
 
   /* Belt and braces against a future edit passing 0. */
   if (setuid(0) == 0) {
-    fprintf(stderr, "no-egress: root is still reachable after dropping to %s\n", spec);
+    fprintf(stderr, "no-egress: root is still reachable after dropping to %s\n",
+            spec);
     return -1;
   }
 
@@ -378,7 +419,8 @@ static int drop_to(const char *spec) {
 static int refuse_leaked_capabilities(void) {
   int fd = open("/proc/self/environ", O_RDONLY);
   if (fd < 0) {
-    fprintf(stderr, "no-egress: cannot read /proc/self/environ, refusing to guess what was inherited\n");
+    fprintf(stderr, "no-egress: cannot read /proc/self/environ, refusing to "
+                    "guess what was inherited\n");
     return -1;
   }
 
@@ -395,22 +437,26 @@ static int refuse_leaked_capabilities(void) {
 
     size_t start = 0;
     for (size_t i = 0; i < total; i++) {
-      if (buffer[i] != '\0') continue;
-      if (strncmp(buffer + start, "DOCS_", 5) == 0) leaked = 1;
+      if (buffer[i] != '\0')
+        continue;
+      if (strncmp(buffer + start, "DOCS_", 5) == 0)
+        leaked = 1;
       start = i + 1;
     }
 
     held = total - start;
-    if (held >= sizeof(buffer) - 1) held = 0;
+    if (held >= sizeof(buffer) - 1)
+      held = 0;
     memmove(buffer, buffer + start, held);
   }
 
   close(fd);
 
   if (leaked) {
-    fprintf(stderr,
-            "no-egress: refusing to run, this process was started holding DOCS_ variables. "
-            "The caller must wrap it in `env -i` so the confined side never inherits a signed url.\n");
+    fprintf(stderr, "no-egress: refusing to run, this process was started "
+                    "holding DOCS_ variables. "
+                    "The caller must wrap it in `env -i` so the confined side "
+                    "never inherits a signed url.\n");
     return -1;
   }
 
@@ -435,49 +481,63 @@ int main(int argc, char **argv) {
     return EXIT_EXEC;
   }
 
-  if (refuse_leaked_capabilities() != 0) return EXIT_PRIVILEGE;
+  if (refuse_leaked_capabilities() != 0)
+    return EXIT_PRIVILEGE;
 
-  if (become != NULL && drop_to(become) != 0) return EXIT_PRIVILEGE;
+  if (become != NULL && drop_to(become) != 0)
+    return EXIT_PRIVILEGE;
 
   /* Refusing to run privileged is the point of the option, so an entrypoint
    * that forgets it does not quietly get a root compile. */
   if (geteuid() == 0) {
-    fprintf(stderr, "no-egress: refusing to run %s as root; pass --user UID:GID\n", argv[first]);
+    fprintf(stderr,
+            "no-egress: refusing to run %s as root; pass --user UID:GID\n",
+            argv[first]);
     return EXIT_PRIVILEGE;
   }
 
-  if (refuse_inherited_sockets() != 0) return EXIT_INHERITED_SOCKET;
+  if (refuse_inherited_sockets() != 0)
+    return EXIT_INHERITED_SOCKET;
 
   /* Required to install a filter without CAP_SYS_ADMIN, and worth having on
    * its own: it also stops the compile regaining privilege through a setuid
    * binary. Like the filter, it cannot be turned back off. */
   if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) {
-    fprintf(stderr, "no-egress: could not set no_new_privs: %s\n", strerror(errno));
+    fprintf(stderr, "no-egress: could not set no_new_privs: %s\n",
+            strerror(errno));
     return EXIT_NO_NEW_PRIVS;
   }
 
-  struct sock_fprog prog = {(unsigned short)(sizeof(filter) / sizeof(filter[0])), filter};
+  struct sock_fprog prog = {
+      (unsigned short)(sizeof(filter) / sizeof(filter[0])), filter};
 
   /* TSYNC is a no-op for a single threaded process and the honest thing to
    * ask for anyway: it refuses rather than leaving a sibling thread outside
    * the filter. The older prctl entry point is the fallback for a kernel
    * without the seccomp syscall. */
-  if (syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_TSYNC, &prog) != 0 &&
+  if (syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, SECCOMP_FILTER_FLAG_TSYNC,
+              &prog) != 0 &&
       syscall(SYS_seccomp, SECCOMP_SET_MODE_FILTER, 0, &prog) != 0 &&
       prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &prog, 0, 0) != 0) {
-    fprintf(stderr, "no-egress: could not install the seccomp filter: %s\n", strerror(errno));
+    fprintf(stderr, "no-egress: could not install the seccomp filter: %s\n",
+            strerror(errno));
     return EXIT_FILTER;
   }
 
   if (prove_filter() != 0) {
-    fprintf(stderr, "no-egress: confinement could not be proven, refusing to run %s\n", argv[first]);
+    fprintf(stderr,
+            "no-egress: confinement could not be proven, refusing to run %s\n",
+            argv[first]);
     return EXIT_NOT_PROVEN;
   }
 
-  fprintf(stderr, "no-egress: verified in-process as uid %d, ip and vsock sockets denied, io_uring denied, no_new_privs set\n",
+  fprintf(stderr,
+          "no-egress: verified in-process as uid %d, ip and vsock sockets "
+          "denied, io_uring denied, no_new_privs set\n",
           getuid());
 
   execvp(argv[first], &argv[first]);
-  fprintf(stderr, "no-egress: could not exec %s: %s\n", argv[first], strerror(errno));
+  fprintf(stderr, "no-egress: could not exec %s: %s\n", argv[first],
+          strerror(errno));
   return EXIT_EXEC;
 }

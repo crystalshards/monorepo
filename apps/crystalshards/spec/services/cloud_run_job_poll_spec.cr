@@ -80,6 +80,30 @@ ensure
 end
 
 describe CrystalShards::CloudRunJobDocsSandbox do
+  describe "execution overrides" do
+    it "passes the complete core compiler recipe to the build container" do
+      storage = CrystalShards::MockScratchStorage.new
+      sandbox = CrystalShards::CloudRunJobDocsSandbox.new(
+        storage,
+        job_env: CrystalShards::CoreDocs::JOB_ENV,
+        crystal_path: CrystalShards::CoreDocs::CRYSTAL_PATH,
+        entry_file: CrystalShards::CoreDocs::ENTRY_FILE,
+        project_name: CrystalShards::CoreDocs::PROJECT_NAME,
+        project_version: "1.21.0",
+      )
+
+      request = JSON.parse(sandbox.execution_request("source.tar.gz", "docs.json", "build.log"))
+      entries = request["overrides"]["containerOverrides"][0]["env"].as_a
+      env = {} of String => String
+      entries.each { |entry| env[entry["name"].as_s] = entry["value"].as_s }
+
+      env["DOCS_CRYSTAL_PATH"].should eq("lib:src")
+      env["DOCS_ENTRY_FILE"].should eq("src/docs_main.cr")
+      env["DOCS_PROJECT_NAME"].should eq("Crystal")
+      env["DOCS_PROJECT_VERSION"].should eq("1.21.0")
+    end
+  end
+
   describe "reading the status of a build it started" do
     it "stops on a refusal rather than retrying an answer that cannot change" do
       refusal = {403, %({"error":{"message":"Permission 'run.operations.get' denied"}})}

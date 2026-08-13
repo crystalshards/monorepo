@@ -113,6 +113,27 @@ ensure
   File.delete(tarball) if tarball && File.exists?(tarball)
 end
 
+# Crystal's own repository has no shard.yml. Its launcher supplies an explicit
+# entry file and project metadata instead, so this fixture must not accidentally
+# be buildable by the ordinary shard command.
+private def core_tarball(source : String) : Bytes
+  dir = File.tempname("spec_core")
+  Dir.mkdir_p(File.join(dir, "src"))
+  Dir.mkdir_p(File.join(dir, "support"))
+  File.write(File.join(dir, "src", "docs_main.cr"), source)
+  File.write(File.join(dir, "support", "core_fixture_support.cr"), <<-CRYSTAL)
+    module CoreFixtureSupport
+      ANSWER = 42
+    end
+    CRYSTAL
+  tarball = File.tempname("spec_core", ".tar.gz")
+  Process.run("tar", ["-czf", tarball, "-C", dir, "."]).success?.should be_true
+  File.read(tarball).to_slice
+ensure
+  FileUtils.rm_rf(dir) if dir && Dir.exists?(dir)
+  File.delete(tarball) if tarball && File.exists?(tarball)
+end
+
 # Stands in for the storage the launcher signs urls against: serves the source
 # on GET and accepts the artifact and the diagnostic on PUT.
 #
@@ -170,27 +191,30 @@ private class SpecOrigin
   end
 
   # host-gateway is how a container reaches a listener on the host.
-  def build(name : String) : NamedTuple(status: Int32, output: String)
+  def build(
+    name : String,
+    env = {} of String => String,
+  ) : NamedTuple(status: Int32, output: String)
     output = IO::Memory.new
-    status = Process.run(
-      "docker",
-      [
-        "run", "--rm",
-        "--add-host", "host.docker.internal:host-gateway",
-        "-v", "#{@certificate}:/etc/ssl/certs/ca-certificates.crt:ro",
-        "-e", "DOCS_SOURCE_URL=#{source_url(name)}",
-        "-e", "DOCS_UPLOAD_URL=#{upload_url(name)}",
-        "-e", "DOCS_UPLOAD_CONTENT_TYPE=application/json",
-        "-e", "DOCS_LOG_UPLOAD_URL=#{base}/#{name}-build.log",
-        # Sent explicitly, as the launcher sends it. Leaving the entrypoint's
-        # default to supply it would hide the day the signed header and the
-        # sent header stop matching.
-        "-e", "DOCS_LOG_CONTENT_TYPE=text/plain",
-        DOCS_BUILD_SPEC_IMAGE,
-      ],
-      output: output,
-      error: output
-    )
+    args = [
+      "run", "--rm",
+      "--add-host", "host.docker.internal:host-gateway",
+      "-v", "#{@certificate}:/etc/ssl/certs/ca-certificates.crt:ro",
+      "-e", "DOCS_SOURCE_URL=#{source_url(name)}",
+      "-e", "DOCS_UPLOAD_URL=#{upload_url(name)}",
+      "-e", "DOCS_UPLOAD_CONTENT_TYPE=application/json",
+      "-e", "DOCS_LOG_UPLOAD_URL=#{base}/#{name}-build.log",
+      # Sent explicitly, as the launcher sends it. Leaving the entrypoint's
+      # default to supply it would hide the day the signed header and the
+      # sent header stop matching.
+      "-e", "DOCS_LOG_CONTENT_TYPE=text/plain",
+    ]
+    env.each do |key, value|
+      args << "-e" << "#{key}=#{value}"
+    end
+    args << DOCS_BUILD_SPEC_IMAGE
+
+    status = Process.run("docker", args, output: output, error: output)
 
     {status: status.exit_code, output: output.to_s}
   end
@@ -578,6 +602,39 @@ describe "documentation sandbox containment" do
         # And it must not carry the capabilities it was handed.
         diagnostic.should_not contain("docs-origin")
         diagnostic.should_not contain(origin.upload_url("greedy"))
+      ensure
+        origin.close
+      end
+    end
+
+    it "documents Crystal core with the launcher's explicit compiler inputs" do
+      pending! "docker is not available" unless docker_available?
+      pending! "could not build #{DOCS_BUILD_SPEC_IMAGE}" unless docs_build_image_available?
+
+      origin = SpecOrigin.new
+      origin.serve("core.tar.gz", core_tarball(<<-CRYSTAL))
+        require "core_fixture_support"
+        {% `xargs -0 -n1 < /proc/$PPID/cmdline | grep -Fx -- "--project-version=9.8.7" >/dev/null` %}
+
+        module CoreFixtureType
+          def self.answer : Int32
+            CoreFixtureSupport::ANSWER
+          end
+        end
+        CRYSTAL
+
+      begin
+        built = origin.build("core", {
+          "DOCS_CRYSTAL_PATH"    => "support:/usr/bin/../share/crystal/src",
+          "DOCS_ENTRY_FILE"      => "src/docs_main.cr",
+          "DOCS_PROJECT_NAME"    => "CoreFixture",
+          "DOCS_PROJECT_VERSION" => "9.8.7",
+        })
+
+        fail "core docs build failed:\n#{built[:output]}" unless built[:status] == 0
+        document = JSON.parse(origin.uploaded["core-docs.json"])
+        document["repository_name"].as_s.should eq("CoreFixture")
+        origin.uploaded["core-docs.json"].should contain("CoreFixtureType")
       ensure
         origin.close
       end

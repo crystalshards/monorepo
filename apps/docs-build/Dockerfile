@@ -29,10 +29,17 @@ RUN set -eux; \
 
 FROM crystallang/crystal:1.21.0-alpine
 
+# Empty for ordinary shard docs. The core-docs image sets this to
+# "llvm-dev llvm-static": Crystal's own docs entrypoint requires llvm.cr,
+# whose macros call llvm-config while the documentation compiler runs.
+ARG EXTRA_PACKAGES=""
+
 # curl is the entire client. This container is handed signed URLs and talks to
 # nothing else, so it needs no cloud SDK and holds no credentials. tar unpacks
-# the source the launcher prepared.
-RUN apk add --no-cache curl tar
+# the source the launcher prepared. Word splitting of EXTRA_PACKAGES is
+# intentional: it is a build-time list controlled by deploy.yml, never input
+# from a documentation build.
+RUN apk add --no-cache curl tar ${EXTRA_PACKAGES}
 
 # The account the compile becomes. The entrypoint itself stays root, which is
 # the only way this container can keep its signed urls away from the code it
