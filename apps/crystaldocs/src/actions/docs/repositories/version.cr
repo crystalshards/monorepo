@@ -20,19 +20,25 @@
 # start returning 200 because something once wrote a row under that key.
 class Docs::Repositories::Version < BrowserAction
   include Docs::VersionRendering
+  include Docs::CoreRepository
 
   get "/docs/_/:host/:owner/:repo/:version" do
     slug = "#{host}/#{owner}/#{repo}"
-    registry = CrystalDocs::RegistryPackages.build
-    lookup = registry.find(slug)
 
-    if package = lookup.package
-      serve_published(registry, slug, package)
-    elsif lookup.registry_answered?
-      # The registry answered, and there is no such repository. Not a shard.
-      raise Lucky::RouteNotFoundError.new(context)
+    if core_repository?(slug)
+      redirect to: CrystalDocs::PackagePaths.version_path(CrystalDocs::CORE_PACKAGE, version), status: 301
     else
-      serve_held(slug)
+      registry = CrystalDocs::RegistryPackages.build
+      lookup = registry.find(slug)
+
+      if package = lookup.package
+        serve_published(registry, slug, package)
+      elsif lookup.registry_answered?
+        # The registry answered, and there is no such repository. Not a shard.
+        raise Lucky::RouteNotFoundError.new(context)
+      else
+        serve_held(slug)
+      end
     end
   end
 
