@@ -147,4 +147,73 @@ describe CrystalDocs::RegistryPackages do
       end
     end
   end
+
+  # Which release a dependency requirement resolves to when the cascade
+  # commissions that dependency's documentation. The answer has to be the same
+  # one `shards install` would have produced, because that is the release the
+  # parent's own documentation was built against.
+  describe ".best_version" do
+    requirement = ->(raw : String) {
+      CrystalDocs::Semver::Requirement.parse?(raw).not_nil!
+    }
+
+    it "takes the highest release the requirement admits" do
+      chosen = CrystalDocs::RegistryPackages.best_version(
+        ["0.4.0", "0.4.1", "0.5.0"],
+        requirement.call("~> 0.4.0")
+      )
+
+      chosen.should eq("0.4.1")
+    end
+
+    it "orders by precedence rather than by string" do
+      chosen = CrystalDocs::RegistryPackages.best_version(
+        ["1.9.0", "1.10.0"],
+        requirement.call(">= 1.0.0")
+      )
+
+      chosen.should eq("1.10.0")
+    end
+
+    # The string is the tag a build clones and the segment a URL carries, so
+    # returning a reparsed version would commission "1.2.0" for a repository
+    # whose tag is "v1.2".
+    it "returns the string the registry holds, not a normalised one" do
+      chosen = CrystalDocs::RegistryPackages.best_version(
+        ["v1.2"],
+        requirement.call(">= 1.0.0")
+      )
+
+      chosen.should eq("v1.2")
+    end
+
+    it "refuses a prerelease unless the requirement asked for one" do
+      chosen = CrystalDocs::RegistryPackages.best_version(
+        ["1.0.0", "2.0.0-rc1"],
+        requirement.call(">= 1.0.0")
+      )
+
+      chosen.should eq("1.0.0")
+    end
+
+    # Nil is a real answer and never means "take the newest instead": building
+    # a release the parent excluded documents an API that reader never had.
+    it "answers nothing when no release satisfies" do
+      chosen = CrystalDocs::RegistryPackages.best_version(
+        ["2.0.0"],
+        requirement.call("~> 1.2.0")
+      )
+
+      chosen.should be_nil
+    end
+
+    it "skips a tag that is not a version at all" do
+      chosen = CrystalDocs::RegistryPackages.best_version(
+        ["nightly", "1.0.0"],
+        requirement.call(">= 1.0.0")
+      )
+
+      chosen.should eq("1.0.0")
+    end
+  end
 end
