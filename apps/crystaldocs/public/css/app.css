@@ -1518,3 +1518,60 @@ a.docs-external {
   .job-ad { padding: 1rem 1.1rem 1.15rem; }
   .job-ad-list { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ============================================================================
+   Code highlighting
+
+   Crystal code arrives already tokenised. `crystal docs` runs a doc comment's
+   Crystal blocks through Crystal::SyntaxHighlighter::HTML before it writes
+   docs.json, and CrystalDocs::DocHtml runs a README's Crystal fences through
+   the same highlighter, so both surfaces speak that highlighter's eight
+   one-letter classes and this is the only theme either needs.
+
+   Scoped to `pre` because that is the only place the highlighter emits. A
+   shard author who hand-writes <span class="k"> in their README prose gets
+   nothing, which keeps our vocabulary ours.
+
+   Hues sit in the site palette: keyword takes --accent, comment and operator
+   take --ink-muted, number takes the --ore/--warn metadata tint. Two are new.
+   Ratios are against --surface-sunk, which is the ground every code block in
+   this app sits on.
+   ========================================================================= */
+
+:root {
+  --code-keyword: #1d5c78;   /* 6.48:1, --accent */
+  --code-string:  #17682c;   /* 6.06:1, --ok darkened: --ok itself is 4.52:1
+                                here, too close to the line for a colour this
+                                dense in a code block */
+  --code-comment: #55666b;   /* 5.28:1, --ink-muted */
+  --code-number:  #8a5a2b;   /* 5.17:1, --ore */
+  --code-type:    #8a3d6b;   /* 6.24:1, new: type names are too common to read
+                                as a second shade of the keyword teal */
+  --code-ident:   #0e1416;   /* 16.36:1, --ink */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --code-keyword: #63c8e8;   /* 9.93:1, --accent */
+    --code-string:  #4ade80;   /* 10.92:1, --ok */
+    --code-comment: #9fb2b3;   /* 8.61:1, --ink-muted */
+    --code-number:  #f0b357;   /* 10.24:1, --warn */
+    --code-type:    #e3a8d0;   /* 9.77:1, the light plum lifted for the ground */
+    --code-ident:   #e9f1f0;   /* 16.59:1, --ink */
+  }
+}
+
+pre .k { color: var(--code-keyword); }
+pre .s { color: var(--code-string); }
+pre .c { color: var(--code-comment); font-style: italic; }
+pre .n { color: var(--code-number); }
+pre .t { color: var(--code-type); }
+pre .o { color: var(--code-comment); }
+
+/* A method name is the subject of the line it opens, so it reads as primary
+   text with weight rather than as another hue. */
+pre .m { color: var(--code-ident); font-weight: 600; }
+
+/* `#{` and `}` inside a string. They are punctuation the string does not own,
+   so they take the number tint to break out of the string's green. */
+pre .i { color: var(--code-number); }

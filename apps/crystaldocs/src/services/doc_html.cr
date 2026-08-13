@@ -1,3 +1,4 @@
+require "crystal/syntax_highlighter/html"
 require "html"
 require "uri"
 require "markd"
@@ -45,7 +46,21 @@ module CrystalDocs
       "h4" => Set{"id"},
       "h5" => Set{"id"},
       "h6" => Set{"id"},
+      # Highlighting. A span's class is checked against HIGHLIGHT_CLASSES and
+      # a code or pre element's is rebuilt into a bare `language-` token, so
+      # neither carries a name the author chose.
+      "span" => Set{"class"},
+      "code" => Set{"class"},
+      "pre"  => Set{"class"},
     }
+
+    # The whole vocabulary `Crystal::SyntaxHighlighter::HTML` emits: comment,
+    # interpolation, keyword, ident, number, operator, string, const. The
+    # compiler runs Crystal code blocks in doc comments through that exact
+    # highlighter before writing docs.json, and this module runs README code
+    # blocks through it too, so both surfaces arrive here speaking one
+    # vocabulary and one theme styles them.
+    HIGHLIGHT_CLASSES = Set{"c", "i", "k", "m", "n", "o", "s", "t"}
 
     # The only elements an anchor link is given somewhere to land.
     HEADING_TAGS = Set{"h1", "h2", "h3", "h4", "h5", "h6"}
@@ -65,10 +80,44 @@ module CrystalDocs
       "noscript", "form", "svg", "math",
     }
 
+    # Markd emits a fenced block's source verbatim. The Crystal compiler does
+    # not: `crystal docs` runs a Crystal block through
+    # `Crystal::SyntaxHighlighter::HTML` before it writes docs.json, which is
+    # why a doc comment arrives here already highlighted. A README arrives raw,
+    # so it goes through the same highlighter and the two surfaces match.
+    private class FenceRenderer < Markd::HTMLRenderer
+      # Only a block its author labelled Crystal. The compiler treats an
+      # unlabelled block as Crystal because a doc comment is Crystal by
+      # context; a README's unlabelled blocks are usually shell sessions or
+      # shard.yml, and the Crystal lexer would colour those as something they
+      # are not.
+      CRYSTAL_FENCES = Set{"crystal", "cr"}
+
+      def code_block_body(node : Markd::Node, language : String?)
+        # Chomped on both paths so a fence renders the same whatever its
+        # language: the source ends in the newline before the closing fence,
+        # and keeping it leaves a blank last line inside the padded block.
+        code = node.text.chomp
+
+        if language && CRYSTAL_FENCES.includes?(language.downcase)
+          # `highlight!` escapes the text of every token it emits, and falls
+          # back to plain escaped source when the lexer rejects the block,
+          # which a snippet that elides code with `...` routinely does.
+          literal(Crystal::SyntaxHighlighter::HTML.highlight!(code))
+        else
+          output(code)
+        end
+      end
+    end
+
     # Renders a Markdown document (a README) as safe HTML.
     def self.markdown(source : String?) : String
       return "" unless source && !source.empty?
-      sanitize(Markd.to_html(source))
+
+      # `Markd.to_html` hardcodes its own renderer, so the two steps it takes
+      # are taken here instead to get the highlighting one.
+      options = Markd::Options.new
+      sanitize(FenceRenderer.new(options).render(Markd::Parser.parse(source, options)))
     end
 
     # Cleans HTML the compiler produced from a doc comment.
@@ -96,7 +145,7 @@ module CrystalDocs
             next
           end
 
-          io << HTML.escape(html[cursor...match.begin])
+          io << escape_text(html[cursor...match.begin])
           cursor = match.end
 
           if DROP_CONTENT_TAGS.includes?(name)
@@ -125,7 +174,7 @@ module CrystalDocs
           io << sanitize_tag(match[0], name, attributes, anchor)
         end
 
-        io << HTML.escape(html[cursor..])
+        io << escape_text(html[cursor..])
       end
 
       result
@@ -158,7 +207,15 @@ module CrystalDocs
             # Already written above, in its rebuilt form.
             next if key == "id"
 
-            value = attr[3]? || attr[4]? || attr[5]? || ""
+            # Decoded before it is judged and encoded again on the way out.
+            # An attribute value in the input is already entity-encoded, so
+            # encoding it a second time is what turned `?a=1&b=2` in a README
+            # link into a visible `&amp;`. Judging the decoded form is also
+            # the stricter reading: `&#106;avascript:` is a scheme the
+            # browser resolves and the encoded text is not.
+            value = HTML.unescape(attr[3]? || attr[4]? || attr[5]? || "")
+            value = constrain_class(name, value) if key == "class"
+            next unless value
             next unless safe_value?(key, value)
 
             io << ' ' << key << "=\"" << HTML.escape(value) << '"'
@@ -186,6 +243,50 @@ module CrystalDocs
 
       scheme = trimmed.split(':').first.downcase
       SAFE_SCHEMES.includes?(scheme)
+    end
+
+    # Text between tags in the input is already HTML: whoever produced it,
+    # the compiler or Markd, encoded `&` and `<` there. Encoding it again is
+    # what put a literal `&quot;` inside every code block on the site, so it
+    # is decoded to the characters it stands for and encoded exactly once.
+    #
+    # Decoding cannot smuggle markup back in, because the encoding step that
+    # follows is what decides what reaches the page, and it escapes every
+    # character that could open a tag or close an attribute. A `<` that
+    # TAG_PATTERN did not match, from an unterminated tag, is caught by the
+    # same step whether it arrived raw or as `&lt;`.
+    private def self.escape_text(text : String) : String
+      HTML.escape(HTML.unescape(text))
+    end
+
+    # `class` is the one attribute whose value has to mean something to our
+    # stylesheet, so it is rebuilt from a fixed vocabulary rather than
+    # filtered. A span may only carry a highlighter token; a code or pre
+    # element may only carry the language of its fence. Everything else is
+    # dropped, so no shard author reaches a class of ours by writing one.
+    private def self.constrain_class(name : String, value : String) : String?
+      case name
+      when "span"
+        value if HIGHLIGHT_CLASSES.includes?(value)
+      when "code", "pre"
+        language_class(value)
+      end
+    end
+
+    # Markd builds this from the fence's info string, which is whatever the
+    # author typed after the backticks. Only the shape survives: one
+    # `language-` token of the characters a language name is spelled with,
+    # so `c++` and `objective-c` still name themselves and nothing else can.
+    private def self.language_class(value : String) : String?
+      return nil unless value.starts_with?("language-")
+
+      slug = String.build do |io|
+        value.lchop("language-").each_char do |char|
+          io << char.downcase if char.alphanumeric? || "+#-_".includes?(char)
+        end
+      end
+
+      "language-#{slug}" if slug.presence
     end
 
     # The id a heading answers to. An author who wrote one by hand keeps it,
