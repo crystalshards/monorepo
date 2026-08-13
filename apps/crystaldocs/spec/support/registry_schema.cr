@@ -49,18 +49,22 @@ class RegistrySchema
       SQL
   ]
 
-  @@created = false
+  # Created once, before the first example.
+  #
+  # Not at load time: this file is required before `spec/setup`, which is what
+  # creates the database, so there is nothing to create tables in yet. Not
+  # per example either, because then whether a registry read raises would
+  # depend on which example happened to run first.
+  def self.create_tables
+    DDL.each { |statement| RegistryDatabase.exec(statement) }
+  end
 
   # Empty tables, ready to be seeded.
   #
-  # Truncated here rather than left to the suite's own cleaner: that one reads
-  # the table list once, and these tables are created after it has looked.
+  # Truncated here rather than left to the suite's own cleaner. That one reads
+  # its table list when it is first asked, and these tables may not have
+  # existed yet when it looked.
   def self.reset
-    unless @@created
-      DDL.each { |statement| RegistryDatabase.exec(statement) }
-      @@created = true
-    end
-
     RegistryDatabase.exec(
       "TRUNCATE TABLE dependencies, shard_versions, shards RESTART IDENTITY"
     )
@@ -139,3 +143,7 @@ RegistryDatabase.configure do |settings|
 end
 
 RegistryDatabase.configured = true
+
+Spec.before_suite do
+  RegistrySchema.create_tables
+end
