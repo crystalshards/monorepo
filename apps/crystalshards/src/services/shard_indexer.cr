@@ -122,7 +122,7 @@ class ShardIndexer
     # already committed, so a dependency failure cannot cost the shard the
     # content this pass just fetched.
     indexed_version = store(snapshot, latest, content)
-    dependencies = resolve_dependencies(indexed_version)
+    dependencies = resolve_dependencies(indexed_version, content)
 
     Result.new(
       Outcome::Indexed,
@@ -135,11 +135,18 @@ class ShardIndexer
 
   # What one ref's fetch produced. `manifest_error` is a sentence for a reader,
   # never an exception name, because it is rendered on the version.
+  #
+  # `manifest_known` separates the two ways `manifest` ends up nil. The host
+  # answering "there is no shard.yml here", or answering with one that does not
+  # parse, are both facts about the repository at an immutable ref. The host
+  # failing to answer is a fact about the fetch and says nothing about the ref
+  # at all. Only the first kind may be written into the dependency graph.
   private record Content,
     ref : RepositorySnapshot::Ref,
     spec_yaml : String? = nil,
     manifest : ShardManifest? = nil,
     manifest_error : String? = nil,
+    manifest_known : Bool = true,
     readme : String? = nil,
     committed_at : Time? = nil
 
@@ -151,6 +158,7 @@ class ShardIndexer
     spec_yaml = nil
     manifest = nil
     manifest_error = nil
+    manifest_known = true
 
     case result = api.fetch_file(ref.ref, "shard.yml")
     in RepositorySource::FileResult::Found
@@ -166,6 +174,7 @@ class ShardIndexer
       manifest_error = ref.tag? ? "No shard.yml at tag #{ref.ref}." : "No shard.yml on branch #{ref.ref}."
     in RepositorySource::FileResult::Failed
       manifest_error = "shard.yml could not be fetched at #{ref.ref}: #{result.reason}."
+      manifest_known = false
     end
 
     Content.new(
@@ -173,6 +182,7 @@ class ShardIndexer
       spec_yaml: spec_yaml,
       manifest: manifest,
       manifest_error: manifest_error,
+      manifest_known: manifest_known,
       readme: fetch_readme(api, ref),
       # One dated commit per shard, for the version actually being indexed.
       # Every other tag keeps the repository's pushed_at, because dating them
@@ -263,13 +273,26 @@ class ShardIndexer
   # freshly fetched content over one would be a poor trade. The whole set is
   # recomputed on the next pass regardless.
   #
+  # Skipped entirely when the host did not answer for shard.yml. A ref is
+  # immutable, so a manifest read successfully yesterday still says what it
+  # said; a 500 from the file endpoint today is news about the host, not about
+  # the ref. Replacing the graph on it would delete true edges over a bad
+  # second and drop the shard out of every dependent count until the next pass
+  # happened to succeed. An ABSENT manifest is the opposite: the host answered,
+  # this ref really declares nothing, and the old edges have to go.
+  #
   # Bounded three ways. Only the one version whose manifest was fetched is
   # resolved, so a shard with 65 tags is still one unit of work rather than 65.
   # The resolver caps how many entries a single manifest may contribute. And
   # nothing here reads a host: a dependency is matched against shards already
   # in this database, so the graph spends no GitHub rate limit.
-  private def resolve_dependencies(shard_version : ShardVersion?) : Int32
-    return 0 unless shard_version
+  private def resolve_dependencies(shard_version : ShardVersion?, content : Content?) : Int32
+    return 0 unless shard_version && content
+
+    unless content.manifest_known
+      Log.info { "Left #{@shard.canonical_slug} dependency edges alone: #{content.manifest_error}" }
+      return 0
+    end
 
     UpdateDependenciesWorker.resolve_for(shard_version)
   rescue ex : Exception
@@ -394,9 +417,18 @@ class ShardIndexer
   private def apply_content(operation : SaveShardVersion, content : Content?) : Nil
     return unless content
 
-    operation.spec_yaml.value = content.spec_yaml
     operation.spec_error.value = content.manifest_error
     operation.indexed_at.value = Time.utc
+
+    # The host never answered for shard.yml, so nothing was learned about this
+    # ref and nothing derived from its manifest is overwritten. The stored
+    # manifest stays, and so do the dependency edges resolved from it, which is
+    # what makes that preservation durable: a later UpdateDependenciesWorker
+    # run reads this same row, and had it been nulled here it would delete
+    # every edge on the spot. Only the error and the attempt are new.
+    return unless content.manifest_known
+
+    operation.spec_yaml.value = content.spec_yaml
 
     if manifest = content.manifest
       operation.crystal_version.value = manifest.crystal
