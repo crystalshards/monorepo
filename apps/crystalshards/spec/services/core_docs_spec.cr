@@ -197,7 +197,7 @@ describe CrystalShards::CoreDocs do
           "types" => [
             {
               "full_name" => "HTTP",
-              "types" => CrystalShards::CoreDocs::REQUIRED_TYPES.map { |name| {"full_name" => name} },
+              "types"     => CrystalShards::CoreDocs::REQUIRED_TYPES.map { |name| {"full_name" => name} },
             },
           ],
         },
