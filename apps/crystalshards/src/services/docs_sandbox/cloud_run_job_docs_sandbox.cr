@@ -56,14 +56,14 @@ module CrystalShards
     LOG_CONTENT_TYPE = "text/plain"
 
     class Missing < Exception
-      def initialize(key : String)
+      def initialize(key : String, job_env : String)
         super(<<-MESSAGE)
         #{key} is not set.
 
         Documentation is built in a Cloud Run Job, and the launcher will not
         start one without knowing which. Production requires all of:
 
-          #{PROJECT_ENV}, #{JOB_ENV}, #{REGION_ENV}
+          #{PROJECT_ENV}, #{job_env}, #{REGION_ENV}
         MESSAGE
       end
     end
@@ -80,11 +80,27 @@ module CrystalShards
     # went unnoticed in production for want of a way to exercise it.
     class_property poller : Proc(String, {Int32, String})? = nil
 
-    def initialize(@storage : ScratchStorage = StorageService.build_scratch)
+    # `job_env` and the four invocation overrides exist for one caller other
+    # than an ordinary shard build: CrystalShards::CoreDocs, publishing the
+    # standard library's own documentation. Every default here reproduces the
+    # ordinary shard invocation byte for byte, so this class stays ignorant
+    # of what "core" means; it only knows that a caller may point it at a
+    # different Job and hand the container a few more named env vars. The
+    # entrypoint on the other side (apps/docs-build/entrypoint.sh) treats all
+    # four as optional and empty means unchanged, which is what makes this
+    # safe to default to nil rather than threading a boolean through.
+    def initialize(
+      @storage : ScratchStorage = StorageService.build_scratch,
+      @job_env : String = JOB_ENV,
+      @crystal_path : String? = nil,
+      @entry_file : String? = nil,
+      @project_name : String? = nil,
+      @project_version : String? = nil,
+    )
     end
 
     def description : String
-      "cloud run job #{env(JOB_ENV)} in #{env(REGION_ENV)}, no credentials in the build step, signed url in and out"
+      "cloud run job #{env(@job_env)} in #{env(REGION_ENV)}, no credentials in the build step, signed url in and out"
     end
 
     def build_docs(source_dir : String, output_dir : String) : Bool
@@ -167,28 +183,43 @@ module CrystalShards
 
     # The execution overrides. Everything the build gets, it gets here.
     def execution_request(source_key : String, docs_key : String, log_key : String) : String
+      env = [
+        {name: "DOCS_SOURCE_URL", value: @storage.scratch_signed_url(source_key, "GET")},
+        {name: "DOCS_UPLOAD_URL", value: @storage.scratch_signed_url(docs_key, "PUT", ARTIFACT_CONTENT_TYPE)},
+        # Passed rather than hardcoded in the image, so the header the
+        # Job sends always matches the content type the URL was signed
+        # for. Hardcoding it in two places is how that drifts into a
+        # 403 that reads like a broken build.
+        {name: "DOCS_UPLOAD_CONTENT_TYPE", value: ARTIFACT_CONTENT_TYPE},
+        # The return path for a reason. One more object, one more
+        # method, same expiry: the Job can say why it failed and can
+        # still say nothing else and reach nowhere else.
+        {name: "DOCS_LOG_UPLOAD_URL", value: @storage.scratch_signed_url(log_key, "PUT", LOG_CONTENT_TYPE)},
+        {name: "DOCS_LOG_CONTENT_TYPE", value: LOG_CONTENT_TYPE},
+      ]
+
+      # Present only for a caller that supplied them. An ordinary shard
+      # build sets none of the four, so the container sees exactly the five
+      # pairs above and invokes `crystal docs --format=json` at the
+      # tarball's root exactly as it always has.
+      if crystal_path = @crystal_path
+        env << {name: "DOCS_CRYSTAL_PATH", value: crystal_path}
+      end
+      if entry_file = @entry_file
+        env << {name: "DOCS_ENTRY_FILE", value: entry_file}
+      end
+      if project_name = @project_name
+        env << {name: "DOCS_PROJECT_NAME", value: project_name}
+      end
+      if project_version = @project_version
+        env << {name: "DOCS_PROJECT_VERSION", value: project_version}
+      end
+
       {
         overrides: {
           taskCount:          1,
           timeout:            "#{DocsSandbox.timeout_seconds}s",
-          containerOverrides: [
-            {
-              env: [
-                {name: "DOCS_SOURCE_URL", value: @storage.scratch_signed_url(source_key, "GET")},
-                {name: "DOCS_UPLOAD_URL", value: @storage.scratch_signed_url(docs_key, "PUT", ARTIFACT_CONTENT_TYPE)},
-                # Passed rather than hardcoded in the image, so the header the
-                # Job sends always matches the content type the URL was signed
-                # for. Hardcoding it in two places is how that drifts into a
-                # 403 that reads like a broken build.
-                {name: "DOCS_UPLOAD_CONTENT_TYPE", value: ARTIFACT_CONTENT_TYPE},
-                # The return path for a reason. One more object, one more
-                # method, same expiry: the Job can say why it failed and can
-                # still say nothing else and reach nowhere else.
-                {name: "DOCS_LOG_UPLOAD_URL", value: @storage.scratch_signed_url(log_key, "PUT", LOG_CONTENT_TYPE)},
-                {name: "DOCS_LOG_CONTENT_TYPE", value: LOG_CONTENT_TYPE},
-              ],
-            },
-          ],
+          containerOverrides: [{env: env}],
         },
       }.to_json
     end
@@ -219,7 +250,7 @@ module CrystalShards
 
     private def start(body : String) : String
       response = HTTP::Client.post(
-        "#{api_host}/v2/projects/#{env(PROJECT_ENV)}/locations/#{env(REGION_ENV)}/jobs/#{env(JOB_ENV)}:run",
+        "#{api_host}/v2/projects/#{env(PROJECT_ENV)}/locations/#{env(REGION_ENV)}/jobs/#{env(@job_env)}:run",
         headers: auth_headers,
         body: body
       )
@@ -332,7 +363,7 @@ module CrystalShards
 
     private def env(key : String) : String
       value = ENV[key]?
-      raise Missing.new(key) if value.nil? || value.blank?
+      raise Missing.new(key, @job_env) if value.nil? || value.blank?
       value
     end
   end

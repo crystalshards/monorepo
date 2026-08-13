@@ -18,9 +18,13 @@ module DocsRows
       ON CONFLICT (package_name) DO NOTHING
       SQL
 
+    # published_at is a real, NOT NULL column on doc_versions: PackageRegistration
+    # sets it from the registry release's own timestamp. This helper has no
+    # release to read one from, so it uses `now`; nothing plants a row through
+    # this path and then asserts on published_at.
     DocsDatabase.exec(<<-SQL, package_name, version, build_status, "#{package_name}/#{version}", now)
-      INSERT INTO doc_versions (doc_id, version, build_status, storage_path, created_at, updated_at)
-      SELECT id, $2, $3, $4, $5, $5 FROM docs WHERE package_name = $1
+      INSERT INTO doc_versions (doc_id, version, published_at, build_status, storage_path, created_at, updated_at)
+      SELECT id, $2, $5, $3, $4, $5, $5 FROM docs WHERE package_name = $1
       ON CONFLICT (doc_id, version) DO NOTHING
       SQL
   end

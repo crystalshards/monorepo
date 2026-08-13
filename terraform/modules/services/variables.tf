@@ -46,6 +46,23 @@ variable "docs_build_image_name" {
   default     = "docs-build"
 }
 
+variable "docs_build_core_image_name" {
+  description = <<-DESC
+    Image name within the repository for the docs-build-core Job, which
+    publishes the Crystal standard library's own documentation.
+
+    Built from the SAME apps/docs-build Dockerfile as docs_build_image_name,
+    with --build-arg EXTRA_PACKAGES="llvm-dev llvm-static" baked in at image
+    build time. It is a distinct image, not a distinct Dockerfile: the
+    confinement (the seccomp filter, the unprivileged compile user, the
+    allowlisted invocation env vars) has to survive the extra packages
+    unchanged, and a second Dockerfile is the one thing guaranteed to let it
+    drift.
+  DESC
+  type        = string
+  default     = "docs-build-core"
+}
+
 variable "cloud_sql_connection_name" {
   description = "Instance connection name, mounted as the /cloudsql/<connection_name> socket volume"
   type        = string

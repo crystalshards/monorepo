@@ -38,6 +38,16 @@ output "docs_build_job" {
   value       = google_cloud_run_v2_job.docs_build.name
 }
 
+output "docs_build_core_job" {
+  description = "Name of the Job that builds and publishes the Crystal standard library's own documentation"
+  value       = google_cloud_run_v2_job.docs_build_core.name
+}
+
+output "publish_core_docs_job" {
+  description = "Name of the trusted bootstrap Job that publishes the Crystal standard library's own documentation"
+  value       = google_cloud_run_v2_job.publish_core_docs.name
+}
+
 output "migrate_jobs" {
   description = "Map of app slug to the name of its schema migration Job"
   value       = { for app, job in google_cloud_run_v2_job.app_migrations : app => job.name }
