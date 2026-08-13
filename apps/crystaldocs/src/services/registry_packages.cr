@@ -595,5 +595,191 @@ module CrystalDocs
 
       chosen
     end
+
+    # A dependency of one published version, resolved as far as this app can
+    # act on it: the key it addresses the package by, and one release.
+    #
+    # Deliberately not a name and a requirement, which is what the registry
+    # stores and what `RegistryMetadata::DeclaredDependency` carries. A
+    # requirement cannot be built. A build needs one release, and it has to be
+    # the release the parent's own requirement admits, because that is the one
+    # a reader of the parent will meet.
+    record ResolvedDependency, package_name : String, version : String
+
+    # What one published version declares that other documentation depends on.
+    #
+    # `crystal_requirement` is `shard_versions.crystal_version`, which despite
+    # the column name holds a requirement rather than a version: ">= 1.12.0"
+    # and "1.2.0" are both real values in this system.
+    #
+    # `none` is the answer for a package the registry has never indexed, for a
+    # version it does not hold, and for an environment with no registry
+    # configured. All three mean the same thing to a caller: there is nothing
+    # further to commission, and whatever was asked for directly is untouched.
+    record Declaration,
+      crystal_requirement : String?,
+      dependencies : Array(ResolvedDependency) do
+      def self.none : Declaration
+        new(nil, [] of ResolvedDependency)
+      end
+    end
+
+    # How a package key is matched against the registry.
+    #
+    # `Listing#key` addresses a row by its canonical slug and falls back to its
+    # name only when the row has no slug, so a predicate matching slugs alone
+    # would find nothing for every row that predates host qualified identity,
+    # and one matching names alone would answer the wrong repository as soon as
+    # two publish under one name. Both arms, with the slug winning.
+    #
+    # $1 is the key. It is interpolated into the statements below so the two
+    # cannot drift apart, and it interpolates no caller data.
+    PACKAGE_KEY_MATCH = <<-SQL
+      (
+        shards.canonical_slug = $1
+        OR (shards.canonical_slug IS NULL AND shards.name = $1)
+      )
+      SQL
+
+    # The version column is selected alongside the requirement purely so the
+    # row has a column that is never NULL, exactly as `RegistryMetadata` does
+    # it: reading only `crystal_version` makes "no such published version" and
+    # "published, declared no Crystal" arrive as the same nil.
+    CRYSTAL_REQUIREMENT_SQL = <<-SQL
+      SELECT shard_versions.version, shard_versions.crystal_version
+      FROM shard_versions
+      JOIN shards ON shards.id = shard_versions.shard_id
+      WHERE #{PACKAGE_KEY_MATCH}
+        AND shard_versions.version = $2
+      LIMIT 1
+      SQL
+
+    # Every runtime dependency of one published version, paired with every
+    # release of that dependency the registry holds. One round trip, because
+    # the alternative is a query per dependency on a path a reader is waiting
+    # on.
+    #
+    # Development dependencies are excluded for the same reason
+    # `RegistryMetadata` excludes them: a published API can only mention types
+    # from what it links against at runtime, so a linter or a spec helper is
+    # not documentation a reader of this package will follow a link into.
+    #
+    # The join onto `dependent_shards` is an inner join, and that is the
+    # "registry does not know this dependency" rule rather than an oversight.
+    # A dependency row carries a `dependent_shard_id` only when the registry
+    # managed to resolve the shard.yml entry to a repository it has indexed,
+    # and most runtime rows today have none. Without one there is no
+    # repository to clone, no release list to resolve a requirement against
+    # and no key to address a page by, so there is nothing to commission. Those
+    # rows drop out here and the parent is unaffected.
+    #
+    # Yanked releases are excluded because the registry has already said not to
+    # use them, so building one would spend a compile on documentation this
+    # site would not choose to link to. A dependency whose every release is
+    # yanked therefore contributes no rows at all, which reads the same way as
+    # having none.
+    DEPENDENCY_RELEASES_SQL = <<-SQL
+      SELECT
+        COALESCE(dependent_shards.canonical_slug, dependent_shards.name),
+        dependencies.version_requirement,
+        dependency_versions.version
+      FROM dependencies
+      JOIN shard_versions ON shard_versions.id = dependencies.shard_version_id
+      JOIN shards ON shards.id = shard_versions.shard_id
+      JOIN shards AS dependent_shards
+        ON dependent_shards.id = dependencies.dependent_shard_id
+      JOIN shard_versions AS dependency_versions
+        ON dependency_versions.shard_id = dependent_shards.id
+        AND dependency_versions.yanked = false
+      WHERE #{PACKAGE_KEY_MATCH}
+        AND shard_versions.version = $2
+        AND dependencies.scope = 'runtime'
+      SQL
+
+    # What this exact release depends on, resolved to things this site can
+    # address and build.
+    #
+    # Deliberately not rescued. The one caller commissions the package a reader
+    # asked for before it asks this question, and rescues around the answer, so
+    # a registry that breaks mid-request costs the cascade and nothing else.
+    # Swallowing the failure here as well would put the reason in two places
+    # and hide a broken registry from anything that ever calls this directly.
+    def declaration(package_key : String, version : String) : Declaration
+      return Declaration.none unless RegistryDatabase.configured?
+
+      crystal_requirement = RegistryDatabase.query_all(
+        CRYSTAL_REQUIREMENT_SQL,
+        package_key,
+        version,
+        as: {String, String?}
+      ).first?.try(&.[1])
+
+      Declaration.new(crystal_requirement, resolved_dependencies(package_key, version))
+    end
+
+    private def resolved_dependencies(package_key : String, version : String) : Array(ResolvedDependency)
+      requirements = {} of String => String
+      releases = {} of String => Array(String)
+
+      RegistryDatabase.query_all(
+        DEPENDENCY_RELEASES_SQL,
+        package_key,
+        version,
+        as: {String, String, String}
+      ).each do |(key, requirement, release)|
+        requirements[key] = requirement
+        (releases[key] ||= [] of String) << release
+      end
+
+      resolved = [] of ResolvedDependency
+
+      requirements.each do |key, raw|
+        requirement = Semver::Requirement.parse?(raw)
+        # A requirement this app cannot read is not a licence to pick a
+        # release. It contributes nothing, exactly as the same string
+        # contributes nothing when it reaches `DependencyIndex`.
+        next unless requirement
+
+        selected = self.class.best_version(releases[key], requirement)
+        next unless selected
+
+        resolved << ResolvedDependency.new(key, selected)
+      end
+
+      resolved
+    end
+
+    # The highest release satisfying a requirement, as the string the registry
+    # holds rather than as a reparsed version.
+    #
+    # The string is what matters. It is the tag a build clones and the segment
+    # a reader's URL carries, and rendering a parsed version back out loses the
+    # difference between "1.2" and "1.2.0", which are not the same tag.
+    #
+    # Highest rather than lowest because that is what `shards` resolves a
+    # requirement to, so it is the release the parent was actually built
+    # against. Prereleases are excluded by `satisfied_by?` unless the
+    # requirement names one, so this cannot pick an unshipped API by accident.
+    #
+    # Nil is a real answer: no release satisfies, or none of them parses. It
+    # never means "take the newest instead".
+    def self.best_version(versions : Array(String), requirement : Semver::Requirement) : String?
+      best : Semver::Version? = nil
+      chosen : String? = nil
+
+      versions.each do |raw|
+        parsed = Semver::Version.parse?(raw)
+        next unless parsed
+        next unless requirement.satisfied_by?(parsed)
+
+        current = best
+        if current.nil? || parsed > current
+          best = parsed
+          chosen = raw
+        end
+      end
+
+      chosen
+    end
   end
 end

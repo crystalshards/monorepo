@@ -12,9 +12,19 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
   alias Listing = CrystalDocs::RegistryPackages::Listing
   alias Catalogue = CrystalDocs::RegistryPackages::Catalogue
   alias Suggestion = CrystalDocs::RegistryPackages::Suggestion
+  alias Declaration = CrystalDocs::RegistryPackages::Declaration
+  alias ResolvedDependency = CrystalDocs::RegistryPackages::ResolvedDependency
 
   getter packages : Hash(String, Package)
   getter releases : Hash(String, Array(Release))
+
+  # What each published version declares, keyed "<package key>/<version>".
+  #
+  # Scripted already resolved, because resolving a requirement against a
+  # release list is `RegistryPackages.best_version`, which is a pure function
+  # and is tested as one. Reproducing it here would let a cascade example pass
+  # against a stub that resolves differently from the query it stands in for.
+  getter declarations : Hash(String, Declaration)
 
   # Whether the registry answers at all. False is the "no registry configured,
   # or it could not be reached" case, which is a different answer from "no such
@@ -24,8 +34,19 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
   def initialize(
     @packages : Hash(String, Package) = {} of String => Package,
     @releases : Hash(String, Array(Release)) = {} of String => Array(Release),
+    @declarations : Hash(String, Declaration) = {} of String => Declaration,
     @reachable : Bool = true,
   )
+  end
+
+  # Nothing declared is the answer for a version this registry has never heard
+  # of, which is also what the real reader answers for one, so an example that
+  # scripts no declaration is exercising a real state rather than a gap in the
+  # stub.
+  def declaration(package_key : String, version : String) : Declaration
+    return Declaration.none unless reachable?
+
+    @declarations["#{package_key}/#{version}"]? || Declaration.none
   end
 
   def find(slug : String) : Lookup
@@ -177,6 +198,27 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
     @releases[slug] = versions.map_with_index do |version, index|
       Release.new(version, Time.utc(2024, 1, 1) + index.days, yanked.includes?(version))
     end
+
+    self
+  end
+
+  # Records what one published version declares: the Crystal requirement it
+  # copied out of shard.yml, and the dependencies the registry could resolve,
+  # each already narrowed to the release the requirement admits.
+  #
+  # Dependencies are given as key => version rather than key => requirement,
+  # matching `Declaration`, which carries releases and not requirements
+  # because a requirement cannot be built.
+  def declares(
+    key : String,
+    version : String,
+    crystal : String? = nil,
+    dependencies : Hash(String, String) = {} of String => String,
+  ) : StubRegistryPackages
+    @declarations["#{key}/#{version}"] = Declaration.new(
+      crystal_requirement: crystal,
+      dependencies: dependencies.map { |name, resolved| ResolvedDependency.new(name, resolved) }
+    )
 
     self
   end

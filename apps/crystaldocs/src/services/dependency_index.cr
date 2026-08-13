@@ -25,6 +25,14 @@ module CrystalDocs
   # documented version, or with metadata we cannot read, contributes no names
   # at all, and those names stay plain text.
   #
+  # Every package in here, asked for and answered, is addressed by the key
+  # this app documents it under, which is `docs.package_name` and is what
+  # `PackagePaths` turns into a URL. That is the canonical slug for anything
+  # the registry indexed, and a bare name for the standard library and the
+  # rows predating host qualified identity. The registry speaks in shard
+  # names, so `RegistryMetadata` translates at the boundary; nothing on this
+  # side of it ever holds a bare shard name that a slug was meant.
+  #
   # Ambiguity is the other hazard: names like `Config` or `Error` are defined
   # by more than one shard, and picking a winner sends a reader to a different
   # type entirely. A name owned by two of the selected packages stays plain
@@ -80,16 +88,21 @@ module CrystalDocs
       # standard library nor any dependency can be pinned to the right era.
       return no_links unless crystal_requirement
 
-      names = source.dependencies.map(&.name)
-      names << CORE_PACKAGE
-      names.uniq!
-      documented = documented_versions(names)
+      keys = source.dependencies.map(&.key)
+      keys << CORE_PACKAGE
+      keys.uniq!
+      documented = documented_versions(keys)
 
-      # The Crystal version this artifact is read against, chosen from the
-      # standard library builds we hold. Taking it from our own documentation
-      # rather than from the registry keeps it to versions that can actually
-      # be linked, and the standard library reaches this site through the same
-      # pipeline as every other package, so it is here.
+      # The standard library build this artifact is read against, chosen from
+      # the builds we hold. Taking it from our own documentation rather than
+      # from the registry keeps it to versions that can actually be linked,
+      # and the standard library reaches this site through the same pipeline
+      # as every other package, so it is here.
+      #
+      # Nil is a real answer, and it means that era of the standard library
+      # has not been built. It costs standard library links and nothing else:
+      # an unbuilt compiler release says nothing about whether a dependency's
+      # documentation is correct to link to.
       selected_crystal = highest(
         (documented[CORE_PACKAGE]? || Set(String).new).map do |core_version|
           RegistryMetadata::PublishedVersion.new(core_version, nil)
@@ -97,31 +110,36 @@ module CrystalDocs
         crystal_requirement,
         nil
       )
-      return no_links unless selected_crystal
 
-      # Reparsed rather than threaded through, because the selection above
-      # deals in the strings that address a page and this deals in ordering.
-      crystal = Semver::Version.parse?(selected_crystal)
+      # The compiler era every candidate below is checked against. The
+      # standard library build names it exactly when there is one; otherwise
+      # the floor of the shard's own declaration does, which is a fact about
+      # the shard rather than about what this site has built.
+      #
+      # With neither there is no era to check against, and skipping the check
+      # would link releases that never compiled for this reader, so nothing is
+      # linked at all.
+      crystal = Semver::Version.parse?(selected_crystal) || crystal_requirement.floor
       return no_links unless crystal
 
       locations = [] of Location
-      locations << {package: CORE_PACKAGE, version: selected_crystal}
+      locations << {package: CORE_PACKAGE, version: selected_crystal} if selected_crystal
 
-      published = registry.published_versions(names)
+      published = registry.published_versions(keys)
 
       source.dependencies.each do |dependency|
         # Core is never resolved through a declared dependency: a shard does
         # not list the standard library, and the Crystal requirement above is
         # the authority on which version applies.
-        next if dependency.name == CORE_PACKAGE
+        next if dependency.key == CORE_PACKAGE
 
         requirement = Semver::Requirement.parse?(dependency.requirement)
         next unless requirement
 
-        candidates = published[dependency.name]?
+        candidates = published[dependency.key]?
         next unless candidates
 
-        available = documented[dependency.name]?
+        available = documented[dependency.key]?
         next unless available
 
         selected = highest(
@@ -131,7 +149,7 @@ module CrystalDocs
         )
         next unless selected
 
-        locations << {package: dependency.name, version: selected}
+        locations << {package: dependency.key, version: selected}
       end
 
       index_for(locations, package_name)
@@ -175,12 +193,13 @@ module CrystalDocs
     end
 
     # Only versions with a successful build, because those are the only ones
-    # we can render a page for.
-    private def self.documented_versions(package_names : Array(String)) : Hash(String, Set(String))
+    # we can render a page for. Keyed on `docs.package_name`, which is the key
+    # every caller here already holds.
+    private def self.documented_versions(package_keys : Array(String)) : Hash(String, Set(String))
       documented = {} of String => Set(String)
-      return documented if package_names.empty?
+      return documented if package_keys.empty?
 
-      DocQuery.new.preload_doc_versions.package_name.in(package_names).results.each do |doc|
+      DocQuery.new.preload_doc_versions.package_name.in(package_keys).results.each do |doc|
         versions = Set(String).new
 
         doc.doc_versions.each do |doc_version|
