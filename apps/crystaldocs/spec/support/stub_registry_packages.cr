@@ -11,6 +11,7 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
   alias Lookup = CrystalDocs::RegistryPackages::Lookup
   alias Listing = CrystalDocs::RegistryPackages::Listing
   alias Catalogue = CrystalDocs::RegistryPackages::Catalogue
+  alias Suggestion = CrystalDocs::RegistryPackages::Suggestion
   alias Declaration = CrystalDocs::RegistryPackages::Declaration
   alias ResolvedDependency = CrystalDocs::RegistryPackages::ResolvedDependency
 
@@ -117,6 +118,30 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
     return nil unless reachable?
 
     @packages.size.to_i64
+  end
+
+  # The typeahead, answered from the same scripted packages and overridden for
+  # the same reason `catalogue` is: inherited, it would query `RegistryDatabase`
+  # and answer from a database another app owns and truncates.
+  #
+  # Prefix matching, name or slug, alphabetical, capped by the limit. Those are
+  # the four things `SUGGEST_SQL` does and the four things the examples are
+  # about, so the stub has to do all of them or an example asserting a prefix
+  # would pass against a stub that matches anywhere.
+  def suggest(term : String, limit : Int32) : Array(Suggestion)
+    return [] of Suggestion unless reachable?
+
+    needle = term.strip.downcase
+    return [] of Suggestion if needle.empty?
+
+    @packages.values
+      .select do |package|
+        package.name.downcase.starts_with?(needle) ||
+          package.slug.downcase.starts_with?(needle)
+      end
+      .sort_by { |package| {package.name, package.slug} }
+      .first(limit)
+      .map { |package| Suggestion.new(slug: package.slug, name: package.name) }
   end
 
   private def matches?(package : Package, term : String?) : Bool

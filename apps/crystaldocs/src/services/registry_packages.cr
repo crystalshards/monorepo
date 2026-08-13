@@ -62,18 +62,35 @@ module CrystalDocs
       repository_url : String?,
       latest_version : String? do
       # What this app addresses the package by.
-      #
-      # `canonical_slug` is nullable for rows predating host qualified
-      # identity, and `SaveShard` has required one since, so in practice this
-      # is always the slug. When it is not, falling back to the name is the
-      # same choice crystalshards makes in `Shard#url_path` and lands on the
-      # bare name route this app still serves, which is where those rows live.
-      #
-      # It is also the key the local build state is joined on, because
-      # `docs.package_name` holds exactly these two shapes.
       def key : String
-        slug || name
+        RegistryPackages.key(slug, name)
       end
+    end
+
+    # One offer from the typeahead: enough to draw a row and follow it, and
+    # nothing else. The card fields are all absent on purpose, because reading
+    # them would mean selecting and shipping five more columns per keystroke
+    # for a list that shows a name.
+    record Suggestion,
+      slug : String?,
+      name : String do
+      def key : String
+        RegistryPackages.key(slug, name)
+      end
+    end
+
+    # What this app addresses a package by, decided once for every record here.
+    #
+    # `canonical_slug` is nullable for rows predating host qualified identity,
+    # and `SaveShard` has required one since, so in practice this is always
+    # the slug. When it is not, falling back to the name is the same choice
+    # crystalshards makes in `Shard.url_path` and lands on the bare name route
+    # this app still serves, which is where those rows live.
+    #
+    # It is also the key the local build state is joined on, because
+    # `docs.package_name` holds exactly these two shapes.
+    def self.key(slug : String?, name : String) : String
+      slug || name
     end
 
     # The outcome of asking the registry about one slug.
@@ -256,6 +273,33 @@ module CrystalDocs
       ORDER BY page.documented DESC, page.name ASC, page.id ASC
       SQL
 
+    # The typeahead's query, and deliberately not a narrower `CATALOGUE_SQL`.
+    #
+    # Three differences, each of them the reason this is separate. It counts
+    # nothing, because a suggestion list has no pager to feed and the count is
+    # the half of the catalogue statement that cannot be bounded by a LIMIT.
+    # It reads two columns instead of six. And it matches prefixes rather than
+    # anywhere in the row, which is what lets an index answer it: the browse
+    # search is `%term%` and a btree cannot serve that, while `lower(name)
+    # LIKE 'term%'` is served by the expression indexes crystalshards'
+    # migration 17 adds to this table. The description is not matched at all,
+    # for the same reason: a prefix of a description is not something anybody
+    # types into a search box.
+    #
+    # Alphabetical, with the primary key breaking ties, and no documented-first
+    # term. The catalogue leads with documented packages because a browser is
+    # being shown where to start; a reader typing a name already knows which
+    # package they want, and that ordering costs a scan of every built package
+    # in the other database, which is not a per-keystroke price.
+    SUGGEST_SQL = <<-SQL
+      SELECT shards.canonical_slug, shards.name
+      FROM shards
+      WHERE lower(shards.name) LIKE $1
+         OR lower(shards.canonical_slug) LIKE $1
+      ORDER BY shards.name ASC, shards.id ASC
+      LIMIT $2
+      SQL
+
     # How many shards the registry holds.
     #
     # `count(*)` with no predicate, which is exactly the query crystalshards
@@ -400,6 +444,57 @@ module CrystalDocs
       return nil if stripped.empty?
 
       "%#{stripped}%"
+    end
+
+    # The packages whose name or repository starts with what the reader has
+    # typed so far.
+    #
+    # An empty array when the registry cannot be reached, and that is the
+    # right degradation here rather than the `unavailable` distinction
+    # `catalogue` draws. A catalogue that came back empty would be a claim
+    # that the ecosystem holds nothing, which the browse page has to refuse to
+    # make; a suggestion list that comes back empty says only that there is
+    # nothing to suggest, and the reader still has a search form that works.
+    # Nothing caches it and nothing reads absence from it.
+    def suggest(term : String, limit : Int32) : Array(Suggestion)
+      return [] of Suggestion unless RegistryDatabase.configured?
+
+      pattern = prefix_pattern(term)
+      return [] of Suggestion unless pattern
+
+      RegistryDatabase.query_all(
+        SUGGEST_SQL,
+        pattern,
+        limit,
+        as: {String?, String}
+      ).map { |(slug, name)| Suggestion.new(slug: slug, name: name) }
+    rescue ex
+      Log.warn { "Could not read suggestions from the registry: #{ex.message}" }
+      [] of Suggestion
+    end
+
+    # The bound parameter for a prefix match, or nil when there is nothing to
+    # ask.
+    #
+    # Lowercased because the index holds `lower(...)`: a pattern carrying a
+    # capital would match nothing rather than falling back to a scan, so this
+    # is correctness and not only cost.
+    #
+    # `%` and `_` are LIKE's own wildcards and are escaped. A reader typing
+    # "%" would otherwise match every shard in the registry, which is both the
+    # wrong answer and the one input that turns a bounded index range into a
+    # full scan. The backslash is escaped first, or it would escape the
+    # escapes.
+    private def prefix_pattern(term : String) : String?
+      stripped = term.strip
+      return nil if stripped.empty?
+
+      escaped = stripped.downcase
+        .gsub("\\", "\\\\")
+        .gsub("%", "\\%")
+        .gsub("_", "\\_")
+
+      "#{escaped}%"
     end
 
     # How many shards the registry holds, or nil when it could not be asked.
