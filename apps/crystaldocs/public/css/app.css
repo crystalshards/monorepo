@@ -1014,11 +1014,18 @@ main.container:has(.docs-shell) {
 /* ---- left rail --------------------------------------------------------- */
 
 /* The masthead is static, so top:0 puts the rail directly under it while the
-   header is on screen and pins it to the viewport once the header scrolls off. */
+   header is on screen and pins it to the viewport once the header scrolls
+   off. max-height, not height: a package with hundreds of types needs the
+   cap so the tree scrolls inside its own box instead of pushing the page
+   down; a package with three needs no cap at all, so the rail ends with
+   its last link instead of carrying a viewport's worth of blank surface
+   colour past it. min-height:100vh did exactly that on every short page:
+   forced the rail's own background and border-right to run a full screen
+   tall regardless of what was in it, so a one-type shard read as a broken
+   sidebar sitting beside a normal page. */
 .docs-sidebar {
   position: sticky;
   top: 0;
-  min-height: 100vh;
   max-height: 100vh;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1599,6 +1606,25 @@ a.docs-external {
   background-position: top right;
   background-repeat: no-repeat;
   background-size: var(--facet) var(--facet);
+}
+
+/* A documentation page's reading column runs edge to edge instead of under
+   --shell (see the .docs-shell rules above), so a strip still clamped and
+   centred to --shell no longer lines up with anything on that kind of
+   page: measured, it sat inset from the sidebar's own edge by a few pixels
+   of coincidence and stopped a couple hundred short of where the reading
+   column actually ends. Unclamp it for exactly the pages that unclamp
+   their content, keyed off the same .docs-shell marker the masthead rule
+   above uses, so the two can never disagree.
+
+   The top margin also drops to 0 here. .docs-main already ends in a
+   var(--bay) of its own bottom padding, so this strip's usual top margin
+   stacked on top of that padding was two section-breaks' worth of empty
+   space above it where a reader expects one. */
+body:has(.docs-shell) .job-ad {
+  width: 100%;
+  max-width: none;
+  margin: 0;
 }
 
 .job-ad-head {
