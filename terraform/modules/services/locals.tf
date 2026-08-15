@@ -152,11 +152,12 @@ locals {
       LUCKY_ENV           = "production"
       DISCOVERY_MAX_PAGES = tostring(var.discovery_max_pages)
 
-      # The Job runs three bounded phases against one rate limit: it seeds from
-      # GitHub's star ranking, then sweeps for new repositories, then indexes the
-      # stalest shards it can still afford. Every bound is published, because
-      # tuning one without seeing the others is how a crawl starves the indexer
-      # on exactly the runs that discovered the most to index.
+      # The Job runs four bounded phases: it seeds from GitHub's star ranking,
+      # sweeps for new repositories, indexes the stalest shards it can still
+      # afford, then registers the repositories its own dependency graph names.
+      # Every bound is published, because tuning one without seeing the others
+      # is how a crawl starves the indexer on exactly the runs that discovered
+      # the most to index.
       #
       # The seeding bound is separate from DISCOVERY_MAX_PAGES rather than folded
       # into it because the two pages cost different things. A page of the
@@ -166,6 +167,12 @@ locals {
       DISCOVERY_HIGH_VALUE_PAGES = tostring(var.discovery_high_value_pages)
 
       INDEX_MAX_SHARDS = tostring(var.index_max_shards)
+
+      # The one bound in this set that is not sized against a rate limit. The
+      # dependency harvest spends no host requests, so it is bounded against
+      # INDEX_MAX_SHARDS instead: it must not register shards faster than
+      # indexing can give them content. See its variable.
+      DEPENDENCY_MAX_CANDIDATES = tostring(var.dependency_max_candidates)
     }
     secret_env = merge({
       DATABASE_URL = var.database_url_secret_ids["crystalshards"]

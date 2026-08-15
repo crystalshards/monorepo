@@ -53,6 +53,7 @@ require "./queries/**"
 require "./operations/mixins/**"
 require "./operations/**"
 require "./services/discovery/sweep"
+require "./services/discovery/dependency_sweep"
 require "./services/index_sweep"
 
 # config/log.cr is not required here: it configures Lucky's request logging and
@@ -66,8 +67,8 @@ require "./services/index_sweep"
 # Skipped block they were describing.
 Log.setup(:info, Log::IOBackend.new(STDOUT, dispatcher: :sync))
 
-# Both phases are configured before either runs. A bad INDEX_MAX_SHARDS should
-# not be discovered forty minutes into a crawl, after the budget is spent.
+# Every phase is configured before any of them runs. A bad INDEX_MAX_SHARDS
+# should not be discovered forty minutes into a crawl, after the budget is spent.
 options = begin
   Discovery::Sweep::Options.from_env
 rescue ex : Discovery::Sweep::ConfigurationError
@@ -85,6 +86,13 @@ rescue ex : IndexSweep::ConfigurationError
   exit 2
 end
 
+dependency_options = begin
+  Discovery::DependencySweep::Options.from_env
+rescue ex : Discovery::DependencySweep::ConfigurationError
+  STDERR.puts ex.message
+  exit 2
+end
+
 result = Discovery::Sweep.run(options)
 Discovery::Sweep.render(result, STDOUT)
 STDOUT.puts
@@ -96,11 +104,28 @@ STDOUT.puts
 # outage that never touched it.
 index_report = IndexSweep.run(index_options)
 IndexSweep.render(index_report, STDOUT)
+STDOUT.puts
+
+# The dependency graph harvest goes LAST, and the order is the whole reason it
+# is cheap.
+#
+# It reads leads out of manifests indexing has already stored, so running it
+# after indexing harvests the 300 manifests this run just fetched rather than
+# the ones the previous run did. Every other ordering delays a lead by a full
+# cadence for no gain: the newly registered rows cannot be indexed by this run
+# either way, because the never-indexed backlog is longer than one run's bound
+# and they would sort behind it.
+#
+# It spends no host requests at all, so unlike the phases above it takes nothing
+# from anything that ran before it and cannot be starved by them being throttled.
+dependency_report = Discovery::DependencySweep.run(dependency_options)
+Discovery::DependencySweep.render(dependency_report, STDOUT)
 STDOUT.flush
 
-# Either half failing fails the Job. `Discovery::Sweep` already folds its own two
+# Any phase failing fails the Job. `Discovery::Sweep` already folds its own two
 # phases into one exit code, so a seeding pass that could not run fails the Job
-# through the same path a host does. A run that crawled nothing and a run that
-# indexed nothing are both worth a red mark, and collapsing them to the worse of
-# the two is what lets one alert cover the Job rather than one per phase.
-exit [result.exit_code, index_report.exit_code].max
+# through the same path a host does. A run that crawled nothing, a run that
+# indexed nothing and a run whose leads the registry refused to store are all
+# worth a red mark, and collapsing them to the worst of the three is what lets
+# one alert cover the Job rather than one per phase.
+exit [result.exit_code, index_report.exit_code, dependency_report.exit_code].max

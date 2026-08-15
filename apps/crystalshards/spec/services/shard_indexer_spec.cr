@@ -508,6 +508,31 @@ describe ShardIndexer do
       row.index_error.not_nil!.should contain("403")
       row.indexed_at.should be_nil
     end
+
+    # A renamed or transferred repository answers 301, and that used to land in
+    # the catch-all and be recorded as "metadata answered HTTP 301": a fault,
+    # retried on every pass forever, on a row that will never answer under that
+    # name again. It is not a fault. That owner and name have stopped naming a
+    # repository, which is what unavailable means.
+    #
+    # This matters more now that the dependency graph is a discovery source.
+    # Manifests outlive renames, so they name repositories under their old
+    # identities long after the move: a sample of 599 indexed manifests named
+    # 20 such repositories, every one of which would otherwise become a
+    # permanently erroring blank row.
+    it "marks a renamed repository unavailable rather than erroring forever" do
+      shard = indexable
+      github = RecordedGithub.new("kemalcr/kemal").repository_status(301)
+
+      result = RecordedGithub.install(github) { ShardIndexer.index(shard) }
+
+      result.outcome.should eq(ShardIndexer::Outcome::Unavailable)
+
+      row = reload(shard)
+      row.unavailable_at.should_not be_nil
+      row.index_error.not_nil!.should contain("has moved")
+      row.indexed_at.should be_nil
+    end
   end
 
   describe "hosts" do

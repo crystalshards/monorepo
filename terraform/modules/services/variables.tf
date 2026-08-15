@@ -212,6 +212,42 @@ variable "index_max_shards" {
   }
 }
 
+variable "dependency_max_candidates" {
+  description = <<-DESC
+    How many repositories one scheduled run registers from the dependency graph
+    it already holds. Published to the Job as DEPENDENCY_MAX_CANDIDATES.
+
+    This is the fourth phase and the only one that spends no host requests at
+    all. Its leads are manifests already indexed here: a shard.yml declaring
+    `radix: {github: luislavena/radix}` names that repository exactly, whether
+    or not any crawler ever found it. It exists because the crawl's ceiling is
+    not its speed. github.com reported completed_exhaustive with roughly 5000
+    shards registered, which is everything GitHub's code search index will
+    admit for a root shard.yml, and the three other hosts have no credential at
+    all. A dependency edge reaches all four, plus forks and anything code
+    search never indexed.
+
+    So the bound is not about a rate limit, and raising it starves nothing.
+    It is about index_max_shards. A registered shard has identity and no
+    content until the indexing phase reaches it, so harvesting more leads per
+    run than indexing clears would put empty pages in the listing and leave
+    them there. 200 sits under the 300 indexing takes, with room for the
+    re-index traffic sharing that number, which keeps a lead's time to content
+    at a run or two.
+
+    Leads are never lost to the bound. An unregistered slug stays in the
+    dependency table and the next run takes the next batch, most depended-upon
+    first, so this sets the rate and never the reach.
+  DESC
+  type        = number
+  default     = 200
+
+  validation {
+    condition     = var.dependency_max_candidates >= 1 && var.dependency_max_candidates <= 2000
+    error_message = "dependency_max_candidates must be between 1 and 2000. Below 1 the phase would harvest nothing and report success; above 2000 one run registers more shards than several runs of indexing can give content to, and the listing fills with rows that have no page behind them."
+  }
+}
+
 variable "discovery_timeout_seconds" {
   description = <<-DESC
     Ceiling on one scheduled sweep, as the discover-shards Job's task timeout.

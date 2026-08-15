@@ -133,6 +133,26 @@ class GithubRepositoryApi < RepositorySource
     case response.status
     when 200 then JSON.parse(response.body)
     when 404 then raise RepositorySource::NotFound.new("#{repo_path} is not a repository this token can see")
+    when 301, 302, 307, 308
+      # The repository was renamed or transferred, so this owner/name no longer
+      # addresses one. NotFound rather than Error, because those two go to
+      # different places: Error is retried on every pass forever and renders as
+      # a fault, while NotFound marks the row unavailable, which is exactly what
+      # a slug that has stopped naming a repository is.
+      #
+      # The new name is deliberately not chased. GitHub's redirect points at
+      # /repositories/<id> and its body carries no owner or repo, so learning
+      # the new slug costs a second request, and adopting it would silently
+      # merge two identities the registry keys rows on. A moved repository is
+      # reported as moved; re-pointing it is a decision, not a fetch.
+      #
+      # This is reachable from ordinary rows, not only from renamed ones the
+      # dependency graph surfaces: any registered repository renamed after
+      # discovery lands here on its next pass, and used to record
+      # "metadata answered HTTP 301" as a fault in perpetuity.
+      raise RepositorySource::NotFound.new(
+        "#{repo_path} has moved: that owner and name no longer address a repository on GitHub"
+      )
     when 403 then raise RepositorySource::Error.new("#{repo_path} metadata was refused: HTTP 403, rate limit or permissions")
     else          raise RepositorySource::Error.new("#{repo_path} metadata answered HTTP #{response.status}")
     end
