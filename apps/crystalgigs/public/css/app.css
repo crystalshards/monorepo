@@ -367,11 +367,32 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   display: grid; gap: var(--gap);
   grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
 }
+
+/* clip-path clips a box's border along with everything else, so a bordered,
+   notched box below has no stroke on the diagonal it cuts: the border reads
+   as a gap there instead of a bevel. Each one restores it with a
+   background-image diagonal rather than a border property or a generated
+   pseudo-element child: sized to the same facet-square corner the clip-path
+   uses, with its outer edge flush against the true cut and its thickness
+   extending inward, so clip-path never removes any of it. `background-origin:
+   border-box` on every one of these matters: clip-path's own default
+   reference box is the border box, and background images default to the
+   padding box, so without it the gradient's corner sits inset by the border
+   width and the drawn line no longer lines up with the cut. Drawing it as the
+   element's own background also means it is not scrollable content, so it
+   would hold even inside an overflow:auto scroll container, which a
+   pseudo-element positioned inside that box would not survive scrolling. */
+
 .recipe {
   --facet: 14px;
   background: var(--surface); border: 1px solid var(--edge);
   padding: 1.25rem 1.35rem 1.35rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .recipe h3 { font-size: var(--step-1); margin: 0 0 0.3em; }
 .recipe p { color: var(--ink-muted); font-size: 0.9rem; margin: 0 0 0.85rem; }
@@ -452,6 +473,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   --facet: 16px;
   background: var(--surface); border: 1px solid var(--edge);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
   text-align: center;
   padding: clamp(2.5rem, 6vw, 4rem) 1.5rem;
 }
@@ -480,10 +506,20 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   border: 1px solid var(--edge);
   padding: var(--pad) var(--pad) 1.1rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
   color: var(--ink);
-  transition: border-color 0.14s ease, background 0.14s ease;
+  transition: border-color 0.14s ease, background 0.14s ease, background-image 0.14s ease;
 }
-.job-card:hover { border-color: var(--accent); }
+/* The notch diagonal is drawn from the same border colour, so it swaps to
+   accent with the border instead of sitting there in the old colour. */
+.job-card:hover {
+  border-color: var(--accent);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--accent) calc(50% - 1px), var(--accent) 50%, transparent 50%);
+}
 /* The cut corner catches light, the way a real bevel would. */
 .job-card::after {
   content: "";
@@ -494,7 +530,14 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 }
 .job-card:hover::after { opacity: 0.9; }
 
-.job-card-featured { border-color: var(--accent); background: var(--accent-wash); }
+/* Featured permanently swaps the border to accent, so the notch diagonal is
+   redrawn in accent too: the plain `background` shorthand here would
+   otherwise reset the base rule's background-image back to none. */
+.job-card-featured {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--accent) calc(50% - 1px), var(--accent) 50%, transparent 50%);
+}
 .job-card-featured::after { opacity: 0.9; }
 
 .job-card-header {
@@ -564,6 +607,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   background: var(--surface); border: 1px solid var(--edge);
   padding: 1.25rem; margin: 1.5rem 0;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .filters-section h2 { font-size: var(--step-2); margin-bottom: 0.75rem; }
 
@@ -617,6 +665,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   grid-column: 1 / -1;
   background: var(--surface); border: 1px solid var(--edge);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
   padding: clamp(1.5rem, 3vw, 2rem);
 }
 
@@ -639,6 +692,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   --facet: 16px;
   background: var(--surface); border: 1px solid var(--edge);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
   padding: clamp(1.25rem, 2.5vw, 1.9rem);
   margin-bottom: var(--gap);
 }
@@ -648,7 +706,13 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 
 .job-tags-list { display: flex; flex-wrap: wrap; gap: 0.6rem; }
 
-.job-apply-section { background: var(--accent-wash); border-color: var(--accent); }
+/* The apply section swaps the border to accent, so the notch diagonal is
+   redrawn in accent too, for the same reason .job-card-featured is. */
+.job-apply-section {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--accent) calc(50% - 1px), var(--accent) 50%, transparent 50%);
+}
 
 .apply-buttons { display: flex; gap: 1rem; flex-wrap: wrap; }
 
@@ -658,6 +722,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   --facet: 12px;
   background: var(--surface); border: 1px solid var(--edge);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
   padding: 1.15rem 1.25rem;
 }
 .sidebar-card h3 {
@@ -713,6 +782,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   --facet: 16px;
   background: var(--surface); border: 1px solid var(--edge);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
   padding: clamp(1.5rem, 3vw, 2rem);
 }
 .job-form fieldset { border: 0; padding: 0; margin: 0 0 2rem; min-width: 0; }
@@ -765,6 +839,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   --facet: 16px;
   background: var(--surface); border: 1px solid var(--edge);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
   padding: clamp(1.5rem, 3vw, 2rem);
   min-width: 0;
 }
