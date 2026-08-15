@@ -2,6 +2,17 @@ name: Publish core docs
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: >-
+          Skip the idempotent artifact check and run a real clone and
+          compile even though crystal/<pinned-version>/docs.json already
+          exists. Costs the full clone, compile and publish cycle instead
+          of a single storage lookup. Use it to record a fresh commit for
+          a version that published before source_commit_sha existed, or
+          whose repository tag has moved since the artifact was built.
+        type: boolean
+        default: false
 
 jobs:
   publish-core-docs:
@@ -23,15 +34,22 @@ jobs:
         env:
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           REGION: us-central1
+          FORCE_REBUILD: ${{ inputs.force }}
         run: |
           set -euo pipefail
 
           # One recorded bootstrap operation, run from CI rather than a laptop.
-          # The job itself is idempotent from the artifact: it checks whether
-          # crystal/<pinned-version>/docs.json already exists and, if so, marks
-          # the database row succeeded again from that fact and exits without
-          # cloning or compiling anything.
+          # The job is idempotent from the artifact by default: it checks
+          # whether crystal/<pinned-version>/docs.json already exists and, if
+          # so, marks the database row succeeded again from that fact and
+          # exits without cloning or compiling anything. FORCE_REBUILD is an
+          # override on this one execution, never the Job's own persistent
+          # configuration, so a forced run stays a deliberate exception
+          # rather than a new default: it skips that check and runs a real
+          # clone and compile, which is the only thing that resolves and
+          # records a fresh source_commit_sha.
           gcloud run jobs execute publish-core-docs \
             --project "$PROJECT_ID" \
             --region "$REGION" \
+            --update-env-vars "FORCE_REBUILD=${FORCE_REBUILD}" \
             --wait

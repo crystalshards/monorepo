@@ -189,6 +189,19 @@ module CrystalShards
         ON CONFLICT (doc_id, version) DO NOTHING
         SQL
 
+      # Written once `build_and_publish` has actually cloned the repository
+      # and knows the commit, which registration runs before, so it cannot
+      # be part of the insert above. Unlike a shard's registration backfill,
+      # this always overwrites: every call here runs alongside a clone that
+      # just happened, so the value is never a guess about a build that may
+      # have used something else, it is a report of the one that just did.
+      UPDATE_COMMIT_SHA_SQL = <<-SQL
+        UPDATE doc_versions
+        SET source_commit_sha = $3, updated_at = $4
+        WHERE version = $2
+          AND doc_id IN (SELECT id FROM docs WHERE package_name = $1)
+        SQL
+
       def self.ensure!(version : String) : Nil
         now = Time.utc
 
@@ -196,9 +209,23 @@ module CrystalShards
         DocsDatabase.exec(UPDATE_CURRENT_VERSION_SQL, PACKAGE, version, now)
         DocsDatabase.exec(INSERT_VERSION_SQL, PACKAGE, version, now, "#{PACKAGE}/#{version}")
       end
+
+      def self.record_commit_sha!(version : String, commit_sha : String) : Nil
+        DocsDatabase.exec(UPDATE_COMMIT_SHA_SQL, PACKAGE, version, commit_sha, Time.utc)
+      end
     end
 
     record Published, key : String, bytes : Int64, types : Int32, reused_existing : Bool
+
+    # Whether this run may treat the artifact already at `key` as the
+    # answer, rather than clone and compile a fresh one. Pulled out of the
+    # branch below so `force`'s one job, overriding exactly this decision,
+    # is a single line a spec can pin without touching object storage or
+    # git. Public for that reason: it is the fact this whole feature is
+    # about, not an implementation detail of build_and_publish.
+    def self.reuse_existing?(force : Bool, exists : Bool) : Bool
+      !force && exists
+    end
 
     # Builds and publishes one version of the standard library end to end:
     # register, compile under whichever sandbox this process is configured
@@ -211,9 +238,16 @@ module CrystalShards
     #
     # Raises on any failure, after recording it through DocsBuildStatus, the
     # same contract BuildDocsWorker's own rescue clauses rely on for a shard.
+    #
+    # `force` defaults false and BuildDocsWorker's lazy-build path never
+    # passes it: an automatic build a reader's page view commissioned must
+    # never skip the idempotent artifact check, only a deliberate operator
+    # action may. publish_core_docs.cr is that action, reading it from
+    # FORCE_REBUILD on the Job's own execution.
     def self.build_and_publish(
       version : String = self.version,
       storage : DocsStorage = StorageService.build,
+      force : Bool = false,
     ) : Published
       compiler = self.version
       raise VersionMismatch.new(version, compiler) unless version == compiler
@@ -228,13 +262,20 @@ module CrystalShards
       # the build is already done and this run is a no-op: mark the row
       # succeeded again so the database catches up with the bucket, and return
       # without spending a clone and a compile on bytes this site already has.
-      if CrystalStorage.docs.exists?(key)
+      #
+      # `force` is the deliberate way around that no-op: a maintainer who
+      # knows the artifact documents a moved tag's stale commit, or predates
+      # source_commit_sha entirely, runs the workflow with force rather than
+      # waiting for something to invalidate the key on its own, which
+      # nothing here ever does.
+      if reuse_existing?(force, CrystalStorage.docs.exists?(key))
         status.succeeded
-        Log.info { "CoreDocs: #{key} already exists, skipped rebuilding" }
+        Log.info { "CoreDocs: #{key} already exists, skipped rebuilding (force=#{force})" }
         return Published.new(key: key, bytes: 0_i64, types: 0, reused_existing: true)
       end
 
       status.building
+      Log.info { "CoreDocs: building #{PACKAGE}@#{version} (force=#{force})" }
 
       work_dir = File.tempname("core_docs")
       Dir.mkdir_p(work_dir)
@@ -244,6 +285,17 @@ module CrystalShards
         docs_dir = File.join(work_dir, "docs")
 
         clone(version, source_dir)
+
+        # Resolved from the clone rather than trusted from the tag name,
+        # for the same reason DocsBuilder resolves one for a shard: `version`
+        # here is "1.21.0", never a commit, and the tag it names can move
+        # after this run, so only the checkout in hand can say what was
+        # actually built. A README's relative reference is only ever correct
+        # against this, never against the version string.
+        if commit_sha = resolved_commit(source_dir)
+          Registration.record_commit_sha!(version, commit_sha)
+        end
+
         docs_json = compile(source_dir, docs_dir, version)
         types = validate!(docs_json)
         bytes = File.size(docs_json)
@@ -286,6 +338,15 @@ module CrystalShards
       )
 
       raise BuildFailed.new("could not clone #{REPOSITORY} at tag #{version}: #{output}") unless status.success?
+    end
+
+    # The commit `clone` actually landed on. `--depth 1 --branch <version>`
+    # fetches only the tip of that ref, so HEAD is exactly the tag's target
+    # and this is a plain read, not a second network round trip.
+    private def self.resolved_commit(repo_dir : String) : String?
+      output = IO::Memory.new
+      status = Process.run("git", ["rev-parse", "HEAD"], chdir: repo_dir, output: output, error: output)
+      status.success? ? output.to_s.strip.presence : nil
     end
 
     # Compiles `source_dir` into `docs_dir/docs.json`, through whichever

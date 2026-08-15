@@ -130,15 +130,41 @@ class Docs::VersionPage < MainLayout
 
   # The README is raw Markdown in the document, and it was written by whoever
   # published the shard, so it is rendered and sanitised rather than trusted.
+  # A relative image or link in it is also resolved against the repository
+  # the version being read was published from, because the page renders on
+  # our own origin rather than the shard's.
+  #
+  # `ref` is the commit the artifact was actually built from, not
+  # `doc_version.version`: the registry stores "1.2.3" while a repository's
+  # own tag is often "v1.2.3", so the version string alone 404s against
+  # GitHub as often as it works, and where it does resolve nothing pins it
+  # to the exact revision this artifact documents rather than to whatever
+  # that tag currently points at. A version built before this column existed
+  # has no stored commit, and DocHtml already drops a relative reference
+  # rather than resolve it against nothing.
   private def render_readme(parsed : CrystalDocs::DocsDocument)
     body = parsed.body
     return unless body && !body.empty?
 
     section class: "docs-section" do
       div class: "docs-readme" do
-        raw CrystalDocs::DocHtml.markdown(body)
+        raw CrystalDocs::DocHtml.markdown(body, repository: repository_slug, ref: doc_version.source_commit_sha)
       end
     end
+  end
+
+  # The registry hands every shard it indexes a host qualified identity
+  # ("github.com/owner/repo"), and that identity is the repository a
+  # README's relative reference has to be read against, because it is
+  # where the file actually lives. `doc.package_name` already carries it
+  # for every row the registry created. The standard library is the one
+  # row that still carries a bare key instead, so its repository is named
+  # explicitly here rather than left unresolved.
+  private def repository_slug : String?
+    return doc.package_name if CrystalDocs::PackagePaths.canonical?(doc.package_name)
+    return Docs::CoreRepository::CORE_REPOSITORY if doc.package_name == CrystalDocs::CORE_PACKAGE
+
+    nil
   end
 
   private def render_type_index(parsed : CrystalDocs::DocsDocument)

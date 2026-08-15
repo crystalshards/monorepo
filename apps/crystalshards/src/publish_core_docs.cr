@@ -13,8 +13,12 @@
 # ever enqueue the first build. Run it as a Cloud Run Job execution against the
 # same image the service runs, with the command `./publish-core-docs`, or
 # locally with DOCS_SANDBOX=none and DOCS_SANDBOX_ALLOW_UNSAFE=true. Safe to
-# run again: a version already published is recompiled and republished under
-# the same key, and registration is idempotent.
+# run again: a version already published is left alone by default, its row
+# simply marked success again from the artifact already in the bucket, and
+# registration is idempotent either way. FORCE_REBUILD=true on this one
+# execution is the deliberate exception, a real clone and compile that
+# republishes under the same key and records whatever commit that clone
+# actually lands on.
 #
 # Like src/migrate.cr, src/discover_shards.cr and src/reconcile_docs_status.cr,
 # and for the same reason, this deliberately does NOT require ./app. That pulls
@@ -45,9 +49,18 @@ require "./services/core_docs"
 # summary this prints with `puts`, matching every sibling entrypoint.
 Log.setup(:info, Log::IOBackend.new(STDOUT, dispatcher: :sync))
 
+# Set by the publish-core-docs workflow's force input, arriving as an
+# override on this one Job execution rather than a persistent setting or a
+# new argument to this binary. Read exactly once, here, so the log line
+# below and the behaviour CoreDocs actually takes always agree on what this
+# run decided; everything downstream takes `force` as a value, never
+# re-reads the environment for it.
+force = ENV["FORCE_REBUILD"]? == "true"
+Log.info { "publish-core-docs: FORCE_REBUILD=#{force}" }
+
 published =
   begin
-    CrystalShards::CoreDocs.build_and_publish
+    CrystalShards::CoreDocs.build_and_publish(force: force)
   rescue ex : CrystalShards::CoreDocs::VersionMismatch | CrystalStorage::MissingBucket | CrystalShards::DocsSandbox::Unavailable
     # A Job whose environment is wrong and a Job whose work failed send an
     # operator to two different places, matching src/discover_shards.cr and

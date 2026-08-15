@@ -128,6 +128,26 @@ describe CrystalShards::CoreDocs do
     end
   end
 
+  describe ".reuse_existing?" do
+    # This is the whole contract `force` adds to build_and_publish, pulled
+    # out from behind object storage and git so it can be pinned exactly,
+    # for the same reason the version check above is proven this way: fast,
+    # hermetic, safe on every run. build_and_publish's own clone-and-compile
+    # path still is not exercised here; only the decision that guards it is.
+    it "reuses an artifact that already exists, by default" do
+      CrystalShards::CoreDocs.reuse_existing?(force: false, exists: true).should be_true
+    end
+
+    it "does not reuse an existing artifact once forced" do
+      CrystalShards::CoreDocs.reuse_existing?(force: true, exists: true).should be_false
+    end
+
+    it "never reuses what is not there, forced or not" do
+      CrystalShards::CoreDocs.reuse_existing?(force: false, exists: false).should be_false
+      CrystalShards::CoreDocs.reuse_existing?(force: true, exists: false).should be_false
+    end
+  end
+
   describe CrystalShards::CoreDocs::Registration do
     it "registers a pending version for a package with no prior documentation" do
       CrystalShards::CoreDocs::Registration.ensure!("1.99.0")
