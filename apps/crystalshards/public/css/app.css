@@ -689,12 +689,12 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   font-size: 0.88em;
 }
 
-/* Markd 0.5 has no GFM table parser, and safe mode drops a raw HTML table
-   along with every other raw HTML block, so nothing renders one from a
-   README today. Styled anyway, to match the typography crystaldocs already
-   gives one and so this does not become a second thing to write the day
-   markd gains table support. No display:block wrapper hack: cells wrap, so
-   a wide table cannot push the page sideways on a narrow viewport. */
+/* CrystalShards::ReadmeHtml finds a GFM table in a README's raw Markdown
+   before markd ever parses it and renders the table itself: markd 0.5 has
+   no GFM table parser of its own, and safe mode would drop a hand written
+   HTML table along with every other raw HTML block anyway. No
+   display:block wrapper hack: cells wrap, so a wide table cannot push the
+   page sideways on a narrow viewport. */
 .readme-content table {
   width: 100%; max-width: 100%;
   border-collapse: collapse;
@@ -708,6 +708,14 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   overflow-wrap: anywhere;
 }
 .readme-content th { background: var(--surface-sunk); font-weight: 600; }
+
+/* A delimiter row's colon asked for one of these two; the attribute
+   selector outweighs the bare th/td rule above by specificity regardless
+   of source order, so a centred or right-aligned column actually renders
+   that way instead of silently falling back to the default above. Left is
+   that default already, so a `:---` column needs no rule of its own here. */
+.readme-content th[align="center"], .readme-content td[align="center"] { text-align: center; }
+.readme-content th[align="right"], .readme-content td[align="right"] { text-align: right; }
 
 .readme-content blockquote {
   margin: 1rem 0; padding: 0.75rem 1rem;
