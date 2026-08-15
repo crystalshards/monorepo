@@ -608,12 +608,13 @@ class Shards::ShowPage < MainLayout
             end
           end
 
-          # The block scrolls, so it must be focusable or a keyboard user
-          # cannot reach its content (WCAG 2.1.1).
-          tag "pre", class: "readme-raw", tabindex: "0", role: "region",
-            "aria-label": "README for #{@shard.name}" do
-            text readme
-          end
+          # Rendered rather than dumped as source: a reader came to read a
+          # document, not its markup. CrystalShards::ReadmeHtml is what keeps
+          # this safe, the same way CrystalDocs::DocHtml keeps a doc comment
+          # safe, and why is written there rather than repeated here.
+          raw CrystalShards::ReadmeHtml.markdown(
+            readme, @shard.host, @shard.owner, @shard.repo, readme_ref
+          )
         else
           para do
             text "No README has been indexed for this shard yet. You can read it on the "
@@ -825,6 +826,28 @@ class Shards::ShowPage < MainLayout
     return false if selected.nil? || newest.nil?
 
     selected.version != newest.version
+  end
+
+  # The git ref a repository-relative README link or image resolves against.
+  #
+  # The README is fetched once per repository at its latest ref, not once
+  # per tag (see render_readme_section), so its own relative paths have to
+  # resolve against that same ref regardless of which version this page
+  # happens to be showing; @selected_version would point an older release's
+  # page at the wrong commit for the README it is actually displaying.
+  # `latest_version` names that ref as a display string ("1.6.0"), and the
+  # git ref that actually exists can differ from it (a tag written
+  # "v1.6.0"; ShardVersion#ref's own comment: "Neither can be derived from
+  # the other"), so the real ref is read off the matching version row
+  # rather than assumed to equal the display string.
+  private def readme_ref : String
+    if name = @shard.latest_version
+      if matched = @versions.find { |version| version.version == name }
+        return matched.checkout_ref
+      end
+    end
+
+    @shard.default_branch || "master"
   end
 
   # Timestamps are UTC instants. Rendering them in the database session's

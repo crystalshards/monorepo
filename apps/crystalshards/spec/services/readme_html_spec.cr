@@ -1,0 +1,207 @@
+require "../spec_helper"
+
+# A README was written by whoever published the shard, and Markdown permits
+# raw HTML, so it is untrusted input. These specs pin the boundary this
+# module leans on markd's own safe mode for: documentation markup survives,
+# anything that can execute does not, and the URL resolution this module adds
+# on top never emits a link this origin cannot vouch for.
+describe CrystalShards::ReadmeHtml do
+  describe "rendering Markdown" do
+    it "renders headings and lists as elements rather than literal text" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "# Kemal\n\n- fast\n- simple\n", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain("<h1>Kemal</h1>")
+      html.should contain("<ul>")
+      html.should contain("<li>fast</li>")
+      html.should contain("<li>simple</li>")
+      html.should_not contain("# Kemal")
+      html.should_not contain("- fast")
+    end
+
+    it "renders a fenced block as pre > code" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "```crystal\nputs \"hi\"\n```", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should match(/<pre><code[^>]*>puts &quot;hi&quot;<\/code><\/pre>/)
+    end
+
+    it "returns empty for no README" do
+      CrystalShards::ReadmeHtml.markdown(nil, "github.com", "a", "b", "master").should eq("")
+    end
+  end
+
+  describe "safe mode" do
+    it "never lets a script tag reach the page" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "Intro\n\n<script>alert('readme')</script>\n", "github.com", "a", "b", "master"
+      )
+
+      html.should_not contain("<script")
+      html.should_not contain("alert(&#39;readme&#39;)")
+      html.should_not contain("alert('readme')")
+    end
+
+    it "never lets inline raw HTML reach the page either" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        %(Click <img src="x" onerror="alert(1)"> here), "github.com", "a", "b", "master"
+      )
+
+      html.should_not contain("onerror")
+      html.should contain("Click")
+      html.should contain("here")
+    end
+
+    it "refuses a javascript: link" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "[click me](javascript:alert(1))", "github.com", "a", "b", "master"
+      )
+
+      html.should_not contain("javascript:")
+      html.should contain("click me")
+    end
+
+    it "keeps a genuine https link" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "[docs](https://crystal-lang.org)", "github.com", "a", "b", "master"
+      )
+
+      html.should contain(%(href="https://crystal-lang.org"))
+    end
+  end
+
+  describe "resolving a repository-relative image" do
+    it "resolves to the raw content URL on github.com" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "![Logo](docs/logo.png)", "github.com", "kemalcr", "kemal", "v1.6.0"
+      )
+
+      html.should contain(%(src="https://raw.githubusercontent.com/kemalcr/kemal/v1.6.0/docs/logo.png"))
+    end
+
+    it "resolves to the raw content URL on gitlab.com" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "![Logo](logo.png)", "gitlab.com", "acme", "widget", "main"
+      )
+
+      html.should contain(%(src="https://gitlab.com/acme/widget/-/raw/main/logo.png"))
+    end
+
+    it "resolves to the raw content URL on codeberg.org" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "![Logo](logo.png)", "codeberg.org", "acme", "widget", "main"
+      )
+
+      html.should contain(%(src="https://codeberg.org/acme/widget/raw/main/logo.png"))
+    end
+
+    it "resolves a root-relative path the same way as a plain relative one" do
+      rooted = CrystalShards::ReadmeHtml.markdown(
+        "![Logo](/assets/logo.png)", "github.com", "kemalcr", "kemal", "master"
+      )
+      plain = CrystalShards::ReadmeHtml.markdown(
+        "![Logo](assets/logo.png)", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      expected = %(src="https://raw.githubusercontent.com/kemalcr/kemal/master/assets/logo.png")
+      rooted.should contain(expected)
+      plain.should contain(expected)
+    end
+
+    it "drops the image entirely on a host with no known raw URL" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "before ![Logo](logo.png) after", "sourcehut.org", "acme", "widget", "master"
+      )
+
+      html.should_not contain("<img")
+      html.should_not contain("logo.png")
+      html.should contain("before")
+      html.should contain("after")
+    end
+
+    it "drops the image when the shard has no identity to resolve against" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "![Logo](logo.png)", nil, nil, nil, "master"
+      )
+
+      html.should_not contain("<img")
+    end
+
+    it "never rewrites an absolute image URL" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "![Badge](https://img.shields.io/badge/CI-passing-green)",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(src="https://img.shields.io/badge/CI-passing-green"))
+    end
+
+    it "never rewrites a protocol-relative image URL" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "![Badge](//img.shields.io/badge/CI-passing-green)",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(src="//img.shields.io/badge/CI-passing-green"))
+    end
+  end
+
+  describe "resolving a repository-relative link" do
+    it "resolves to the human-facing blob URL on github.com" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "[Changelog](CHANGELOG.md)", "github.com", "kemalcr", "kemal", "v1.6.0"
+      )
+
+      html.should contain(%(href="https://github.com/kemalcr/kemal/blob/v1.6.0/CHANGELOG.md"))
+    end
+
+    it "resolves to the human-facing blob URL on gitlab.com" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "[Changelog](CHANGELOG.md)", "gitlab.com", "acme", "widget", "main"
+      )
+
+      html.should contain(%(href="https://gitlab.com/acme/widget/-/blob/main/CHANGELOG.md"))
+    end
+
+    it "resolves to the human-facing source URL on codeberg.org" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "[Changelog](CHANGELOG.md)", "codeberg.org", "acme", "widget", "main"
+      )
+
+      html.should contain(%(href="https://codeberg.org/acme/widget/src/main/CHANGELOG.md"))
+    end
+
+    it "unwraps a link to plain text on a host with no known blob URL, keeping its words" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "See the [Changelog](CHANGELOG.md) for history.",
+        "sourcehut.org", "acme", "widget", "master"
+      )
+
+      html.should_not contain("<a ")
+      html.should_not contain("CHANGELOG.md")
+      html.should contain("Changelog")
+      html.should contain("for history")
+    end
+
+    it "leaves an in-page anchor link alone" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "[Usage](#usage)", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(href="#usage"))
+    end
+  end
+
+  describe "badges: an image nested inside a link" do
+    it "resolves both the image and the link independently" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "[![Build](badge.svg)](actions.html)", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(src="https://raw.githubusercontent.com/kemalcr/kemal/master/badge.svg"))
+      html.should contain(%(href="https://github.com/kemalcr/kemal/blob/master/actions.html"))
+    end
+  end
+end

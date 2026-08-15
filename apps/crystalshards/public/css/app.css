@@ -638,7 +638,15 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 }
 .code-block pre { margin: 0; font: 400 0.85rem/1.5 var(--mono); }
 
-.readme-content { font-size: 0.95rem; line-height: 1.6; }
+.readme-content { font-size: 0.95rem; line-height: 1.75; }
+.readme-content > :first-child { margin-top: 0; }
+
+/* The measure is capped on the prose elements, never on the container, or a
+   fenced example gets squeezed to the same width as running text. */
+.readme-content p, .readme-content ul, .readme-content ol, .readme-content blockquote {
+  max-width: 74ch;
+}
+.readme-content ul, .readme-content ol { padding-left: 1.5rem; }
 
 /* A README's CI badges are a run of small images meant to sit on one line,
    the way GitHub renders them. The global `img` rule above is block-level so
@@ -657,12 +665,67 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   height: auto;
   margin: 0.15rem 0.4rem 0.15rem 0;
 }
-.readme-raw {
-  margin: 0; padding: 1rem;
+
+.readme-content h1, .readme-content h2, .readme-content h3, .readme-content h4 { margin: 1.6em 0 0.5em; }
+.readme-content h1, .readme-content h2 {
+  font-size: var(--step-2);
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--edge);
+}
+.readme-content h3 { font-size: var(--step-1); }
+.readme-content h4 { font-size: var(--step-0); }
+
+.readme-content pre {
+  max-width: 100%;
+  margin: 0.9rem 0;
+  padding: 0.9rem 1rem;
   background: var(--surface-sunk); border: 1px solid var(--edge);
-  font: 400 0.8rem/1.5 var(--mono);
-  white-space: pre-wrap; overflow-wrap: anywhere;
-  max-height: 40rem; overflow-y: auto;
+  font: 400 0.85rem/1.5 var(--mono);
+  overflow-x: auto;
+}
+.readme-content :not(pre) > code {
+  padding: 0.1em 0.35em;
+  background: var(--surface-sunk); border: 1px solid var(--edge);
+  font-size: 0.88em;
+}
+
+/* Markd 0.5 has no GFM table parser, and safe mode drops a raw HTML table
+   along with every other raw HTML block, so nothing renders one from a
+   README today. Styled anyway, to match the typography crystaldocs already
+   gives one and so this does not become a second thing to write the day
+   markd gains table support. No display:block wrapper hack: cells wrap, so
+   a wide table cannot push the page sideways on a narrow viewport. */
+.readme-content table {
+  width: 100%; max-width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+}
+.readme-content th, .readme-content td {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--edge);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.readme-content th { background: var(--surface-sunk); font-weight: 600; }
+
+.readme-content blockquote {
+  margin: 1rem 0; padding: 0.75rem 1rem;
+  border-left: 3px solid var(--beryl);
+  background: var(--surface-sunk);
+  color: var(--ink-muted);
+}
+
+/* A README's opening line is routinely a run of CI, license and version
+   badges, each its own linked image. The site's default img rule is
+   display:block so a card thumbnail never lets prose wrap around it, but
+   that same rule stacks every badge on its own row. Scoped to paragraphs,
+   not every image, so a screenshot sitting alone in its own paragraph still
+   behaves like the block-level figure it visually is. */
+.readme-content p img {
+  display: inline-block;
+  vertical-align: middle;
+  margin: 0.15rem 0.3rem 0.15rem 0;
 }
 
 .dependency-list, .version-list, .link-list, .footer-links { list-style: none; margin: 0; padding: 0; }
