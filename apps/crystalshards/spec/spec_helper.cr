@@ -5,6 +5,9 @@ ENV["GITHUB_WEBHOOK_SECRET"] ||= "test_webhook_secret_for_specs"
 # `||=` so a spec can still assert what happens when it is absent by clearing
 # it, and so CI's own value wins if one is set there.
 ENV["DOCS_SITE_ORIGIN"] ||= "http://localhost:3001"
+# Not required outside production, but specs want house ads on by default so
+# they can exercise the fallback without each one wiring an origin by hand.
+ENV["GIGS_SITE_ORIGIN"] ||= "http://localhost:3002"
 require "spec"
 require "../src/app"
 require "./support/**"

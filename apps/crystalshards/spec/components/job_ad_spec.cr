@@ -1,11 +1,17 @@
 require "../spec_helper"
 
 # The ad strip is the one component on this site whose content comes from
-# another service. Every way that service can let us down has to end in the
-# same place: no markup at all. An empty box, a "no jobs right now" line or a
-# spinner would each be this site telling a reader something about CrystalGigs
-# that this site does not actually know.
+# another service. CrystalGigs answering with fewer jobs than the slot holds,
+# including a genuinely empty board, is a real answer: the strip fills the
+# remainder with first-party CrystalGigs house ads rather than leaving a gap.
+# A fetch that failed, is backing off, or never ran is different: it has not
+# established that CrystalGigs, or the house ad links built from it, are even
+# reachable, so that case renders nothing at all, the same as it always has.
 private ENDPOINT = URI.parse("http://job-ads.test/api/ads")
+# Deliberately a different domain than the crystalgigs.test feed job stubs
+# below, so an assertion scanning for one can never accidentally match the
+# other.
+private GIGS_ORIGIN = "https://crystalgigs.com"
 
 # A board with nothing to advertise. Not a failure: a real, healthy answer.
 private def feed : String
@@ -58,17 +64,22 @@ end
 describe JobAd do
   before_each do
     CrystalShards::JobAdsConfig.endpoint = ENDPOINT
+    CrystalShards::GigsSiteConfig.origin = GIGS_ORIGIN
   end
 
   after_each do
     CrystalShards::JobAdsConfig.endpoint = nil
     CrystalShards::JobAds.transport = nil
     CrystalShards::JobAds.reset!
+    CrystalShards::GigsSiteConfig.origin = nil
   end
 
   # The most likely production breakage: CrystalGigs is down, slow, or
   # returning something unreadable, on a site that has nothing to do with
-  # CrystalGigs. None of it may reach the page.
+  # CrystalGigs. A fetch that fails this way has not established that
+  # CrystalGigs, or the house ad links this component would build for it, are
+  # even reachable. None of it may reach the page: not a real ad, and not a
+  # house ad standing in for one.
   describe "when the source cannot be used" do
     it "renders nothing when the fetch comes back with nothing" do
       source(nil)
@@ -105,28 +116,43 @@ describe JobAd do
       render.should be_empty
     end
 
-    it "renders nothing when the board has no jobs to advertise" do
+    it "falls back to a house ad when the board has no jobs to advertise" do
+      # Unlike the failures above, this is CrystalGigs answering: a healthy
+      # board that happens to be empty right now. That answer has earned the
+      # right to be advertised on its own strength.
       source(feed)
 
-      render.should be_empty
+      html = render
+      html.should contain(%(href="#{GIGS_ORIGIN}/jobs"))
+      html.should contain("First party")
+      # The slot still holds three cards; a healthy empty board is not a
+      # reason to render a strip that is visibly smaller than usual.
+      html.scan(/class="job-ad-item/).size.should eq(3)
     end
 
     it "renders nothing when the strip is not configured" do
+      # JOB_ADS_URL unset is a deliberate switch documented on JobAdsConfig
+      # for environments that want no ad strip at all. It is not the same
+      # thing as a feed that ran and came back with nothing, so house ads do
+      # not fill in for it: an environment that asked for no strip gets none.
       source(feed(job("Senior Crystal Developer")))
       CrystalShards::JobAdsConfig.endpoint = nil
 
       render.should be_empty
     end
 
-    it "renders nothing rather than an unsafe link" do
+    it "falls back to a house ad rather than an unsafe link" do
       # A javascript: href is a link too. The feed is first-party, but it is
-      # still a network response being written into our markup.
+      # still a network response being written into our markup. Filtering it
+      # out still leaves this a successful, if now empty, answer.
       source(feed(job("Senior Crystal Developer", url: "javascript:alert(1)")))
 
-      render.should be_empty
+      html = render
+      html.should_not contain("javascript:")
+      html.should contain(%(href="#{GIGS_ORIGIN}/jobs"))
     end
 
-    it "keeps the good rows when only some links are unsafe" do
+    it "keeps the good rows when only some links are unsafe, and fills the rest" do
       source(feed(
         job("Bad role", url: "javascript:alert(1)"),
         job("Good role", url: "https://crystalgigs.test/jobs/2"),
@@ -135,12 +161,14 @@ describe JobAd do
       html = render
       html.should_not contain("Bad role")
       html.should contain("Good role")
+      # One real job survived the filter; house ads fill the other two seats.
+      html.scan(/class="job-ad-item/).size.should eq(3)
     end
 
     it "leaves the strip working after a failure instead of wedging it" do
       # A failed fetch must release its claim. If it did not, the strip would
-      # go dark for the life of the process and look exactly like a job board
-      # with nothing to advertise.
+      # stay dark for the life of the process rather than recover on the next
+      # successful fetch.
       failing_source(IO::Error.new("connection reset by peer"))
       render.should be_empty
 
@@ -284,7 +312,10 @@ describe JobAd do
     it "caches an empty board too, so an idle job board is not a retry loop" do
       stub = source(feed)
 
-      3.times { render.should be_empty }
+      # A healthy empty board is a successful answer, so it fills with house
+      # ads on every one of these renders, all served from the same cached
+      # answer rather than a fresh fetch each time.
+      3.times { render.should contain(%(href="#{GIGS_ORIGIN}/jobs")) }
 
       stub.calls.should eq(1)
     end
@@ -293,11 +324,109 @@ describe JobAd do
   describe "cache invalidation" do
     it "drops what it had when a later fetch fails" do
       # Explicitly preferred over serving stale ads: once we can no longer
-      # confirm a role is open, we stop advertising it.
+      # confirm a role is open, we stop advertising it. The later failure has
+      # not established CrystalGigs is reachable either, so nothing renders
+      # in its place, not even a house ad.
       source(feed(job("Open role")))
       render.should contain("Open role")
 
       source(nil)
+      render.should be_empty
+    end
+  end
+
+  # The things the assignment asked to be proven directly: a house ad shows
+  # up when the feed genuinely answers empty, the slot's card count is stable
+  # across every way the feed can answer, a failed fetch still renders
+  # nothing at all, and every house ad points at the audience-specific route
+  # under the configured GIGS_SITE_ORIGIN rather than a literal.
+  describe "house ads" do
+    it "renders a house ad when the feed is empty" do
+      source(feed)
+
+      html = render
+      html.should contain(%(href="#{GIGS_ORIGIN}/jobs"))
+      html.should contain("First party")
+    end
+
+    it "keeps the card count at the requested limit whenever the feed answers" do
+      source(feed)
+      render.scan(/class="job-ad-item/).size.should eq(3)
+
+      source(feed(job("One")))
+      render.scan(/class="job-ad-item/).size.should eq(3)
+
+      source(feed(job("One"), job("Two"), job("Three")))
+      render.scan(/class="job-ad-item/).size.should eq(3)
+    end
+
+    it "renders zero cards, not a padded strip, when the feed fails" do
+      # A failed fetch is not "an empty answer worth padding out": it is no
+      # answer at all, so the count guarantee above does not apply to it.
+      source(nil)
+
+      render.scan(/class="job-ad-item/).size.should eq(0)
+      render.should be_empty
+    end
+
+    it "fills only the seats the feed left empty" do
+      source(feed(job("Real role", url: "https://crystalgigs.test/jobs/9")))
+
+      html = render
+      html.should contain("Real role")
+      html.scan(GIGS_ORIGIN).size.should eq(2)
+    end
+
+    it "points each house ad at its own route under GIGS_SITE_ORIGIN, with no tracking parameters" do
+      source(feed)
+
+      html = render(limit: 2)
+      # Verified live on the CrystalGigs app: GET /jobs lists roles, GET
+      # /jobs/new is where a company posts one.
+      html.should contain(%(href="#{GIGS_ORIGIN}/jobs"))
+      html.should contain(%(href="#{GIGS_ORIGIN}/jobs/new"))
+      html.should_not contain("utm_")
+    end
+
+    it "alternates between the two audiences instead of repeating one" do
+      source(feed)
+
+      html = render(limit: 2)
+      html.should contain("Browse Crystal jobs on CrystalGigs")
+      html.should contain("Post a Crystal role on CrystalGigs")
+    end
+
+    it "fills the same way on the next render, so a reload does not reshuffle it" do
+      source(feed)
+
+      render.should eq(render)
+    end
+
+    it "labels a house ad as CrystalGigs' own rather than a specific employer" do
+      source(feed)
+
+      html = render
+      html.should contain("CrystalGigs")
+      html.should contain("First party")
+      html.should_not contain("job-ad-item-featured")
+    end
+
+    it "renders only the real jobs it has, not padded with house ads, when GIGS_SITE_ORIGIN is unset" do
+      # Allowed outside production. There is no origin to build a house ad
+      # link from, so the strip shows what CrystalGigs actually sent and
+      # nothing more.
+      CrystalShards::GigsSiteConfig.origin = nil
+      source(feed(job("Only role")))
+
+      html = render
+      html.should contain("Only role")
+      html.scan(/class="job-ad-item/).size.should eq(1)
+    end
+
+    it "renders nothing when the board is empty and GIGS_SITE_ORIGIN is unset" do
+      CrystalShards::GigsSiteConfig.origin = nil
+      source(feed)
+
       render.should be_empty
     end
   end

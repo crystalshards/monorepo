@@ -309,6 +309,11 @@ locals {
         # local.sites. Prefixing a scheme here produced
         # https://https://crystaldocs.org on every shard page in production.
         DOCS_SITE_ORIGIN = var.app_domains["crystaldocs"]
+
+        # Same reasoning, same value shape, for the ad strip's house-ad
+        # fallback: every house ad link this app renders is built from this
+        # rather than a literal "https://crystalgigs.com" in source.
+        GIGS_SITE_ORIGIN = var.app_domains["crystalgigs"]
       })
       secret_env = {
         DATABASE_URL    = var.database_url_secret_ids["crystalshards"]
@@ -330,6 +335,11 @@ locals {
         APP_DOMAIN  = var.app_domains["crystaldocs"]
         JOB_ADS_URL = var.job_ads_url
         DOCS_BUCKET = var.docs_bucket_name
+
+        # The ad strip's house-ad fallback link is built from this rather
+        # than a literal "https://crystalgigs.com" in source, the same
+        # reasoning DOCS_SITE_ORIGIN follows above.
+        GIGS_SITE_ORIGIN = var.app_domains["crystalgigs"]
       })
       secret_env = {
         DATABASE_URL    = var.database_url_secret_ids["crystaldocs"]
