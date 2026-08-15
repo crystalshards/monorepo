@@ -1,4 +1,5 @@
 require "../../../services/shard_manifest"
+require "../../../services/shard_index_requests"
 
 # Everything three routes need in order to render one shard page.
 #
@@ -14,6 +15,15 @@ module Shards::RendersShowPage
   DEPENDENTS_SHOWN = 12
 
   private def render_show_page(shard : Shard, requested_version : String? = nil)
+    # Safe on every view: a shard already indexed, already claimed, or
+    # claimed within the retry floor, claims nothing and indexes nothing
+    # here. This is the one thing that gives a never-indexed shard a way out
+    # of "found but not read yet" other than waiting for IndexSweep to reach
+    # it on its own six-hourly schedule. A winning claim indexes inline, so
+    # the reassignment below is what makes the rest of this method see the
+    # shard it just populated rather than the empty one it was handed.
+    shard = ShardIndexRequests.request(shard) || shard
+
     # Semver, not released_at. Only the version the indexer actually fetched
     # carries a real commit date; every other row falls back to the repository's
     # pushed_at, so a date sort returns them in an order Postgres chose. Measured
