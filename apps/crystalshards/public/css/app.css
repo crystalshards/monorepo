@@ -177,6 +177,22 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
 }
 
+/* clip-path clips a box's border along with everything else, so a bordered,
+   notched box below has no stroke on the diagonal it cuts: the border reads
+   as a gap there instead of a bevel. Each one restores it with a
+   background-image diagonal rather than a border property or a generated
+   pseudo-element child: sized to the same facet-square corner the clip-path
+   uses, with its outer edge flush against the true cut and its thickness
+   extending inward, so clip-path never removes any of it. `background-origin:
+   border-box` on every one of these matters: clip-path's own default
+   reference box is the border box, and background images default to the
+   padding box, so without it the gradient's corner sits inset by the border
+   width and the drawn line no longer lines up with the cut. Drawing it as the
+   element's own background also means it is not scrollable content, so it
+   holds even where the notched box is itself an overflow:auto scroll
+   container (see .version-picker-list below), which a pseudo-element
+   positioned inside that box would not survive scrolling. */
+
 .skip-link {
   position: absolute;
   left: 0.5rem;
@@ -374,6 +390,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   background: var(--surface); border: 1px solid var(--edge);
   padding: 1.25rem 1.35rem 1.35rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .recipe h3 { font-size: var(--step-1); margin: 0 0 0.3em; }
 .recipe p { color: var(--ink-muted); font-size: 0.9rem; margin: 0 0 0.85rem; }
@@ -422,11 +443,21 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   border: 1px solid var(--edge);
   padding: var(--pad) var(--pad) 1.1rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
-  transition: border-color 0.14s ease, background 0.14s ease;
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
+  transition: border-color 0.14s ease, background 0.14s ease, background-image 0.14s ease;
 }
 /* The whole card is the target, so the whole card reacts, and it reacts the
-   same way to a pointer as it does to keyboard focus landing inside it. */
-.shard-card:hover, .shard-card:focus-within { border-color: var(--beryl); }
+   same way to a pointer as it does to keyboard focus landing inside it. The
+   notch diagonal is drawn from the same border colour, so it swaps to beryl
+   with the border instead of sitting there in the old colour. */
+.shard-card:hover, .shard-card:focus-within {
+  border-color: var(--beryl);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--beryl) calc(50% - 1px), var(--beryl) 50%, transparent 50%);
+}
 /* The cut corner catches light, the way a real bevel would. Decorative only:
    without pointer-events:none it would swallow clicks in the top-right
    corner, which is now part of the card's click target. */
@@ -558,6 +589,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   padding: clamp(1.25rem, 2.5vw, 1.9rem);
   margin-bottom: var(--gap);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .shard-section h2 { font-size: var(--step-2); margin-bottom: 0.75rem; }
 
@@ -566,6 +602,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   background: var(--surface); border: 1px solid var(--edge);
   padding: 1.15rem 1.25rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .sidebar-section h3 {
   font: 500 0.7rem/1 var(--mono);
@@ -598,6 +639,24 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 .code-block pre { margin: 0; font: 400 0.85rem/1.5 var(--mono); }
 
 .readme-content { font-size: 0.95rem; line-height: 1.6; }
+
+/* A README's CI badges are a run of small images meant to sit on one line,
+   the way GitHub renders them. The global `img` rule above is block-level so
+   a screenshot never bleeds into the paragraph beneath it, but that turns
+   every badge in a run into its own line here. Inline-block lets adjacent
+   badges flow like text again, `vertical-align: middle` keeps them level with
+   each other instead of hugging their own text baseline, and the small gap
+   stands in for the whitespace a real README's markdown puts between them.
+   `max-width` and `height: auto` still apply, so a lone screenshot keeps its
+   own line (it has no inline sibling to flow next to) and nothing overflows
+   the reading column on a narrow viewport. */
+.readme-content img {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 100%;
+  height: auto;
+  margin: 0.15rem 0.4rem 0.15rem 0;
+}
 .readme-raw {
   margin: 0; padding: 1rem;
   background: var(--surface-sunk); border: 1px solid var(--edge);
@@ -633,6 +692,11 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   background: var(--surface); border: 1px solid var(--edge);
   padding: 1.25rem; margin: 1.5rem 0;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .filters-row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
 .filter-group { display: grid; gap: 0.35rem; min-width: 9rem; }
@@ -756,6 +820,15 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   border: 1px solid var(--edge);
   border-top: 2px solid var(--edge-strong);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  /* The notch sits at the top-right, where the accent 2px top rule would have
+     to taper into the base 1px edge to stay pixel-accurate; that is more
+     machinery than a paid-placement strip warrants, so the diagonal
+     continues the base border weight and colour instead. */
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 
 .job-ad-head {
@@ -879,13 +952,23 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   background: var(--surface);
   cursor: pointer;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge-strong) calc(50% - 1px), var(--edge-strong) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
+  transition: border-color 0.14s ease, background-image 0.14s ease;
 }
 /* The default triangle is replaced by the caret below, which can be positioned
    and rotated. Both vendor spellings, or Safari keeps drawing its own. */
 .version-picker-summary { list-style: none; }
 .version-picker-summary::-webkit-details-marker { display: none; }
 .version-picker-summary::marker { content: ""; }
-.version-picker-summary:hover { border-color: var(--beryl); }
+/* The notch diagonal swaps with the border it extends, same as .shard-card. */
+.version-picker-summary:hover {
+  border-color: var(--beryl);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--beryl) calc(50% - 1px), var(--beryl) 50%, transparent 50%);
+}
 
 .version-picker-current { font: 500 0.95rem/1 var(--mono); color: var(--ink); }
 .version-picker-count { font: 400 0.75rem/1 var(--mono); color: var(--ink-muted); }
@@ -905,6 +988,16 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   background: var(--surface);
   border: 1px solid var(--edge-strong);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  /* A pseudo-element here would be generated content inside this list, so it
+     would scroll away with the options once the list is long enough to
+     scroll. This is a background-image on the list's own box instead, which
+     is the border/background layer, not the scrolled content, so it stays
+     put at the top-right corner exactly like the border does. */
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge-strong) calc(50% - 1px), var(--edge-strong) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 
 .version-picker-item { border-bottom: 1px solid var(--edge); }
