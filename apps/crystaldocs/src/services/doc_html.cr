@@ -43,8 +43,12 @@ module CrystalDocs
     ALLOWED_ATTRIBUTES = {
       "a"   => Set{"href", "title"},
       "img" => Set{"src", "alt", "title"},
-      "td"  => Set{"colspan", "rowspan"},
-      "th"  => Set{"colspan", "rowspan", "scope"},
+      # `align` is rebuilt from TABLE_ALIGNMENTS below the same way `class`
+      # is rebuilt from HIGHLIGHT_CLASSES, so a table cell can carry the
+      # alignment its own delimiter row asked for without a shard author
+      # reaching this attribute with a value of their own choosing.
+      "td" => Set{"colspan", "rowspan", "align"},
+      "th" => Set{"colspan", "rowspan", "scope", "align"},
       # A README links to its own sections, so headings, and only headings,
       # carry an id. The value is never the author's string as written: it is
       # rebuilt in resolve_anchor before it reaches the page.
@@ -70,6 +74,11 @@ module CrystalDocs
     # element an author wrote by hand in a doc comment all arrive here
     # speaking one vocabulary and one theme styles them.
     HIGHLIGHT_CLASSES = Set{"c", "i", "k", "m", "n", "o", "s", "t"}
+
+    # The only three values a GFM delimiter row's colons can produce.
+    # `constrain_align` rebuilds every `align` attribute from this set, the
+    # same defence in depth `constrain_class` already gives `class`.
+    TABLE_ALIGNMENTS = Set{"left", "center", "right"}
 
     # The only elements an anchor link is given somewhere to land.
     HEADING_TAGS = Set{"h1", "h2", "h3", "h4", "h5", "h6"}
@@ -117,10 +126,13 @@ module CrystalDocs
                       ref : String? = nil) : String
       return "" unless source && !source.empty?
 
+      transformed, tables = extract_tables(source)
+
       # `Markd.to_html` hardcodes its own renderer, so the two steps it takes
       # are taken here instead to get the highlighting one.
       options = Markd::Options.new
-      rendered = FenceRenderer.new(options).render(Markd::Parser.parse(source, options))
+      rendered = FenceRenderer.new(options).render(Markd::Parser.parse(transformed, options))
+      rendered = splice_tables(rendered, tables, options) unless tables.empty?
       sanitize(rendered, repository, ref)
     end
 
@@ -255,6 +267,7 @@ module CrystalDocs
             # browser resolves and the encoded text is not.
             value = HTML.unescape(attr[3]? || attr[4]? || attr[5]? || "")
             value = constrain_class(name, value) if key == "class"
+            value = constrain_align(value) if key == "align"
             next unless value
 
             # A relative reference is read against the repository before it
@@ -387,6 +400,23 @@ module CrystalDocs
       end
     end
 
+    # `align` is the other attribute whose value has to mean something to a
+    # browser rather than to whoever wrote the table: only the three values
+    # a delimiter row's colons can produce survive, so no shard author
+    # reaches this attribute with a fourth value of their own choosing. The
+    # table markup this module builds already writes only these three, so
+    # this is defence in depth rather than the only thing standing between
+    # a cell and an arbitrary attribute value.
+    # `String?`, not `String`, because this runs after `constrain_class`'s
+    # own conditional reassignment above: `key` gates the two mutually, so
+    # `value` is never actually nil by the time this executes, but the
+    # compiler cannot see that across the two independent `if`s, only that
+    # the value flowing in might be.
+    private def self.constrain_align(value : String?) : String?
+      return nil unless value
+      value if TABLE_ALIGNMENTS.includes?(value)
+    end
+
     # Markd builds this from the fence's info string, which is whatever the
     # author typed after the backticks. Only the shape survives: one
     # `language-` token of the characters a language name is spelled with,
@@ -479,6 +509,369 @@ module CrystalDocs
       end
 
       nil
+    end
+
+    # ---- GFM tables -----------------------------------------------------
+
+    # markd 0.5.0 has no table rule at all: `table` appears in
+    # lib/markd/src/markd/rule.cr only inside the raw HTML block regex, and
+    # even if an author hand wrote one, `sanitize` above is this module's
+    # whole defence and would have to see it to keep it, which it never
+    # gets the chance to since markd's own inline HTML handling and this
+    # module's DROP_CONTENT_TAGS are not table-aware either. A README table
+    # would otherwise reach the page as its delimiter row and pipes, read
+    # literally, in a paragraph. This scans the raw source for a GFM table
+    # before markd ever sees it, replaces each one with an unforgeable
+    # placeholder line, renders the rest of the document exactly as it does
+    # today, and splices the table's own HTML into the rendered placeholder
+    # before the whole document reaches `sanitize`: the table this builds
+    # passes through the exact same allowlist as everything else, on the
+    # exact same pass, rather than being trusted on its own say-so.
+
+    # A cell's horizontal alignment, carried by the delimiter row's leading
+    # and trailing colons. `None` is the common case: no colon, no
+    # attribute, a browser's own default left alignment applies.
+    private enum TableAlign
+      None
+      Left
+      Center
+      Right
+    end
+
+    # What the source scan found, still unrendered Markdown. `header` and
+    # each row in `rows` are exactly as many cells as GFM's own pipe
+    # splitting produced, which is not necessarily `alignments.size`: a
+    # short row is padded and a long one truncated against the header's own
+    # count at render time, the way GFM itself does it.
+    private record TableBlock,
+      header : Array(String),
+      alignments : Array(TableAlign),
+      rows : Array(Array(String))
+
+    # Backslash-escapable per CommonMark's own definition (the ASCII
+    # punctuation ranges 0x21-0x2F, 0x3A-0x40, 0x5B-0x60, 0x7B-0x7E): what a
+    # cell-splitting scan must skip as one unit, so `` `\|` `` does not end
+    # its cell one character early on the backslash that precedes a
+    # backtick, not a pipe.
+    ESCAPABLE_PUNCTUATION = Set{
+      '!', '"', '#', '$', '%', '&', '\'', '(', ')', '*', '+', ',', '-', '.',
+      '/', ':', ';', '<', '=', '>', '?', '@', '[', '\\', ']', '^', '_', '`',
+      '{', '|', '}', '~',
+    }
+
+    # The index of every pipe in `line` that actually ends a cell: not one
+    # preceded by a single backslash, which escapes it into the cell's own
+    # text instead, and not one already claimed by a two-character escape of
+    # something else (`\\` escaping a backslash is what makes the pipe right
+    # after it a real delimiter again).
+    private def self.pipe_positions(line : String) : Array(Int32)
+      positions = [] of Int32
+      chars = line.chars
+      i = 0
+      while i < chars.size
+        char = chars[i]
+        if char == '\\' && i + 1 < chars.size && ESCAPABLE_PUNCTUATION.includes?(chars[i + 1])
+          i += 2
+        elsif char == '|'
+          positions << i
+          i += 1
+        else
+          i += 1
+        end
+      end
+      positions
+    end
+
+    # GFM unescapes a cell's own escaped pipe before anything else touches
+    # it, including before a code span's backticks get a chance to treat the
+    # backslash as literal. That ordering is the only way `` `\|` `` renders
+    # as `<code>|</code>` rather than `<code>\|</code>`, which is why this
+    # happens here rather than being left to markd's own inline parser: a
+    # code span's contents are never re-escaped once parsed.
+    private def self.unescape_pipes(text : String) : String
+      return text unless text.includes?('\\')
+      text.gsub("\\|", "|")
+    end
+
+    # Splits one row into its cell text, GFM's own rule for what a pipe
+    # delimits: a leading or trailing pipe is punctuation around the row,
+    # not an empty cell of its own, so only an interior empty run (`| |`)
+    # counts. `nil` is the one line shape GFM does not recognise as a row at
+    # all: a bare `|`, which has nothing on either side of it to be a cell.
+    private def self.split_row(line : String) : Array(String)?
+      chars = line.chars
+      pipes = pipe_positions(line)
+
+      bounds = [-1] + pipes + [chars.size]
+      segments = [] of String
+      i = 0
+      while i < bounds.size - 1
+        segments << chars[(bounds[i] + 1)...bounds[i + 1]].join
+        i += 1
+      end
+
+      segments.shift if pipes.first? == 0
+      segments.pop if pipes.last? == chars.size - 1
+
+      return nil if segments.empty?
+
+      segments.map { |cell| unescape_pipes(cell).strip }
+    end
+
+    # A line the delimiter row's own grammar allows: each cell only hyphens,
+    # with an optional leading or trailing colon for alignment. This
+    # validates one already-split cell; `delimiter_cells` below is what
+    # checks a whole candidate line and its cell count against the header.
+    DELIMITER_CELL = /\A:?-+:?\z/
+
+    # `nil` for anything that is not a delimiter row at all, including a
+    # line with the right shape but indented 4 or more spaces: that is an
+    # indented code block's own territory in CommonMark, table row or not.
+    # A cell-count mismatch against the header is judged by the caller, not
+    # here, so this only answers "is this line a delimiter row", not "is it
+    # the right one".
+    private def self.delimiter_cells(line : String) : Array(String)?
+      return nil if indented_line?(line)
+      cells = split_row(line)
+      return nil unless cells
+      cells.all?(&.matches?(DELIMITER_CELL)) ? cells : nil
+    end
+
+    private def self.align_of(cell : String) : TableAlign
+      left = cell.starts_with?(':')
+      right = cell.ends_with?(':')
+      if left && right
+        TableAlign::Center
+      elsif left
+        TableAlign::Left
+      elsif right
+        TableAlign::Right
+      else
+        TableAlign::None
+      end
+    end
+
+    # A tab always reaches at least one tab stop, 4 columns, on its own.
+    private def self.indented_line?(line : String) : Bool
+      return true if line.starts_with?('\t')
+      spaces = 0
+      line.each_char do |char|
+        break unless char == ' '
+        spaces += 1
+      end
+      spaces >= 4
+    end
+
+    # A fence's own opening line: up to 3 leading spaces, then a run of 3 or
+    # more backticks or tildes, the character and the run's length being all
+    # a close needs to recognise later. What follows on the line, an info
+    # string or nothing, plays no part in opening or closing one.
+    FENCE_MARKER = /\A {0,3}(`{3,}|~{3,})/
+
+    private def self.fence_open(line : String) : {Char, Int32}?
+      return nil unless (marker = line.match(FENCE_MARKER))
+      run = marker[1]
+      {run[0], run.size}
+    end
+
+    private def self.fence_close?(line : String, char : Char, run : Int32) : Bool
+      return false unless (marker = line.match(FENCE_MARKER))
+      captured = marker[1]
+      captured[0] == char && captured.size >= run && line[marker.end..].blank?
+    end
+
+    # 128 bits from the same secure generator every session token in this
+    # codebase already trusts, fresh per table and never derived from the
+    # document it is about to be spliced into. A README that guesses at this
+    # format and writes it into its own prose is writing plain text nobody's
+    # generated HTML lands inside: the odds of it matching the one made for
+    # this render are the odds of guessing this number.
+    private def self.generate_placeholder : String
+      "crystaldocstable" + Random::Secure.hex(16)
+    end
+
+    # Scans `source` for GFM table blocks and replaces each with its own
+    # placeholder line before markd ever parses it, so the rest of the
+    # document renders exactly as it does today. A table is a header row
+    # whose very next line is a matching delimiter row, matching in cell
+    # count; a mismatch is not a table at all, GFM's own rule, and the two
+    # lines are left as the ordinary text they are. Every further non-blank
+    # line after the delimiter row is one more body row, GFM's own rule too,
+    # until the first blank line or the end of the document ends the table.
+    #
+    # A header row without a pipe at all is not a table candidate, even
+    # though `split_row` would happily hand back its one cell: `Foo` over
+    # `---` is a setext heading, not a one-column table, and a bare `---` on
+    # its own is a thematic break. Both are exactly as common in a README as
+    # an actual table, and both are indistinguishable from a delimiter row
+    # by shape alone. Requiring a real pipe in the header is what leaves
+    # them to markd's own, correct, handling.
+    #
+    # What else this does not attempt: a table cannot interrupt a fenced
+    # code block (tracked below, so a README documenting this very syntax
+    # inside one reaches the page as the text it is), and a line that would
+    # start a new block-level construct with no blank line before it, a
+    # blockquote immediately after a table's last row with nothing
+    # separating them, is read as one more ragged body row rather than
+    # breaking the table the way GFM itself would. Real Markdown puts a
+    # blank line there anyway. A table nested inside a blockquote or a list
+    # is not attempted at all, the same boundary `CodeHighlighter` draws
+    # around the languages it knows: this covers what a shard's README
+    # actually does with a table, not the whole of GFM's own block dispatch
+    # machinery.
+    private def self.extract_tables(source : String) : {String, Hash(String, TableBlock)}
+      return {source, {} of String => TableBlock} unless source.includes?('|')
+
+      lines = source.split('\n')
+      out = [] of String
+      tables = {} of String => TableBlock
+      fence : {Char, Int32}? = nil
+      i = 0
+
+      while i < lines.size
+        line = lines[i]
+
+        if open_fence = fence
+          out << line
+          fence = nil if fence_close?(line, open_fence[0], open_fence[1])
+          i += 1
+          next
+        end
+
+        if opened = fence_open(line)
+          fence = opened
+          out << line
+          i += 1
+          next
+        end
+
+        header = indented_line?(line) || pipe_positions(line).empty? ? nil : split_row(line)
+        delimiter = header && i + 1 < lines.size ? delimiter_cells(lines[i + 1]) : nil
+
+        if header && delimiter && header.size == delimiter.size
+          rows = [] of Array(String)
+          j = i + 2
+          while j < lines.size && !lines[j].strip.empty?
+            row = split_row(lines[j])
+            break unless row
+            rows << row
+            j += 1
+          end
+
+          # A header stolen from the last line of an already open paragraph
+          # needs a blank line ahead of its placeholder, or markd would fold
+          # that paragraph's earlier lines into the placeholder's own
+          # paragraph, and the splice below would replace them along with
+          # it. GFM's real behaviour keeps the earlier lines as their own
+          # paragraph, sibling to the table rather than part of it; this is
+          # how that survives the round trip through a placeholder.
+          out << "" if i > 0 && !lines[i - 1].strip.empty?
+
+          placeholder = generate_placeholder
+          tables[placeholder] = TableBlock.new(header, delimiter.map { |cell| align_of(cell) }, rows)
+          out << placeholder
+          i = j
+          next
+        end
+
+        out << line
+        i += 1
+      end
+
+      {out.join('\n'), tables}
+    end
+
+    # `align` is never copied from author text: only these four literals,
+    # one per member of `TableAlign`, are ever written here, and `sanitize`
+    # rebuilds whatever it finds through `constrain_align` again besides.
+    private def self.align_attr(align : TableAlign) : String
+      case align
+      in .left?   then %( align="left")
+      in .center? then %( align="center")
+      in .right?  then %( align="right")
+      in .none?   then ""
+      end
+    end
+
+    # A cell's text goes through the exact inline lexer prose does, on a
+    # bare paragraph node rather than through `Markd::Parser.parse`: block
+    # dispatch never runs on it, so a cell that starts with `#` or `-` or
+    # `>` reads as the text it is, the same as GFM's own table cells, which
+    # parse inline content only and never consider a cell for block
+    # structure at all. A relative `href` or `src` a cell's own markdown
+    # produces is left exactly as markd wrote it, same as one written
+    # anywhere else in the document: `sanitize`, run once over the whole
+    # rendered page after the splice below, is what reads it against the
+    # repository, not this method.
+    private def self.render_cell(text : String, options : Markd::Options) : String
+      return "" if text.empty?
+
+      node = Markd::Node.new(Markd::Node::Type::Paragraph)
+      node.text = text
+      Markd::Parser::Inline.new(options).parse(node)
+
+      unwrap_paragraph(FenceRenderer.new(options).render(node))
+    end
+
+    # A rendered cell is one paragraph, `<p>` to `</p>` with nothing else:
+    # no attribute (`source_pos` is off), no embedded newline (cell text is
+    # one source line, so it can contain no soft break), so this is exact,
+    # not a heuristic.
+    private def self.unwrap_paragraph(html : String) : String
+      html.starts_with?("<p>") && html.ends_with?("</p>") ? html[3..-5] : html
+    end
+
+    # The table's own HTML, built directly rather than through markd:
+    # nothing here is a node type markd's own renderer knows how to draw, so
+    # this module owns `table`, `thead`, `tbody`, `tr`, `th` and `td`
+    # outright. A short row is padded with an empty cell per the header's
+    # own count, a long one's excess ignored past it, GFM's own rule for a
+    # ragged body row; no `tbody` at all when there are no rows to put in
+    # one, GFM's own rule for that too. Every tag and attribute name here is
+    # already on ALLOWED_TAGS and ALLOWED_ATTRIBUTES, so `sanitize` keeps
+    # this shape rather than stripping it once the splice below hands it
+    # over.
+    private def self.table_html(table : TableBlock, options : Markd::Options) : String
+      String.build do |io|
+        io << "<table><thead><tr>"
+        table.header.each_with_index do |cell, index|
+          io << "<th" << align_attr(table.alignments[index]) << '>'
+          io << render_cell(cell, options)
+          io << "</th>"
+        end
+        io << "</tr></thead>"
+
+        unless table.rows.empty?
+          io << "<tbody>"
+          table.rows.each do |row|
+            io << "<tr>"
+            table.header.size.times do |index|
+              content = row[index]? || ""
+              io << "<td" << align_attr(table.alignments[index]) << '>'
+              io << render_cell(content, options) unless content.empty?
+              io << "</td>"
+            end
+            io << "</tr>"
+          end
+          io << "</tbody>"
+        end
+
+        io << "</table>"
+      end
+    end
+
+    # Markd wrapped the lone placeholder line in a paragraph, so the whole
+    # paragraph is replaced, not just the token inside it: leaving `<p>` and
+    # `</p>` in place would ring every table in an empty paragraph element.
+    # Each placeholder is unique to the table it names, so one substitution
+    # each is exact, never a prefix of another table's own token. This runs
+    # before `sanitize`, not after: the table this builds is ordinary HTML
+    # to that pass, allowed through by ALLOWED_TAGS and ALLOWED_ATTRIBUTES
+    # like anything else, not HTML that skips it.
+    private def self.splice_tables(html : String, tables : Hash(String, TableBlock), options : Markd::Options) : String
+      tables.reduce(html) do |result, (placeholder, table)|
+        result.sub("<p>#{placeholder}</p>", table_html(table, options))
+      end
     end
   end
 end
