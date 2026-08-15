@@ -19,35 +19,37 @@ class Components::DocsSidebarNav < Lucky::BaseComponent
 
   def render
     aside class: "docs-sidebar" do
-      nav class: "docs-nav", "aria-label": "Package contents" do
-        div class: "docs-nav-group" do
-          h2 class: "docs-nav-heading" do
-            a href: CrystalDocs::PackagePaths.version_path(doc.package_name, doc_version.version) do
-              text doc.package_name
+      div class: "docs-sidebar-inner" do
+        nav class: "docs-nav", "aria-label": "Package contents" do
+          div class: "docs-nav-group" do
+            h2 class: "docs-nav-heading" do
+              a href: CrystalDocs::PackagePaths.version_path(doc.package_name, doc_version.version) do
+                text doc.package_name
+              end
+            end
+
+            para class: "docs-nav-version" do
+              text doc_version.version
             end
           end
 
-          para class: "docs-nav-version" do
-            text doc_version.version
+          # A registry package can define hundreds of types, so the tree needs a
+          # way to narrow it. This filters the rendered tree without a request;
+          # with scripting off the tree is still there and still complete.
+          div class: "docs-nav-group" do
+            label "Filter types", for: "docs-type-filter", class: "visually-hidden"
+            input(
+              type: "search",
+              id: "docs-type-filter",
+              class: "docs-nav-filter",
+              placeholder: "Filter types",
+              autocomplete: "off",
+              "data-docs-filter": "true"
+            )
           end
-        end
 
-        # A registry package can define hundreds of types, so the tree needs a
-        # way to narrow it. This filters the rendered tree without a request;
-        # with scripting off the tree is still there and still complete.
-        div class: "docs-nav-group" do
-          label "Filter types", for: "docs-type-filter", class: "visually-hidden"
-          input(
-            type: "search",
-            id: "docs-type-filter",
-            class: "docs-nav-filter",
-            placeholder: "Filter types",
-            autocomplete: "off",
-            "data-docs-filter": "true"
-          )
+          render_type_tree
         end
-
-        render_type_tree
       end
     end
   end
