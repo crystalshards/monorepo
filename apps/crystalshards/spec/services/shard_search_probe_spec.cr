@@ -33,8 +33,8 @@ private def searched_query(host : FakeHost) : String
 end
 
 describe ShardSearchProbe do
-  # The feature is for the search that failed. A query with a screenful of
-  # results has been answered, and probing it would spend a shared
+  # The feature is for the search the registry answered badly. A query already
+  # filling a screen has been answered, and probing it would spend a shared
   # ten-a-minute bucket to append repositories nobody scrolled to want.
   it "does not probe a search the registry already answered" do
     FakeHost.run do |host|
@@ -48,6 +48,33 @@ describe ShardSearchProbe do
     end
 
     probes.should be_empty
+  end
+
+  # The threshold was 3, and that gated out precisely the searches with
+  # something to find. Measured against production and GitHub: "webview"
+  # returned 5 local results and had one matching repository the registry did
+  # not hold; "prometheus" returned 9 and had one. Both were refused. A search
+  # returning a handful is what a partially covered topic looks like, and it is
+  # the case this exists for.
+  it "probes a search that returned a handful rather than a screenful" do
+    FakeHost.run do |host|
+      searchable(host, [{"acme/thing", "A thing"}], {"acme/thing" => manifest_for("thing")})
+
+      with_probe(host) do
+        ShardSearchProbe.request("webview", 5_i64).should eq(1)
+      end
+    end
+  end
+
+  it "stops probing at the point a reader can fill a page" do
+    FakeHost.run do |host|
+      searchable(host, [] of {String, String})
+
+      with_probe(host) do
+        ShardSearchProbe.request("router", ShardSearchProbe::THIN_RESULTS.to_i64).should be_nil
+        ShardSearchProbe.request("router", (ShardSearchProbe::THIN_RESULTS - 1).to_i64).should_not be_nil
+      end
+    end
   end
 
   # Code search answers an unauthenticated request with 401, so a deployment
@@ -213,6 +240,53 @@ describe ShardSearchProbe do
       end
 
       probes.size.should eq(1)
+    end
+
+    # The guard the per-term claim cannot give, and the hole this module shipped
+    # with. RETRY_FLOOR stops one term being asked twice; it does nothing about a
+    # hundred DIFFERENT terms, which is what a crawler walking a search listing
+    # produces. Measured the hard way: a handful of sequential code searches
+    # returned 403 for everything after them, and a per-term limit would not have
+    # stopped any of it.
+    it "stops probing once the site has spent its minute" do
+      FakeHost.run do |host|
+        searchable(host, [] of {String, String})
+
+        with_probe(host) do
+          # Distinct terms, so every one of these clears the per-term claim and
+          # only the site budget is left to stop them.
+          ShardSearchProbe::PROBES_PER_MINUTE.times do |index|
+            ShardSearchProbe.request("term-number-#{index}", 0_i64).should_not be_nil
+          end
+
+          ShardSearchProbe.request("one-term-too-many", 0_i64).should be_nil
+        end
+
+        host.request_count(/search\/code/).should eq(ShardSearchProbe::PROBES_PER_MINUTE)
+      end
+
+      # The refused term took no claim, so it is not silenced for a day over a
+      # busy minute it had nothing to do with.
+      probes.map(&.term).should_not contain("one-term-too-many")
+    end
+
+    it "probes again once the minute has rolled past" do
+      FakeHost.run do |host|
+        searchable(host, [] of {String, String})
+
+        with_probe(host) do
+          ShardSearchProbe::PROBES_PER_MINUTE.times do |index|
+            ShardSearchProbe.request("spent-#{index}", 0_i64)
+          end
+          ShardSearchProbe.request("declined", 0_i64).should be_nil
+
+          # A rolling window, not a fixed one: age the spend rather than waiting
+          # for a boundary that a fixed window would let twice the budget cross.
+          AppDatabase.exec("UPDATE search_probes SET probed_at = $1", Time.utc - 2.minutes)
+
+          ShardSearchProbe.request("allowed-again", 0_i64).should_not be_nil
+        end
+      end
     end
 
     it "probes again once the floor has passed" do

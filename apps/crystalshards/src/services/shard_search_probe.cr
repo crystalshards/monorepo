@@ -54,14 +54,43 @@ module ShardSearchProbe
   # wasted on a term nobody meant.
   MIN_TERM_LENGTH = 3
 
-  # Probe only when the registry has this few local results.
+  # Probe only when the registry has fewer local results than this.
   #
-  # The feature is for the search that failed, not for every search. A query
-  # already returning a screenful has been answered, and probing it would spend
-  # the bucket to append repositories nobody scrolled far enough to want. Below
-  # this, the page is thin enough that going and looking is the difference
-  # between a useful answer and an empty one.
-  THIN_RESULTS = 3
+  # The feature is for the search the registry answered badly, and the number
+  # was measured rather than chosen. It started at 3, on the reasoning that only
+  # an empty page was worth a request, and that turned out to gate out precisely
+  # the searches with something to find. Sampled against production and against
+  # GitHub's code search: "webview" had 5 local results and one matching
+  # repository the registry did not hold, and "prometheus" had 9 local results
+  # and one. Both were refused by a threshold of 3. Every term thin enough to
+  # pass it, meanwhile, was a term the exhaustive crawl had already covered
+  # completely, so the probe reliably spent a request to learn nothing.
+  #
+  # The gap is not in the empty searches. It is in the ones returning a handful,
+  # which is what a partially covered topic looks like. 10 is half a listing
+  # page: below it a reader cannot fill their screen, which is the honest line
+  # between "answered" and "answered badly".
+  THIN_RESULTS = 10
+
+  # Probes allowed across the whole site in any one minute.
+  #
+  # This is the guard the per-term claim cannot provide, and shipping without it
+  # was a hole in the protection this module claims to give. RETRY_FLOOR stops
+  # one term being asked twice; it does nothing about a hundred DIFFERENT terms,
+  # which is what a crawler walking a search-results listing produces, and what
+  # a busy hour produces on its own.
+  #
+  # GitHub's code search allows ten requests a minute and the exhaustive sweep
+  # draws on the same bucket. Measured the hard way while verifying this
+  # feature: a handful of sequential code searches from one terminal returned
+  # 403 for everything after them. A per-term limit would not have stopped any
+  # of it.
+  #
+  # Five leaves half the bucket for the sweep, which needs about ten requests
+  # per scheduled run and must never be starved by page traffic. A search over
+  # the budget is not an error and not a delay: it renders from the database, as
+  # it would have if nobody had built this.
+  PROBES_PER_MINUTE = 5
 
   # How long a probe may take before the page gives up waiting on it.
   #
@@ -97,14 +126,22 @@ module ShardSearchProbe
   # repositories it registered.
   #
   # nil means no probe happened, for any of the ordinary reasons: the feature is
-  # off, the term is too short, the registry already answered the search, or
-  # somebody has asked this recently. The caller renders what it already had.
+  # off, the term is too short, the registry answered the search well enough,
+  # somebody asked this recently, or the site has spent its minute's budget. The
+  # caller renders what it already had, which is what it would have rendered if
+  # none of this existed.
   def self.request(term : String?, local_results : Int64) : Int32?
     return nil unless enabled?
-    return nil if local_results > THIN_RESULTS
+    return nil if local_results >= THIN_RESULTS
 
     normalized = normalized_term(term)
     return nil unless normalized
+
+    # Checked before the claim, not after, and the order is the point. A claim
+    # stamps `probed_at`, which suppresses the term for RETRY_FLOOR. Taking one
+    # and then refusing to spend the request would silence that term for a day
+    # over a busy minute it had nothing to do with.
+    return nil unless within_budget?
     return nil unless claimed?(normalized)
 
     run_bounded(normalized)
@@ -113,6 +150,28 @@ module ShardSearchProbe
     # answer than a full one and a much better one than a 500.
     Log.error(exception: ex) { "Search probe for #{term.inspect} failed" }
     nil
+  end
+
+  # Whether the site has a probe left in this minute.
+  #
+  # Counted from the claims themselves rather than from a counter, so it needs no
+  # state of its own and cannot drift from what actually happened. A rolling
+  # window rather than a fixed one: fixed windows let twice the budget through
+  # across a boundary, which against a ten-a-minute bucket is the whole budget.
+  def self.within_budget? : Bool
+    spent = AppDatabase.query_one(
+      "SELECT COUNT(*) FROM search_probes WHERE probed_at > $1",
+      Time.utc - 1.minute,
+      as: Int64
+    )
+
+    return true if spent < PROBES_PER_MINUTE
+
+    Log.info do
+      "Search probe declined: #{spent} probes in the last minute is the site's budget of " \
+      "#{PROBES_PER_MINUTE}. Rendering from the registry instead."
+    end
+    false
   end
 
   private def self.normalized_term(term : String?) : String?
