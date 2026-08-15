@@ -28,11 +28,25 @@ module CrystalDocs
     # last_updated_at stays NULL. It records when documentation was last built,
     # and nothing has been built yet; filling it in would put a package nobody
     # has documented at the top of a list ordered by that column.
+    #
+    # The conflict path only ever backfills a commit sha, never overwrites
+    # one, and only for a version nothing has successfully built yet. A
+    # version already built documents whatever commit was checked out for
+    # that build, and the registry's current answer for the same tag is not
+    # proof of what that was: the tag can have moved since. Guessing there
+    # would let a README's relative reference resolve against a revision the
+    # artifact was never compiled from. A version still pending has no such
+    # artifact to be wrong about, so recording the registry's current answer
+    # is simply recording a fact, not a guess.
     INSERT_VERSION_SQL = <<-SQL
       INSERT INTO doc_versions
-        (doc_id, version, published_at, build_status, storage_path, created_at, updated_at)
-      VALUES ($1, $2, $3, 'pending', $4, $5, $5)
-      ON CONFLICT (doc_id, version) DO NOTHING
+        (doc_id, version, published_at, build_status, storage_path, source_commit_sha, created_at, updated_at)
+      VALUES ($1, $2, $3, 'pending', $4, $5, $6, $6)
+      ON CONFLICT (doc_id, version) DO UPDATE
+        SET source_commit_sha = EXCLUDED.source_commit_sha
+        WHERE doc_versions.source_commit_sha IS NULL
+          AND doc_versions.build_status <> 'success'
+          AND EXCLUDED.source_commit_sha IS NOT NULL
       SQL
 
     # The default version is registry state, not ours, so it is corrected on
@@ -92,6 +106,7 @@ module CrystalDocs
         release.version,
         release.released_at,
         "#{doc.package_name}/#{release.version}",
+        release.commit_sha,
         now
       )
 

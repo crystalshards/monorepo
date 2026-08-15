@@ -2,17 +2,53 @@ require "../../services/job_ads"
 
 # Paid placement for CrystalGigs, rendered on every page of this site.
 #
-# The whole component is conditional on having something real to show. There is
-# no empty state, no skeleton and no spinner, because all three are ways of
-# telling a reader that something is coming when nothing is. If CrystalGigs is
-# unreachable, misconfigured, or simply has no open roles, the page renders as
-# though this component did not exist.
+# CrystalGigs' own feed drives this whenever it has real jobs to advertise.
+# When it answers with fewer than `limit`, including a genuinely empty board,
+# the slot fills the remainder with first-party CrystalGigs house ads rather
+# than leaving a gap: an empty board is a real answer CrystalGigs gave, and
+# it has earned the right to be advertised on the strength of that answer.
+#
+# A fetch that failed, is backing off, or never got the chance to run is a
+# different thing entirely. It has not established that CrystalGigs, or the
+# house ad links this component would build for it, are even reachable, so
+# that case renders nothing at all, exactly as it always has. See
+# `CrystalDocs::JobAds::Answer` for where that line is drawn.
+#
+# The one other thing that turns the whole strip off is JOB_ADS_URL being
+# unset. That is a deliberate switch documented on JobAdsConfig for
+# environments that want no ad strip at all, distinct from a feed that ran
+# and came back with nothing, so it is respected here rather than papered
+# over.
 class Components::JobAd < Lucky::BaseComponent
   needs limit : Int32 = 3
 
+  # A CrystalGigs house ad: title plus the path under GIGS_SITE_ORIGIN it
+  # sends a reader to. Not a full URL by itself, and never a literal
+  # "https://crystalgigs.com" in source: the origin is a deployment fact,
+  # read from GigsSiteConfig the same way every other cross-app link in this
+  # codebase reads its target rather than hardcoding it.
+  private record HouseAd, title : String, path : String
+
+  # One per audience this strip actually serves: a developer looking for
+  # Crystal work goes to the job board, a company looking to hire one goes to
+  # post a role. Copy only; the honesty is in render_house_ad, which labels
+  # every one of these as CrystalGigs' own placement rather than letting the
+  # copy alone imply it.
+  HOUSE_ADS = [
+    HouseAd.new("Browse Crystal jobs on CrystalGigs", "/jobs"),
+    HouseAd.new("Post a Crystal role on CrystalGigs", "/jobs/new"),
+  ]
+
   def render
-    ads = CrystalDocs::JobAds.current(limit)
-    return if ads.empty?
+    answer = CrystalDocs::JobAds.answer(limit)
+    return unless answer.answered?
+
+    ads = answer.ads
+    origin = CrystalDocs::GigsSiteConfig.origin
+    # Nothing to show: the feed answered empty and GIGS_SITE_ORIGIN is not
+    # configured (allowed outside production), so there is no house ad to
+    # build either.
+    return if ads.empty? && origin.nil?
 
     # A named <aside> is a complementary landmark, so this is listed among the
     # page's regions and can be jumped to or skipped. The name leads with
@@ -38,6 +74,18 @@ class Components::JobAd < Lucky::BaseComponent
       # of source. Sibling-site navigation belongs in the masthead.
       ul class: "job-ad-list" do
         ads.each { |ad| render_ad(ad) }
+
+        # House ads fill whatever the feed left empty, so the slot always
+        # holds exactly `limit` cards. A strip that is sometimes three wide
+        # and sometimes one wide, depending on how many real jobs happened to
+        # be open, reads as a layout bug rather than an ad rotation. Cycling
+        # by position rather than Random.rand keeps a given render's fill
+        # identical to the next one: nothing here changes because someone
+        # hit reload.
+        if origin
+          missing = limit - ads.size
+          missing.times { |i| render_house_ad(HOUSE_ADS[i % HOUSE_ADS.size], origin) }
+        end
       end
     end
   end
@@ -69,6 +117,25 @@ class Components::JobAd < Lucky::BaseComponent
           span class: "job-ad-remote" do
             text "Remote"
           end
+        end
+      end
+    end
+  end
+
+  # Same shell as a feed job (job-ad-item, job-ad-title, job-ad-meta) so the
+  # slot's shape never depends on where a card came from. The honesty is a
+  # visible "First party" label, not just a company field a reader could
+  # skim past and mistake for a genuine employer's name.
+  private def render_house_ad(ad : HouseAd, origin : String)
+    li class: "job-ad-item" do
+      a ad.title, href: "#{origin}#{ad.path}", class: "job-ad-title", rel: "noopener"
+
+      para class: "job-ad-meta" do
+        span class: "job-ad-company" do
+          text "CrystalGigs"
+        end
+        span class: "job-ad-house" do
+          text "First party"
         end
       end
     end

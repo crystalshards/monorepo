@@ -6,6 +6,7 @@
 # questions an indexer asks. They shared a name until the indexer landed, and
 # only one of them can have it.
 require "json"
+require "./author_identity"
 
 # The shard.yml as it stood on one git tag.
 #
@@ -67,8 +68,13 @@ class StoredManifest
     scalar("description")
   end
 
+  # `authors:` entries are "Name <email@example.com>" by shard.yml's own
+  # convention, and this is the only reader of that column a page ever
+  # calls, so it is also the one place that has to strip the address before
+  # a caller can print what comes back. See AuthorIdentity for why the
+  # address is dropped outright rather than linked or obfuscated.
   def authors : Array(String)
-    strings("authors")
+    strings("authors").map { |entry| AuthorIdentity.display_name(entry) }
   end
 
   def executables : Array(String)

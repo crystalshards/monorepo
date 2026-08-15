@@ -653,6 +653,94 @@ describe Shards::Show do
     end
   end
 
+  describe "README rendering" do
+    it "renders markdown headings and lists as elements rather than literal text" do
+      shard = ShardFactory.create &.name("readme-shard")
+        .readme_content("# Kemal\n\n- fast\n- simple\n")
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain("<h1>Kemal</h1>")
+      response.body.should contain("<li>fast</li>")
+      response.body.should contain("<li>simple</li>")
+      response.body.should_not contain("# Kemal")
+      response.body.should_not contain("- fast")
+    end
+
+    it "renders a fenced code block as pre > code" do
+      shard = ShardFactory.create &.name("readme-shard")
+        .readme_content(%(```crystal\nputs "hi"\n```))
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain("<pre><code")
+      response.body.should contain("</code></pre>")
+      response.body.should_not contain("```")
+    end
+
+    # Markdown permits raw HTML, so a README is an injection vector unless the
+    # rendered output drops it rather than merely escaping it.
+    #
+    # Asserted against the payload and the omission marker rather than the
+    # bare string "<script": every page in this app carries the layout's own
+    # deferred script tag, so a blanket search for that substring can only
+    # ever fail and would say nothing about the README either way.
+    it "never lets a script tag in a README reach the page" do
+      shard = ShardFactory.create &.name("readme-shard")
+        .readme_content("Intro\n\n<script>alert('readme')</script>\n")
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain("Intro")
+      response.body.should contain("raw HTML omitted")
+      response.body.should_not contain("<script>")
+      response.body.should_not contain("alert(")
+    end
+
+    it "refuses a javascript: link in a README" do
+      shard = ShardFactory.create &.name("readme-shard")
+        .readme_content("[click me](javascript:alert(1))")
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should_not contain("javascript:")
+      response.body.should contain("click me")
+    end
+
+    it "resolves a relative README image to the repository's raw content URL" do
+      shard = ShardFactory.create &.name("readme-shard")
+        .at("github.com", "kemalcr", "kemal")
+        .readme_content("![Logo](docs/logo.png)")
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain(
+        %(src="https://raw.githubusercontent.com/kemalcr/kemal/master/docs/logo.png")
+      )
+    end
+
+    # A repository is not always tagged "1.6.0"; it is tagged "v1.6.0" and
+    # ShardVersion#version normalises that for display. A README image has to
+    # resolve against the ref that actually exists on the host or the URL
+    # this page builds 404s on a repository the maintainer tagged normally.
+    it "resolves a README image against the checkout ref, not the display version" do
+      shard = ShardFactory.create &.name("readme-shard")
+        .at("github.com", "kemalcr", "kemal")
+        .readme_content("![Logo](logo.png)")
+        .latest_version("1.6.0")
+      ShardVersionFactory.create &.shard_id(shard.id)
+        .version("1.6.0")
+        .ref("v1.6.0")
+
+      response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.body.should contain(
+        %(src="https://raw.githubusercontent.com/kemalcr/kemal/v1.6.0/logo.png")
+      )
+      response.body.should_not contain("/1.6.0/logo.png")
+    end
+  end
+
   describe "page title" do
     it "uses shard name as page title" do
       shard = ShardFactory.create &.name("awesome-shard")

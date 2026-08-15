@@ -194,6 +194,49 @@ describe Shards::Show do
       response.body.should contain("This version declares no dependencies.")
     end
 
+    it "shows an author's name and never the address next to it" do
+      shard = ShardFactory.create &.name("authored-shard")
+      ShardVersionFactory.create &.shard_id(shard.id)
+        .indexed_at(Time.utc)
+        .metadata(JSON.parse(%({"authors": ["Ary Borenszweig <ary@example.com>"]})))
+
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.status.should eq(HTTP::Status::OK)
+      response.body.should contain("Author")
+      response.body.should contain("Ary Borenszweig")
+      response.body.should_not contain("ary@example.com")
+      response.body.should_not contain("mailto:")
+    end
+
+    it "never leaks an author entry that is only a bare address" do
+      shard = ShardFactory.create &.name("bare-address-shard")
+      ShardVersionFactory.create &.shard_id(shard.id)
+        .indexed_at(Time.utc)
+        .metadata(JSON.parse(%({"authors": ["ary@example.com"]})))
+
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.status.should eq(HTTP::Status::OK)
+      response.body.should contain("Author")
+      response.body.should contain("ary")
+      response.body.should_not contain("ary@example.com")
+      response.body.should_not contain("mailto:")
+    end
+
+    it "shows an author with no declared address unchanged" do
+      shard = ShardFactory.create &.name("plain-name-shard")
+      ShardVersionFactory.create &.shard_id(shard.id)
+        .indexed_at(Time.utc)
+        .metadata(JSON.parse(%({"authors": ["Ary Borenszweig"]})))
+
+      response = ApiClient.exec(Shards::Show.with(**identity_of(shard)))
+
+      response.status.should eq(HTTP::Status::OK)
+      response.body.should contain("Author")
+      response.body.should contain("Ary Borenszweig")
+    end
+
     it "handles shard with no versions gracefully" do
       shard = ShardFactory.create &.name("versionless-shard")
 

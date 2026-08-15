@@ -74,4 +74,20 @@ describe Api::Shards::Versions::Show do
     json = JSON.parse(response.body)
     json["downloads"].should eq(3)
   end
+
+  it "never includes an author's address, even when the indexed manifest carries one" do
+    shard = ShardFactory.create &.name("test-shard")
+    ShardVersionFactory.create &.shard_id(shard.id)
+      .version("0.1.0")
+      .metadata(JSON.parse(%({"authors": ["Ary Borenszweig <ary@example.com>"]})))
+
+    response = ApiClient.exec(Api::Shards::Versions::Show.with(
+      **identity_of(shard),
+      version_number: "0.1.0"
+    ))
+
+    response.status.should eq(HTTP::Status.new(200))
+    response.body.should_not contain("ary@example.com")
+    response.body.should_not contain("@example.com")
+  end
 end

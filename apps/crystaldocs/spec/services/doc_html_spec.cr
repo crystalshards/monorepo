@@ -305,4 +305,142 @@ describe CrystalDocs::DocHtml do
       html.should_not contain("javascript:")
     end
   end
+
+  describe "resolving a repository-relative README reference" do
+    it "resolves a relative image against a github repository" do
+      html = CrystalDocs::DocHtml.sanitize(
+        %(<img src="doc/assets/logo.svg" alt="logo">),
+        repository: "github.com/crystal-lang/crystal", ref: "1.21.0"
+      )
+      raw = "https://raw.githubusercontent.com/crystal-lang/crystal/1.21.0/doc/assets/logo.svg"
+
+      html.should contain(%(src="#{raw}"))
+    end
+
+    it "resolves a relative link against a github repository" do
+      html = CrystalDocs::DocHtml.sanitize(
+        %(<a href="CONTRIBUTING.md">contributing</a>),
+        repository: "github.com/crystal-lang/crystal", ref: "1.21.0"
+      )
+      blob = "https://github.com/crystal-lang/crystal/blob/1.21.0/CONTRIBUTING.md"
+
+      html.should contain(%(href="#{blob}"))
+    end
+
+    it "fixes the reported case: a README image that 404d against our own origin" do
+      html = CrystalDocs::DocHtml.markdown(
+        "![Crystal - Born and raised at Manas](doc/assets/crystal-born-and-raised.svg)",
+        repository: "github.com/crystal-lang/crystal", ref: "1.21.0"
+      )
+      raw = "https://raw.githubusercontent.com/crystal-lang/crystal/1.21.0/" \
+            "doc/assets/crystal-born-and-raised.svg"
+
+      html.should contain(%(src="#{raw}"))
+    end
+
+    it "resolves a relative image and link against a gitlab repository" do
+      image = CrystalDocs::DocHtml.sanitize(
+        %(<img src="assets/logo.png">),
+        repository: "gitlab.com/acme/lib", ref: "2.0.0"
+      )
+      link = CrystalDocs::DocHtml.sanitize(
+        %(<a href="CHANGELOG.md">changelog</a>),
+        repository: "gitlab.com/acme/lib", ref: "2.0.0"
+      )
+
+      image.should contain(%(src="https://gitlab.com/acme/lib/-/raw/2.0.0/assets/logo.png"))
+      link.should contain(%(href="https://gitlab.com/acme/lib/-/blob/2.0.0/CHANGELOG.md"))
+    end
+
+    it "resolves a relative image and link against a codeberg repository" do
+      image = CrystalDocs::DocHtml.sanitize(
+        %(<img src="banner.png">),
+        repository: "codeberg.org/acme/lib", ref: "0.5.0"
+      )
+      link = CrystalDocs::DocHtml.sanitize(
+        %(<a href="LICENSE">license</a>),
+        repository: "codeberg.org/acme/lib", ref: "0.5.0"
+      )
+
+      image.should contain(%(src="https://codeberg.org/acme/lib/raw/0.5.0/banner.png"))
+      link.should contain(%(href="https://codeberg.org/acme/lib/src/0.5.0/LICENSE"))
+    end
+
+    it "drops an image and unwraps a link when the repository host is unknown" do
+      image = CrystalDocs::DocHtml.sanitize(
+        %(<img src="assets/logo.png">),
+        repository: "bitbucket.org/acme/lib", ref: "1.0.0"
+      )
+      link = CrystalDocs::DocHtml.sanitize(
+        %(<a href="docs/guide.md">guide</a>),
+        repository: "bitbucket.org/acme/lib", ref: "1.0.0"
+      )
+
+      image.should_not contain("<img")
+      link.should_not contain("<a")
+      link.should contain("guide")
+    end
+
+    it "leaves an absolute URL untouched even with a repository given" do
+      html = CrystalDocs::DocHtml.sanitize(
+        %(<img src="https://example.com/logo.png">),
+        repository: "github.com/crystal-lang/crystal", ref: "1.21.0"
+      )
+
+      html.should contain(%(src="https://example.com/logo.png"))
+    end
+
+    it "leaves a protocol relative URL untouched" do
+      html = CrystalDocs::DocHtml.sanitize(
+        %(<img src="//cdn.example.com/logo.png">),
+        repository: "github.com/crystal-lang/crystal", ref: "1.21.0"
+      )
+
+      html.should contain(%(src="//cdn.example.com/logo.png"))
+    end
+
+    it "resolves a root relative path the same way as a plain relative one" do
+      root_relative = CrystalDocs::DocHtml.sanitize(
+        %(<img src="/doc/assets/logo.png">),
+        repository: "github.com/crystal-lang/crystal", ref: "1.21.0"
+      )
+      plain_relative = CrystalDocs::DocHtml.sanitize(
+        %(<img src="doc/assets/logo.png">),
+        repository: "github.com/crystal-lang/crystal", ref: "1.21.0"
+      )
+
+      root_relative.should eq(plain_relative)
+      raw = "https://raw.githubusercontent.com/crystal-lang/crystal/1.21.0/doc/assets/logo.png"
+      root_relative.should contain(%(src="#{raw}"))
+    end
+
+    it "drops a relative image and keeps an absolute reference in a doc comment" do
+      # A doc comment never carries a repository: `sanitize` is called
+      # directly, with neither argument, exactly as the compiler's own
+      # rendered HTML reaches it today.
+      html = CrystalDocs::DocHtml.sanitize(
+        %(<img src="doc/assets/logo.png"><a href="https://crystal-lang.org">site</a>)
+      )
+
+      html.should_not contain("<img")
+      html.should contain(%(href="https://crystal-lang.org"))
+    end
+
+    it "unwraps a relative link to plain text in a doc comment" do
+      html = CrystalDocs::DocHtml.sanitize(%(<a href="docs/guide.md">guide</a>))
+
+      html.should_not contain("<a")
+      html.should contain("guide")
+    end
+
+    it "still refuses a javascript: URL after it passes through the rewrite step" do
+      html = CrystalDocs::DocHtml.sanitize(
+        %(<a href="javascript:alert(1)">click</a>),
+        repository: "github.com/crystal-lang/crystal", ref: "1.21.0"
+      )
+
+      html.should_not contain("javascript:")
+      html.should contain(%(<a rel="nofollow noopener">click</a>))
+    end
+  end
 end

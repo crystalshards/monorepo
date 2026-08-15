@@ -77,10 +77,23 @@ services:
       STORAGE_SECRET_KEY: minioadmin
       DOCS_BUCKET: crystal-docs
       PACKAGES_BUCKET: packages
-      # Where crystaldocs answers. Required, with no default in the code: a
-      # hardcoded production URL made every documentation link on a development
-      # machine point at production, and nothing failed to reveal it.
+      # Every Bushido Collective site's origin, for the footer's cross links
+      # and (DOCS_SITE_ORIGIN) for the documentation links this app itself
+      # renders. Required, with no default in the code: a hardcoded
+      # production URL made every link on a development machine point at
+      # production, and nothing failed to reveal it.
+      SHARDS_SITE_ORIGIN: http://localhost:3000
       DOCS_SITE_ORIGIN: http://localhost:3001
+<<<<<<< HEAD
+      # Where crystalgigs.com answers, browser-facing rather than the internal
+      # Docker hostname above: house ad links have to be clickable from
+      # outside the Docker network, the same reason DOCS_SITE_ORIGIN is
+      # localhost here rather than the service name.
+      GIGS_SITE_ORIGIN: http://localhost:3002
+=======
+      GIGS_SITE_ORIGIN: http://localhost:3002
+      BITS_SITE_ORIGIN: http://localhost:3003
+>>>>>>> ui/bushido-seal-and-license
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,7 +120,16 @@ services:
       # Shared with CrystalShards, which writes what this app reads.
       DOCS_BUCKET: crystal-docs
       JOB_ADS_URL: http://crystalgigs:3002/api/ads
+      # Where crystalgigs.com answers, browser-facing for the same reason
+      # noted on CrystalShards above.
+      GIGS_SITE_ORIGIN: http://localhost:3002
       PORT: 3001
+      # The other three sites' origins, for the footer's cross links. See
+      # crystalshards' block above for why these have no default.
+      SHARDS_SITE_ORIGIN: http://localhost:3000
+      DOCS_SITE_ORIGIN: http://localhost:3001
+      GIGS_SITE_ORIGIN: http://localhost:3002
+      BITS_SITE_ORIGIN: http://localhost:3003
     depends_on:
       postgres:
         condition: service_healthy
@@ -129,6 +151,12 @@ services:
       DATABASE_URL: postgres://postgres:password@postgres/crystalgigs_development
       SECRET_KEY_BASE: development_secret_key_base_change_in_production
       PORT: 3002
+      # The other three sites' origins, for the footer's cross links. See
+      # crystalshards' block above for why these have no default.
+      SHARDS_SITE_ORIGIN: http://localhost:3000
+      DOCS_SITE_ORIGIN: http://localhost:3001
+      GIGS_SITE_ORIGIN: http://localhost:3002
+      BITS_SITE_ORIGIN: http://localhost:3003
     depends_on:
       postgres:
         condition: service_healthy
@@ -149,6 +177,12 @@ services:
       SECRET_KEY_BASE: development_secret_key_base_change_in_production
       JOB_ADS_URL: http://crystalgigs:3002/api/ads
       PORT: 3003
+      # The other three sites' origins, for the footer's cross links. See
+      # crystalshards' block above for why these have no default.
+      SHARDS_SITE_ORIGIN: http://localhost:3000
+      DOCS_SITE_ORIGIN: http://localhost:3001
+      GIGS_SITE_ORIGIN: http://localhost:3002
+      BITS_SITE_ORIGIN: http://localhost:3003
     depends_on:
       postgres:
         condition: service_healthy

@@ -67,7 +67,19 @@ end
 # next example gets a recorder again regardless. Both overrides are reset here
 # for that reason: an example that nils `DocsBuildQueue.override` to assert on
 # the default wiring must not leave it nil for everything after it.
+# On-demand indexing needs the same protection for the same reason, and needs
+# it more: every shard page view now commissions an index for a shard that has
+# never been read, so an example that merely renders a cold shard would reach
+# that shard's real git host and rewrite the fixture with whatever the
+# repository looks like today. That is not hypothetical: it replaced a
+# fixture's README and star count in this suite the first time it ran.
+#
+# Skipped rather than Indexed, so the default answer changes no rows: an
+# example that wants the commissioned index to succeed installs its own fake.
 Spec.before_each do
   RecordingJobQueue.install
   CrystalShards::DocsBuildQueue.override = RecordingDocsBuildQueue.new
+  ShardIndexRequests.indexer = ->(shard : Shard) {
+    ShardIndexer::Result.new(ShardIndexer::Outcome::Unsupported, shard)
+  }
 end

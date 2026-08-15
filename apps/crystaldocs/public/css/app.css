@@ -184,6 +184,22 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
 }
 
+/* clip-path clips a box's border along with everything else, so a bordered,
+   notched box below has no stroke on the diagonal it cuts: the border reads
+   as a gap there instead of a bevel. Each one restores it with a
+   background-image diagonal rather than a border property or a generated
+   pseudo-element child: sized to the same facet-square corner the clip-path
+   uses, with its outer edge flush against the true cut and its thickness
+   extending inward, so clip-path never removes any of it. `background-origin:
+   border-box` on every one of these matters: clip-path's own default
+   reference box is the border box, and background images default to the
+   padding box, so without it the gradient's corner sits inset by the border
+   width and the drawn line no longer lines up with the cut. Drawing it as the
+   element's own background also means it is not scrollable content, so it
+   holds even where the notched box is itself an overflow:auto scroll
+   container (see .version-picker-list in crystalshards), which a
+   pseudo-element positioned inside that box would not survive scrolling. */
+
 .skip-link {
   position: absolute;
   left: 0.5rem;
@@ -404,6 +420,11 @@ body:has(.docs-shell) .navbar {
   background: var(--surface); border: 1px solid var(--edge);
   padding: 1.25rem 1.35rem 1.35rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .recipe h3 { font-size: var(--step-1); margin: 0 0 0.3em; }
 .recipe p { color: var(--ink-muted); font-size: 0.9rem; margin: 0 0 0.85rem; }
@@ -476,11 +497,21 @@ body:has(.docs-shell) .navbar {
   border: 1px solid var(--edge);
   padding: var(--pad) var(--pad) 1.1rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
-  transition: border-color 0.14s ease, background 0.14s ease;
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
+  transition: border-color 0.14s ease, background 0.14s ease, background-image 0.14s ease;
 }
 /* The whole card is the target, so the whole card reacts, and it reacts the
-   same way to a pointer as it does to keyboard focus landing inside it. */
-.doc-card:hover, .doc-card:focus-within { border-color: var(--accent); }
+   same way to a pointer as it does to keyboard focus landing inside it. The
+   notch diagonal is drawn from the same border colour, so it swaps to accent
+   with the border instead of sitting there in the old colour. */
+.doc-card:hover, .doc-card:focus-within {
+  border-color: var(--accent);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--accent) calc(50% - 1px), var(--accent) 50%, transparent 50%);
+}
 /* The cut corner catches light, the way a real bevel would. Decorative only:
    without pointer-events:none it would swallow clicks in the top-right
    corner, which is now part of the card's click target. */
@@ -595,6 +626,11 @@ a.version-number:hover { text-decoration: underline; }
   padding: clamp(1.25rem, 2.5vw, 1.9rem);
   margin: var(--gap) 0;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .doc-section h2 { font-size: var(--step-2); margin-bottom: 0.75rem; }
 
@@ -618,6 +654,11 @@ a.version-number:hover { text-decoration: underline; }
   padding: clamp(1.25rem, 2.5vw, 1.9rem);
   margin-bottom: var(--gap);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 
 .docs-header .docs-nav {
@@ -677,6 +718,11 @@ a.version-number:hover { text-decoration: underline; }
   background: var(--surface); border: 1px solid var(--edge);
   padding: clamp(1.25rem, 2.5vw, 1.9rem);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 
 .docs-content { font-size: 0.95rem; line-height: 1.7; min-width: 0; }
@@ -739,6 +785,11 @@ a.version-number:hover { text-decoration: underline; }
   background: var(--surface); border: 1px solid var(--edge);
   padding: 1.15rem 1.25rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 
 .sidebar-title {
@@ -867,6 +918,11 @@ a.version-number:hover { text-decoration: underline; }
   padding: clamp(1.25rem, 2.5vw, 1.9rem);
   text-align: left;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 
 .search-results-count { font: 400 0.85rem var(--mono); color: var(--ink-muted); margin: 0 0 1rem; }
@@ -886,6 +942,27 @@ a.version-number:hover { text-decoration: underline; }
   color: var(--ink-muted);
 }
 .footer-links a:hover { color: var(--accent); text-decoration: underline; }
+
+/* The Bushido Collective seal, rendered as a CSS mask rather than an <img>:
+   an <img> pointed at an external SVG file ignores page CSS entirely, and
+   this seal has to invert with the rest of the footer's text between light
+   and dark schemes without shipping a second, differently colored copy of
+   the artwork. background-color: currentColor plus mask-image is what lets
+   one static file do that.
+
+   The size floor guards legibility, not decoration: this is detailed line
+   art, and it turns to mush below it. */
+.tbc-seal-line { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+.tbc-seal-link { display: inline-flex; align-items: center; min-height: var(--tap); }
+.tbc-seal {
+  display: inline-block;
+  width: 1.75rem; height: 1.75rem;
+  min-width: 1.5rem; min-height: 1.5rem;
+  flex-shrink: 0;
+  background-color: currentColor;
+  -webkit-mask: url("/images/tbc-seal.svg") no-repeat center / contain;
+          mask: url("/images/tbc-seal.svg") no-repeat center / contain;
+}
 
 /* ============================================================================
    Documentation surface
@@ -1181,6 +1258,24 @@ main.container:has(.docs-shell) {
 
 .docs-doc { margin-top: 1.4rem; }
 .docs-readme { line-height: 1.75; }
+
+/* A README's CI badges are a run of small images meant to sit on one line,
+   the way GitHub renders them. The global `img` rule above is block-level so
+   a screenshot never bleeds into the paragraph beneath it, but that turns
+   every badge in a run into its own line here. Inline-block lets adjacent
+   badges flow like text again, `vertical-align: middle` keeps them level with
+   each other instead of hugging their own text baseline, and the small gap
+   stands in for the whitespace a real README's markdown puts between them.
+   `max-width` and `height: auto` still apply, so a lone screenshot keeps its
+   own line (it has no inline sibling to flow next to) and nothing overflows
+   the reading column on a narrow viewport. */
+.docs-readme img {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 100%;
+  height: auto;
+  margin: 0.15rem 0.4rem 0.15rem 0;
+}
 
 .docs-doc > :first-child,
 .docs-member-doc > :first-child,
@@ -1495,6 +1590,15 @@ a.docs-external {
   border: 1px solid var(--edge);
   border-top: 2px solid var(--edge-strong);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  /* The notch sits at the top-right, where the accent 2px top rule would have
+     to taper into the base 1px edge to stay pixel-accurate; that is more
+     machinery than a paid-placement strip warrants, so the diagonal
+     continues the base border weight and colour instead. */
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 
 .job-ad-head {
@@ -1564,6 +1668,12 @@ a.docs-external {
 /* Separators are drawn, never typed, so a screen reader reads the fields as a
    list of facts rather than announcing punctuation between them. */
 .job-ad-meta span + span::before { content: "\00b7"; margin-right: 0.5rem; }
+
+/* A house ad's honesty label. Deliberately not styled like .job-ad-featured:
+   that badge means a real listing paid to stand out, and reusing its accent
+   color and border here would make a CrystalGigs promo look like a boosted
+   third-party posting instead of what it actually is. */
+.job-ad-house { color: var(--ink-faint); font-style: italic; }
 
 @media (max-width: 40rem) {
   .job-ad { padding: 1rem 1.1rem 1.15rem; }

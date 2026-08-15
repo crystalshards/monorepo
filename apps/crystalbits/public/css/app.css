@@ -297,6 +297,21 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 
 .posts-grid, .posts-list { display: grid; gap: var(--gap); margin-top: 1.5rem; }
 
+/* clip-path clips a box's border along with everything else, so a bordered,
+   notched box below has no stroke on the diagonal it cuts: the border reads
+   as a gap there instead of a bevel. Each one restores it with a
+   background-image diagonal rather than a border property or a generated
+   pseudo-element child: sized to the same facet-square corner the clip-path
+   uses, with its outer edge flush against the true cut and its thickness
+   extending inward, so clip-path never removes any of it. `background-origin:
+   border-box` on every one of these matters: clip-path's own default
+   reference box is the border box, and background images default to the
+   padding box, so without it the gradient's corner sits inset by the border
+   width and the drawn line no longer lines up with the cut. Drawing it as the
+   element's own background also means it is not scrollable content, so it
+   would hold even inside an overflow:auto scroll container, which a
+   pseudo-element positioned inside that box would not survive scrolling. */
+
 .post-card, .featured-post {
   --facet: 16px;
   position: relative;
@@ -304,11 +319,21 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
   border: 1px solid var(--edge);
   padding: var(--pad) var(--pad) 1.1rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
-  transition: border-color 0.14s ease, background 0.14s ease;
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
+  transition: border-color 0.14s ease, background 0.14s ease, background-image 0.14s ease;
 }
 /* The whole card is the target, so the whole card reacts, and it reacts the
-   same way to a pointer as it does to keyboard focus landing inside it. */
-.post-card:hover, .post-card:focus-within { border-color: var(--accent); }
+   same way to a pointer as it does to keyboard focus landing inside it. The
+   notch diagonal is drawn from the same border colour, so it swaps to
+   accent with the border instead of sitting there in the old colour. */
+.post-card:hover, .post-card:focus-within {
+  border-color: var(--accent);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--accent) calc(50% - 1px), var(--accent) 50%, transparent 50%);
+}
 /* The cut corner catches light, the way a real bevel would. Decorative only:
    without pointer-events:none it would swallow clicks in the top-right
    corner, which is now part of the card's click target. */
@@ -325,7 +350,12 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 /* The featured post is the same card with a garnet leading edge. Its left
    edge is already accent, so hover carries the other three round to match. */
 .featured-post { border-left: 3px solid var(--accent); }
-.featured-post:hover, .featured-post:focus-within { border-color: var(--accent); }
+/* The other three sides swap to accent on hover, so the notch diagonal
+   (drawn from the top-right corner) swaps with them too. */
+.featured-post:hover, .featured-post:focus-within {
+  border-color: var(--accent);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--accent) calc(50% - 1px), var(--accent) 50%, transparent 50%);
+}
 
 .post-card .post-header { margin-bottom: 0.75rem; }
 
@@ -493,9 +523,20 @@ a.tag:hover { border-color: var(--accent); }
   background: var(--surface); border: 1px solid var(--edge);
   padding: clamp(1.5rem, 3vw, 2.25rem);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .newsletter-cta { margin-top: var(--bay); }
-.newsletter-cta .newsletter-signup { border: 0; padding: 0; clip-path: none; }
+/* Nested inside .newsletter-cta this is no longer clipped or bordered, so
+   the notch diagonal from the base rule must be cancelled too, or a stray
+   line would be drawn across a box with nothing left to continue. */
+.newsletter-cta .newsletter-signup {
+  border: 0; padding: 0; clip-path: none;
+  background-image: none;
+}
 
 .newsletter-header h2, .newsletter-header h3 { margin-bottom: 0.4rem; }
 .newsletter-header p { color: var(--ink-muted); margin-bottom: 1.25rem; }
@@ -598,6 +639,11 @@ a.tag:hover { border-color: var(--accent); }
   padding: clamp(1.75rem, 4vw, 2.75rem);
   margin-top: var(--bay);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .confirmation-message h1, .confirmation-success h1, .unsubscribe-message h1 {
   font-size: var(--step-3);
@@ -649,6 +695,27 @@ a.tag:hover { border-color: var(--accent); }
 }
 .footer-bottom p { margin: 0; }
 
+/* The Bushido Collective seal, rendered as a CSS mask rather than an <img>:
+   an <img> pointed at an external SVG file ignores page CSS entirely, and
+   this seal has to invert with the rest of the footer's text between light
+   and dark schemes without shipping a second, differently colored copy of
+   the artwork. background-color: currentColor plus mask-image is what lets
+   one static file do that.
+
+   The size floor guards legibility, not decoration: this is detailed line
+   art, and it turns to mush below it. */
+.tbc-seal-line { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+.tbc-seal-link { display: inline-flex; align-items: center; min-height: var(--tap); }
+.tbc-seal {
+  display: inline-block;
+  width: 1.75rem; height: 1.75rem;
+  min-width: 1.5rem; min-height: 1.5rem;
+  flex-shrink: 0;
+  background-color: currentColor;
+  -webkit-mask: url("/images/tbc-seal.svg") no-repeat center / contain;
+          mask: url("/images/tbc-seal.svg") no-repeat center / contain;
+}
+
 /* ============================================================================
    Responsive
    ========================================================================= */
@@ -696,6 +763,15 @@ a.tag:hover { border-color: var(--accent); }
   border: 1px solid var(--edge);
   border-top: 2px solid var(--edge-strong);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  /* The notch sits at the top-right, where the heavier 2px top rule would
+     have to taper into the base 1px edge to stay pixel-accurate; that is
+     more machinery than a paid-placement strip warrants, so the diagonal
+     continues the base border weight and colour instead. */
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 
 .job-ad-head {
@@ -868,6 +944,17 @@ a.tag:hover { border-color: var(--accent); }
   background: var(--surface);
   padding: var(--pad) var(--pad) 1.2rem;
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  /* The top border colour is swapped per content type (generated/blog/
+     contribution below), but the notch continues the plain 1px edge that
+     runs the other three sides rather than tracking each variant: matching
+     every modifier would mean tapering a 2px accent, ore or ok line into a
+     1px edge at the exact pixel the clip-path cuts, for a corner accent
+     that is barely visible at this size. */
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .content-card-generated { border-top-color: var(--accent); }
 .content-card-crystal-blog { border-top-color: var(--ore); }
@@ -943,6 +1030,13 @@ a.tag:hover { border-color: var(--accent); }
   background: var(--surface);
   padding: var(--pad);
   clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  /* Same top-right taper tradeoff as .job-ad above: the diagonal continues
+     the base 1px edge rather than the heavier 2px top rule. */
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
 }
 .contribute-panel h2 { font-size: var(--step-2); }
 .contribute-panel li { margin-bottom: 0.4rem; }

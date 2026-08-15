@@ -355,4 +355,71 @@ describe "documentation for a repository" do
       get.call("/docs/never-existed/1.0.0").status_code.should eq(404)
     end
   end
+
+  # A README's relative image or link means a path in the repository this
+  # version was published from, not a path on this origin, and only the
+  # commit the artifact was actually built from can say where that path
+  # lives: the registry stores "1.2.3" while the repository's own tag is
+  # routinely "v1.2.3", and either string 404s against GitHub as often as
+  # it resolves. `render_readme` reads `doc_versions.source_commit_sha` for
+  # exactly this reason, not the version string either page already had.
+  describe "resolving a repository-relative README reference" do
+    it "uses the commit the artifact was built from, not the registered version string" do
+      StubRegistryPackages.new
+        .publish("github.com/acme/widget", "widget", ["1.2.3"],
+          commit_shas: {"1.2.3" => "abc123deadbeef01"})
+        .install
+
+      document = {
+        repository_name: "acme/widget",
+        body:            "![logo](doc/logo.svg)",
+        program:         {
+          full_name: "Top Level Namespace",
+          name:      "Top Level Namespace",
+          kind:      "module",
+          types:     [] of String,
+        },
+      }.to_json
+
+      StubDocsStorage.holding(document).install
+
+      response = get.call("/docs/_/github.com/acme/widget/1.2.3")
+
+      response.status_code.should eq(200)
+      response.body.should contain(
+        "https://raw.githubusercontent.com/acme/widget/abc123deadbeef01/doc/logo.svg"
+      )
+      # Neither version string, so a reader cannot end up here by luck: the
+      # host qualified path shows the sha won and nothing else.
+      response.body.should_not contain("raw.githubusercontent.com/acme/widget/1.2.3/")
+      response.body.should_not contain("raw.githubusercontent.com/acme/widget/v1.2.3/")
+    end
+
+    it "drops a relative image when no commit has been recorded for the version" do
+      doc = DocFactory.create &.package_name("github.com/acme/nosha")
+      DocVersionFactory.create &.doc_id(doc.id).version("1.0.0").source_commit_sha(nil)
+
+      document = {
+        repository_name: "acme/nosha",
+        body:            "![logo](doc/logo.svg)",
+        program:         {
+          full_name: "Top Level Namespace",
+          name:      "Top Level Namespace",
+          kind:      "module",
+          types:     [] of String,
+        },
+      }.to_json
+
+      # Registry unreachable, so the row already held is what serves the
+      # page: exactly the state a version built before this column existed
+      # is in, and the one this spec exists to keep honest.
+      StubRegistryPackages.new(reachable: false).install
+      StubDocsStorage.holding(document).install
+
+      response = get.call("/docs/_/github.com/acme/nosha/1.0.0")
+
+      response.status_code.should eq(200)
+      response.body.should_not contain("<img")
+    end
+  end
 end

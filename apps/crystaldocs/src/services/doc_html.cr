@@ -17,6 +17,15 @@ module CrystalDocs
   # explicitly permitted does not render. That direction matters, because a
   # denylist has to anticipate every vector and this only has to know what
   # documentation legitimately uses.
+  #
+  # A relative `src` or `href` in a README names a path in the repository
+  # it was published from, not a path on this origin, so `markdown` and
+  # `sanitize` also take the repository the version being read came from
+  # and the ref of that version, and read a relative reference against
+  # them before the scheme is checked. Both are threaded through as
+  # explicit optional arguments rather than a global or a thread local: a
+  # doc comment has no repository of its own, so it renders with both left
+  # nil, and an already absolute reference is unaffected either way.
   module DocHtml
     # Elements documentation actually uses. Note the absence of script,
     # style, iframe, object, embed, form and friends.
@@ -111,17 +120,32 @@ module CrystalDocs
     end
 
     # Renders a Markdown document (a README) as safe HTML.
-    def self.markdown(source : String?) : String
+    #
+    # `repository` and `ref` place the version being rendered: the host
+    # qualified slug it was published under and the version itself, which
+    # is what a relative `src` or `href` in the document is read against.
+    # Both default to nil, because not every caller knows a repository, and
+    # nil is what makes `sanitize` leave an absolute reference alone and
+    # drop a relative one rather than resolve it against nothing.
+    def self.markdown(source : String?, repository : String? = nil,
+                      ref : String? = nil) : String
       return "" unless source && !source.empty?
 
       # `Markd.to_html` hardcodes its own renderer, so the two steps it takes
       # are taken here instead to get the highlighting one.
       options = Markd::Options.new
-      sanitize(FenceRenderer.new(options).render(Markd::Parser.parse(source, options)))
+      rendered = FenceRenderer.new(options).render(Markd::Parser.parse(source, options))
+      sanitize(rendered, repository, ref)
     end
 
-    # Cleans HTML the compiler produced from a doc comment.
-    def self.sanitize(html : String?) : String
+    # Cleans HTML the compiler produced from a doc comment, or a README once
+    # `markdown` has rendered it to HTML. `repository` and `ref` are
+    # documented on `markdown`; a doc comment reaches this method directly
+    # and always leaves both nil, which is the one case a relative `src` or
+    # `href` cannot be read against anything and is dropped rather than
+    # resolved.
+    def self.sanitize(html : String?, repository : String? = nil,
+                      ref : String? = nil) : String
       return "" unless html
 
       # Ids have to be unique within a document, so the registry lives for a
@@ -134,6 +158,13 @@ module CrystalDocs
         # `<script>` alone would leave the code it contained sitting in the
         # page as prose, which is safe but reads like a defacement.
         skipping : String? = nil
+        # An anchor whose href could not be resolved is not a link to
+        # anything, so its tags are dropped rather than rendered dead: the
+        # words between them, which are what the author actually wrote,
+        # still reach the page. A count rather than a flag, because `<a>`
+        # never validly nests but nothing here stops a doc comment's raw
+        # HTML from writing it that way anyway.
+        unwrapping = 0
 
         html.scan(TAG_PATTERN) do |match|
           name = match[1].downcase
@@ -161,6 +192,19 @@ module CrystalDocs
 
           attributes = match[2]? || ""
 
+          if name == "a"
+            if closing
+              if unwrapping > 0
+                unwrapping -= 1
+                next
+              end
+            elsif (href = attribute_value(attributes, "href")) &&
+                  resolve_reference(HTML.unescape(href), "href", repository, ref).nil?
+              unwrapping += 1
+              next
+            end
+          end
+
           # A heading's id is derived from the text it wraps, which sits past
           # the tag being written, so it is resolved here where the rest of
           # the document is still in hand.
@@ -171,7 +215,7 @@ module CrystalDocs
               resolve_anchor(html, name, attributes, cursor, taken)
             end
 
-          io << sanitize_tag(match[0], name, attributes, anchor)
+          io << sanitize_tag(match[0], name, attributes, anchor, repository, ref)
         end
 
         io << escape_text(html[cursor..])
@@ -183,11 +227,21 @@ module CrystalDocs
     # An element we do not allow is escaped rather than deleted, so a doc
     # comment that talks about markup still reads correctly.
     private def self.sanitize_tag(raw : String, name : String, attributes : String,
-                                  anchor : String?) : String
+                                  anchor : String?, repository : String?,
+                                  ref : String?) : String
       return HTML.escape(raw) unless ALLOWED_TAGS.includes?(name)
 
       if raw.starts_with?("</")
         return VOID_TAGS.includes?(name) ? "" : "</#{name}>"
+      end
+
+      # An image whose source could not be resolved has nothing to show.
+      # Leaving a bare `<img>` with no `src` still renders a broken icon in
+      # some browsers, which is the exact defect this exists to fix, so the
+      # element itself is dropped instead.
+      if name == "img" && (src = attribute_value(attributes, "src")) &&
+         resolve_reference(HTML.unescape(src), "src", repository, ref).nil?
+        return ""
       end
 
       kept = String.build do |io|
@@ -216,6 +270,16 @@ module CrystalDocs
             value = HTML.unescape(attr[3]? || attr[4]? || attr[5]? || "")
             value = constrain_class(name, value) if key == "class"
             next unless value
+
+            # A relative reference is read against the repository before it
+            # is judged, so the scheme check below sees exactly what a
+            # reader's browser will request: either the author's own
+            # absolute URL, unchanged, or the one built here in its place.
+            if key == "href" || key == "src"
+              value = resolve_reference(value, key, repository, ref)
+              next unless value
+            end
+
             next unless safe_value?(key, value)
 
             io << ' ' << key << "=\"" << HTML.escape(value) << '"'
@@ -228,6 +292,70 @@ module CrystalDocs
       end
 
       "<#{name}#{kept}>"
+    end
+
+    # A relative `src` or `href` in a README names a path in the repository
+    # it was published from, not a path on this origin, so it has no
+    # meaning until it is read against that repository. `key` picks the
+    # shape, because `img` wants the raw bytes at a path and `a` wants a
+    # page that shows it, and GitHub, GitLab and Codeberg each spell those
+    # two things differently.
+    #
+    # A value that already says where it goes: a same document jump, a
+    # protocol relative URL, or anything with a scheme, is returned exactly
+    # as given. None of those are a repository path, and the caller still
+    # runs whatever this returns through the scheme allowlist afterwards,
+    # which is what keeps that check meaningful either way.
+    #
+    # `nil` is not a parse failure, it is the answer for a reference this
+    # cannot make meaningful: either there is no repository to read it
+    # against, which is always true for a doc comment, or the repository is
+    # on a host none of the three cases below name, and guessing at its raw
+    # and blob URLs would only trade one broken link for another. The
+    # caller drops whatever nil reaches rather than emit either.
+    private def self.resolve_reference(value : String, key : String,
+                                       repository : String?, ref : String?) : String?
+      trimmed = value.strip
+      return nil if trimmed.empty?
+      return value if trimmed.starts_with?('#') || trimmed.starts_with?("//")
+      return value if trimmed.includes?(':')
+      return nil unless repository
+
+      # Root relative and plain relative resolve the same way: both are
+      # read against the repository root, so the only difference is a
+      # leading slash, dropped here rather than carried into the path below.
+      path = trimmed.starts_with?('/') ? trimmed[1..] : trimmed
+      return nil if path.empty?
+
+      segments = repository.split('/')
+      return nil unless segments.size == 3 && segments.all?(&.presence)
+      host, owner, repo = segments[0], segments[1], segments[2]
+
+      # No default ref. Guessing at "master" reads the path against whatever
+      # that branch holds today, which is a different document from the
+      # version on the page, and it fails by rendering the wrong asset
+      # rather than none. Every README this app renders arrives with the
+      # version it was built at, so a missing ref is a defect upstream of
+      # here and the reference is dropped instead of aimed somewhere.
+      version = ref.presence
+      return nil unless version
+
+      case {host, key}
+      when {"github.com", "src"}
+        "https://raw.githubusercontent.com/#{owner}/#{repo}/#{version}/#{path}"
+      when {"github.com", "href"}
+        "https://github.com/#{owner}/#{repo}/blob/#{version}/#{path}"
+      when {"gitlab.com", "src"}
+        "https://gitlab.com/#{owner}/#{repo}/-/raw/#{version}/#{path}"
+      when {"gitlab.com", "href"}
+        "https://gitlab.com/#{owner}/#{repo}/-/blob/#{version}/#{path}"
+      when {"codeberg.org", "src"}
+        "https://codeberg.org/#{owner}/#{repo}/raw/#{version}/#{path}"
+      when {"codeberg.org", "href"}
+        "https://codeberg.org/#{owner}/#{repo}/src/#{version}/#{path}"
+      else
+        nil
+      end
     end
 
     # `href` and `src` are the two attributes that can execute script, so the

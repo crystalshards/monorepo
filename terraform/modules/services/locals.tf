@@ -281,6 +281,22 @@ locals {
     DOCS_BUILD_DEADLINE_SECONDS = tostring(local.docs_build_deadline_seconds)
   }
 
+  # Every public site's origin, offered identically to all four apps so a
+  # footer can link to the other three without four different three-key maps.
+  #
+  # Passed through, not composed. app_domains already holds full origins
+  # ("https://crystaldocs.org"), built in module.services.tf from
+  # local.sites. Prefixing a scheme here produced
+  # https://https://crystaldocs.org on every shard page in production, which
+  # is the same bug DOCS_SITE_ORIGIN below already guards against; this map
+  # is that fix generalized to all four sites instead of just crystaldocs.
+  site_links_env = {
+    SHARDS_SITE_ORIGIN = var.app_domains["crystalshards"]
+    DOCS_SITE_ORIGIN   = var.app_domains["crystaldocs"]
+    GIGS_SITE_ORIGIN   = var.app_domains["crystalgigs"]
+    BITS_SITE_ORIGIN   = var.app_domains["crystalbits"]
+  }
+
   # Per service shape and wiring. Everything that differs between the four apps
   # is visible in this one table, so the resource below stays uniform and the
   # differences cannot drift apart across four near identical blocks.
@@ -294,21 +310,12 @@ locals {
       max_instances = 5
       cpu           = "1"
       memory        = "512Mi"
-      env = merge(local.common_env, local.enqueuer_env, {
+      env = merge(local.common_env, local.enqueuer_env, local.site_links_env, {
         APP_DOMAIN      = var.app_domains["crystalshards"]
         JOB_ADS_URL     = var.job_ads_url
         DOCS_BUCKET     = var.docs_bucket_name
         PACKAGES_BUCKET = var.packages_bucket_name
 
-        # Every documentation link the registry renders is built from this.
-        # The same value crystaldocs gets as its own APP_DOMAIN, so the two
-        # cannot disagree about where that site is.
-        #
-        # Passed through, not composed. app_domains already holds full origins
-        # ("https://crystaldocs.org"), built in module.services.tf from
-        # local.sites. Prefixing a scheme here produced
-        # https://https://crystaldocs.org on every shard page in production.
-        DOCS_SITE_ORIGIN = var.app_domains["crystaldocs"]
       })
       secret_env = {
         DATABASE_URL    = var.database_url_secret_ids["crystalshards"]
@@ -319,6 +326,30 @@ locals {
         # table ownership where the migrations put it and avoids cross database
         # grants entirely.
         DOCS_DATABASE_URL = var.database_url_secret_ids["crystaldocs"]
+
+        # The same secret discovery_credentials["GITHUB_TOKEN"] gives the
+        # discover-shards Job, read here rather than provisioned again, so
+        # there is one github-token secret with two readers rather than a
+        # second copy that can drift from it.
+        #
+        # On-demand indexing reads a shard's host from inside a web request:
+        # visiting a never-indexed shard's page now runs ShardIndexer for it
+        # before rendering. GitHub gives an anonymous caller sixty requests an
+        # hour and an authenticated one five thousand, and the anonymous
+        # budget is shared by every visitor to the whole site at once, not
+        # per shard: without this, the first crawler to walk a handful of
+        # cold shards spends the hour's entire allowance, and every reader
+        # after it gets a failed attempt instead of an index for the rest of
+        # it. This service only ever reads public repository facts, tags and
+        # raw file contents with it, and asks for nothing else. Whether the
+        # token itself is scoped that narrowly is a property of the secret
+        # value an operator provisions, not of this code: a token minted with
+        # broader access (a classic PAT with `repo`, say, rather than public,
+        # read-only access) would extend that broader exposure to this
+        # service's own attack surface, which now includes ordinary,
+        # untrusted web traffic in a way the discovery Job's scheduled,
+        # input-free execution never did.
+        GITHUB_TOKEN = google_secret_manager_secret.discovery_credentials["GITHUB_TOKEN"].secret_id
       }
     }
 
@@ -326,7 +357,7 @@ locals {
       max_instances = 5
       cpu           = "1"
       memory        = "512Mi"
-      env = merge(local.common_env, local.enqueuer_env, {
+      env = merge(local.common_env, local.enqueuer_env, local.site_links_env, {
         APP_DOMAIN  = var.app_domains["crystaldocs"]
         JOB_ADS_URL = var.job_ads_url
         DOCS_BUCKET = var.docs_bucket_name
@@ -343,7 +374,7 @@ locals {
       max_instances = 5
       cpu           = "1"
       memory        = "512Mi"
-      env = merge(local.common_env, {
+      env = merge(local.common_env, local.site_links_env, {
         APP_DOMAIN = var.app_domains["crystalgigs"]
       })
       secret_env = merge({
@@ -360,7 +391,7 @@ locals {
       max_instances = 5
       cpu           = "1"
       memory        = "512Mi"
-      env = merge(local.common_env, {
+      env = merge(local.common_env, local.site_links_env, {
         APP_DOMAIN  = var.app_domains["crystalbits"]
         JOB_ADS_URL = var.job_ads_url
       })

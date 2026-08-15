@@ -10,9 +10,7 @@ class Jobs::Index < BrowserAction
     search_term = normalized_query
 
     jobs_query = JobQuery.new
-      .active_only
-      .published_only
-      .not_expired
+      .open_only
       .recent
 
     if q = search_term
