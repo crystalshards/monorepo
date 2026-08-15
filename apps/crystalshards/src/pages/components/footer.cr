@@ -35,15 +35,17 @@ class Footer < Lucky::BaseComponent
     end
   end
 
-  # The collective's mark and this repository's license, sized and placed as
-  # a maker's mark rather than a banner: .tbc-seal in app.css carries the
-  # currentColor treatment and the size floor, not this markup.
+  # The collective's mark, a line naming it as this site's maintainer, and
+  # this repository's license, sized and placed as a maker's mark rather
+  # than a banner: .tbc-seal in app.css carries the currentColor treatment
+  # and the size floor, not this markup.
   private def render_bushido_line
     para class: "tbc-seal-line" do
       a href: "https://thebushido.co", class: "tbc-seal-link", target: "_blank",
         rel: "noopener", "aria-label": "Forged by The Bushido Collective" do
         span class: "tbc-seal", "aria-hidden": "true"
       end
+      text " The Bushido Collective builds and maintains this site."
       text " · Licensed under the "
       a "Apache License 2.0", href: "https://github.com/crystalshards/monorepo/blob/main/LICENSE",
         target: "_blank", rel: "noopener"
