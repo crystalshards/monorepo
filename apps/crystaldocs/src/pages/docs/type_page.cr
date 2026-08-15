@@ -56,7 +56,7 @@ class Docs::TypePage < MainLayout
       text "Inherits "
 
       ancestors.each_with_index do |ancestor, index|
-        text " / " if index > 0
+        text " < " if index > 0
         render_type_link(ancestor.full_name)
       end
     end
