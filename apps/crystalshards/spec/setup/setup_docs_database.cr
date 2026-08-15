@@ -53,6 +53,11 @@ module DocsTestDatabase
       published_at timestamptz NOT NULL,
       build_status text NOT NULL DEFAULT 'pending',
       storage_path text NOT NULL,
+      -- The commit the artifact was actually built from, which crystaldocs
+      -- renders a README's relative links against. Nullable there and here:
+      -- rows published before the column existed carry no value and are
+      -- deliberately never backfilled with a SHA nobody verified.
+      source_commit_sha text,
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL,
       UNIQUE (doc_id, version)
@@ -75,6 +80,14 @@ module DocsTestDatabase
       updated_at timestamptz NOT NULL,
       UNIQUE (package_name, version)
     )
+    SQL
+    # CREATE TABLE IF NOT EXISTS is a no-op against a database some earlier
+    # branch already created, so a column added after that database existed
+    # never appears and every write naming it fails on a developer's machine
+    # while CI, which always starts empty, stays green. Each column added
+    # here from now on gets its own idempotent ALTER for that reason.
+    <<-SQL,
+    ALTER TABLE doc_versions ADD COLUMN IF NOT EXISTS source_commit_sha text
     SQL
   ]
 
