@@ -680,6 +680,11 @@ describe Shards::Show do
 
     # Markdown permits raw HTML, so a README is an injection vector unless the
     # rendered output drops it rather than merely escaping it.
+    #
+    # Asserted against the payload and the omission marker rather than the
+    # bare string "<script": every page in this app carries the layout's own
+    # deferred script tag, so a blanket search for that substring can only
+    # ever fail and would say nothing about the README either way.
     it "never lets a script tag in a README reach the page" do
       shard = ShardFactory.create &.name("readme-shard")
         .readme_content("Intro\n\n<script>alert('readme')</script>\n")
@@ -687,7 +692,8 @@ describe Shards::Show do
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Intro")
-      response.body.should_not contain("<script")
+      response.body.should contain("raw HTML omitted")
+      response.body.should_not contain("<script>")
       response.body.should_not contain("alert(")
     end
 
