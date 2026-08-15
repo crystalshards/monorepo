@@ -336,9 +336,11 @@ describe Shards::Show do
       response.body.should contain("# Add this to your shard.yml")
       response.body.should contain("dependencies:")
       response.body.should contain("test-shard:")
-      response.body.should contain("github: user/test-shard")
+      response.body.should contain("github:")
+      response.body.should contain("user/test-shard")
       # HTML encodes '>' as '&gt;'
-      response.body.should contain("version: ~&gt; 1.0.0")
+      response.body.should contain("version:")
+      response.body.should contain("~&gt; 1.0.0")
     end
 
     it "shows shards install command" do
@@ -349,7 +351,7 @@ describe Shards::Show do
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       response.body.should contain("Then run:")
-      response.body.should contain("shards install")
+      response.body.should contain(%(<span class="m">shards</span> install))
     end
 
     it "uses latest version in installation instructions" do
@@ -365,8 +367,8 @@ describe Shards::Show do
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
       # HTML encodes '>' as '&gt;'
-      response.body.should contain("version: ~&gt; 2.0.0")
-      response.body.should_not contain("version: ~&gt; 1.0.0")
+      response.body.should contain("~&gt; 2.0.0")
+      response.body.should_not contain(%(<span class="s">~&gt; 1.0.0</span>))
     end
 
     it "extracts correct GitHub path from repository URL" do
@@ -377,7 +379,8 @@ describe Shards::Show do
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("github: crystal-lang/awesome-shard")
+      response.body.should contain("github:")
+      response.body.should contain("crystal-lang/awesome-shard")
       # Note: .git still appears in the repository link, but not in the github: path
       # The github: path correctly strips .git
     end
@@ -390,7 +393,8 @@ describe Shards::Show do
 
       response = BrowserClient.exec(Shards::Show.with(**identity_of(shard)))
 
-      response.body.should contain("github: user/test-shard")
+      response.body.should contain("github:")
+      response.body.should contain("user/test-shard")
     end
 
     # An untagged repository can still be depended on, so the snippet is still
@@ -404,9 +408,9 @@ describe Shards::Show do
 
       response.body.should contain("Installation")
       response.body.should contain("# Add this to your shard.yml")
-      response.body.should contain("shards install")
+      response.body.should contain(%(<span class="m">shards</span> install))
       response.body.should contain("No release to pin to")
-      response.body.should_not contain("version: ~&gt;")
+      response.body.should_not contain(%(<span class="m">version:</span>))
     end
   end
 
@@ -603,7 +607,7 @@ describe Shards::Show do
       response.status_code.should eq(200)
       response.body.should contain("empty-shard")
       response.body.should contain("Installation")
-      response.body.should contain("shards install")
+      response.body.should contain(%(<span class="m">shards</span> install))
       response.body.should contain("No tagged releases")
       response.body.should contain("No shard.yml has been indexed")
       response.body.should contain("No README has been indexed")

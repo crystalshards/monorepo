@@ -22,14 +22,92 @@ describe CrystalShards::ReadmeHtml do
 
     it "renders a fenced block as pre > code" do
       html = CrystalShards::ReadmeHtml.markdown(
-        "```crystal\nputs \"hi\"\n```", "github.com", "kemalcr", "kemal", "master"
+        "```\nplain text\n```", "github.com", "kemalcr", "kemal", "master"
       )
 
-      html.should match(/<pre><code[^>]*>puts &quot;hi&quot;<\/code><\/pre>/)
+      html.should match(/<pre><code>plain text<\/code><\/pre>/)
     end
 
     it "returns empty for no README" do
       CrystalShards::ReadmeHtml.markdown(nil, "github.com", "a", "b", "master").should eq("")
+    end
+  end
+
+  describe "highlighting code" do
+    it "highlights a Crystal fence" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        %(```crystal\ndef greet\n  "hi" # wave\nend\n```),
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(<code class="language-crystal">))
+      html.should contain(%(<span class="k">def</span>))
+      html.should contain(%(<span class="s">&quot;hi&quot;</span>))
+      html.should contain(%(<span class="c"># wave</span>))
+    end
+
+    it "highlights a YAML fence" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "```yaml\ndependencies:\n  kemal:\n    github: kemalcr/kemal\n```",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(<span class="m">dependencies:</span>))
+      html.should contain(%(<span class="m">github:</span>))
+      html.should contain(%(<span class="s">kemalcr/kemal</span>))
+    end
+
+    it "highlights a shell fence: the command, its flags, and a comment" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "```bash\n# install\ncurl -fsSL https://example.com | sh\n```",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(<span class="c"># install</span>))
+      html.should contain(%(<span class="m">curl</span>))
+      html.should contain(%(<span class="k">-fsSL</span>))
+      html.should contain(%(<span class="m">sh</span>))
+    end
+
+    it "colours only the prompted line in a shell session, leaving output alone" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "```console\n$ shards install\nResolving dependencies\n```",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(<span class="o">$</span>))
+      html.should contain(%(<span class="m">shards</span>))
+      html.should contain("Resolving dependencies")
+    end
+
+    it "highlights a JSON fence's keys, values, numbers and literals" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        %(```json\n{"name": "kemal", "stable": true, "port": 3000}\n```),
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(<span class="m">&quot;name&quot;</span>))
+      html.should contain(%(<span class="s">&quot;kemal&quot;</span>))
+      html.should contain(%(<span class="k">true</span>))
+      html.should contain(%(<span class="n">3000</span>))
+    end
+
+    it "names another language's fence without colouring it" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        %(```toml\nname = "kemal"\n```), "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(<code class="language-toml">))
+      html.should_not contain("<span")
+    end
+
+    it "renders an unlabelled fence as plain text" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "```\nplain\n```", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should_not contain("<span")
+      html.should contain("plain")
     end
   end
 

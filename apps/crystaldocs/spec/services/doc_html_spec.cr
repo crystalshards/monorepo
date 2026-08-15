@@ -158,9 +158,9 @@ describe CrystalDocs::DocHtml do
     end
 
     it "names another language's fence without colouring it" do
-      html = CrystalDocs::DocHtml.markdown("```yaml\ndependencies:\n  kemal:\n```")
+      html = CrystalDocs::DocHtml.markdown(%(```toml\nname = "kemal"\n```))
 
-      html.should contain(%(<code class="language-yaml">))
+      html.should contain(%(<code class="language-toml">))
       html.should_not contain("<span")
     end
 
@@ -171,6 +171,56 @@ describe CrystalDocs::DocHtml do
 
       html.should_not contain("<span")
       code_block_text(html).should eq("$ shards install")
+    end
+
+    it "highlights a YAML fence" do
+      html = CrystalDocs::DocHtml.markdown(
+        "```yaml\ndependencies:\n  kemal:\n    github: kemalcr/kemal\n```"
+      )
+
+      html.should contain(%(<code class="language-yaml">))
+      html.should contain(%(<span class="m">dependencies:</span>))
+      html.should contain(%(<span class="m">github:</span>))
+      html.should contain(%(<span class="s">kemalcr/kemal</span>))
+    end
+
+    it "highlights a shell fence: the command, its flags, and a comment" do
+      html = CrystalDocs::DocHtml.markdown(
+        "```bash\n# install\ncurl -fsSL https://example.com | sh\n```"
+      )
+
+      html.should contain(%(<span class="c"># install</span>))
+      html.should contain(%(<span class="m">curl</span>))
+      html.should contain(%(<span class="k">-fsSL</span>))
+      html.should contain(%(<span class="m">sh</span>))
+    end
+
+    it "colours only the prompted line in a shell session, leaving output alone" do
+      html = CrystalDocs::DocHtml.markdown(
+        "```console\n$ shards install\nResolving dependencies\n```"
+      )
+
+      html.should contain(%(<span class="o">$</span>))
+      html.should contain(%(<span class="m">shards</span>))
+      html.should contain("Resolving dependencies")
+    end
+
+    it "highlights a JSON fence's keys, values, numbers and literals" do
+      html = CrystalDocs::DocHtml.markdown(
+        %(```json\n{"name": "kemal", "stable": true, "port": 3000}\n```)
+      )
+
+      html.should contain(%(<span class="m">&quot;name&quot;</span>))
+      html.should contain(%(<span class="s">&quot;kemal&quot;</span>))
+      html.should contain(%(<span class="k">true</span>))
+      html.should contain(%(<span class="n">3000</span>))
+    end
+
+    it "renders an unlabelled fence as plain text" do
+      html = CrystalDocs::DocHtml.markdown("```\nplain\n```")
+
+      html.should_not contain("<span")
+      code_block_text(html).should eq("plain")
     end
 
     it "keeps the highlighting the compiler already did" do

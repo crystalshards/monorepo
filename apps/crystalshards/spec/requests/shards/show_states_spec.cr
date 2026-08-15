@@ -151,7 +151,8 @@ describe Shards::Show do
       response.status_code.should eq(200)
       body.should contain("No tagged releases")
       body.should contain("resolves a version from a git tag")
-      body.should contain("github: someone/untagged")
+      body.should contain("github:")
+      body.should contain("someone/untagged")
       body.should contain("No release to pin to")
       # No version, so nothing claims to know this repository's dependencies.
       body.should_not contain("<h2>Dependencies</h2>")
@@ -190,9 +191,10 @@ describe Shards::Show do
 
       body.should contain("master branch")
       body.should contain("This branch")
-      body.should contain("branch: master")
+      body.should contain("branch:")
+      body.should contain("master")
       body.should contain("is a branch, not a release")
-      body.should_not contain("version: ~&gt; master")
+      body.should_not contain(%(<span class="m">version:</span>))
     end
   end
 
@@ -328,12 +330,13 @@ describe Shards::Versions::Show do
       body.should contain("&gt;= 0.35.0")
       body.should contain("Jan 15, 2024")
       body.should contain("old-only-dep")
-      body.should contain("version: ~&gt; 1.0.0")
+      body.should contain("version:")
+      body.should contain("~&gt; 1.0.0")
 
       # Not the latest one's.
       body.should_not contain("new-only-dep")
       body.should_not contain("&gt;= 1.0.0")
-      body.should_not contain("version: ~&gt; 2.0.0")
+      body.should_not contain(%(<span class="s">~&gt; 2.0.0</span>))
     end
 
     it "marks the selected version current and keeps the newest addressable" do

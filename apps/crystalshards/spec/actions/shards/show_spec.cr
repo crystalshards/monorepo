@@ -35,9 +35,11 @@ describe Shards::Show do
       response.body.should contain("Add this to your shard.yml")
       response.body.should contain("dependencies:")
       response.body.should contain("test-shard:")
-      response.body.should contain("github: crystal-lang/test-shard")
-      response.body.should contain("version: ~&gt; 2.0.0")
-      response.body.should contain("shards install")
+      response.body.should contain("github:")
+      response.body.should contain("crystal-lang/test-shard")
+      response.body.should contain("version:")
+      response.body.should contain("~&gt; 2.0.0")
+      response.body.should contain(%(<span class="m">shards</span> install))
     end
 
     it "displays version history" do

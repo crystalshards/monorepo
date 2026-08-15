@@ -3,7 +3,8 @@ require "../spec_helper"
 # The ad strip is the one component on this site whose content comes from
 # another service. CrystalGigs answering with fewer jobs than the slot holds,
 # including a genuinely empty board, is a real answer: the strip fills the
-# remainder with first-party CrystalGigs house ads rather than leaving a gap.
+# remainder with a single first-party invitation card rather than leaving
+# a gap.
 # A fetch that failed, is backing off, or never ran is different: it has not
 # established that CrystalGigs, or the house ad links built from it, are even
 # reachable, so that case renders nothing at all, the same as it always has.
@@ -123,11 +124,11 @@ describe Components::JobAd do
       source(feed)
 
       html = render
-      html.should contain(%(href="#{GIGS_ORIGIN}/jobs"))
+      html.should contain(%(href="#{GIGS_ORIGIN}/jobs/new"))
       html.should contain("First party")
-      # The slot still holds three cards; a healthy empty board is not a
-      # reason to render a strip that is visibly smaller than usual.
-      html.scan(/class="job-ad-item/).size.should eq(3)
+      # The slot holds one card: an empty board earns exactly one
+      # invitation, not a strip padded out to look like three real openings.
+      html.scan(/class="job-ad-item/).size.should eq(1)
     end
 
     it "renders nothing when the strip is not configured" do
@@ -149,7 +150,7 @@ describe Components::JobAd do
 
       html = render
       html.should_not contain("javascript:")
-      html.should contain(%(href="#{GIGS_ORIGIN}/jobs"))
+      html.should contain(%(href="#{GIGS_ORIGIN}/jobs/new"))
     end
 
     it "keeps the good rows when only some links are unsafe, and fills the rest" do
@@ -161,8 +162,9 @@ describe Components::JobAd do
       html = render
       html.should_not contain("Bad role")
       html.should contain("Good role")
-      # One real job survived the filter; house ads fill the other two seats.
-      html.scan(/class="job-ad-item/).size.should eq(3)
+      # One real job survived the filter; the house ad fills the one seat
+      # still open, not both.
+      html.scan(/class="job-ad-item/).size.should eq(2)
     end
 
     it "leaves the strip working after a failure instead of wedging it" do
@@ -312,10 +314,10 @@ describe Components::JobAd do
     it "caches an empty board too, so an idle job board is not a retry loop" do
       stub = source(feed)
 
-      # A healthy empty board is a successful answer, so it fills with house
-      # ads on every one of these renders, all served from the same cached
-      # answer rather than a fresh fetch each time.
-      3.times { render.should contain(%(href="#{GIGS_ORIGIN}/jobs")) }
+      # A healthy empty board is a successful answer, so it fills with the
+      # house ad on every one of these renders, all served from the same
+      # cached answer rather than a fresh fetch each time.
+      3.times { render.should contain(%(href="#{GIGS_ORIGIN}/jobs/new")) }
 
       stub.calls.should eq(1)
     end
@@ -345,15 +347,18 @@ describe Components::JobAd do
       source(feed)
 
       html = render
-      html.should contain(%(href="#{GIGS_ORIGIN}/jobs"))
+      html.should contain(%(href="#{GIGS_ORIGIN}/jobs/new"))
       html.should contain("First party")
     end
 
-    it "keeps the card count at the requested limit whenever the feed answers" do
+    it "adds at most one house ad, however many seats the feed left open" do
       source(feed)
-      render.scan(/class="job-ad-item/).size.should eq(3)
+      render.scan(/class="job-ad-item/).size.should eq(1)
 
       source(feed(job("One")))
+      render.scan(/class="job-ad-item/).size.should eq(2)
+
+      source(feed(job("One"), job("Two")))
       render.scan(/class="job-ad-item/).size.should eq(3)
 
       source(feed(job("One"), job("Two"), job("Three")))
@@ -369,31 +374,35 @@ describe Components::JobAd do
       render.should be_empty
     end
 
-    it "fills only the seats the feed left empty" do
+    it "fills the remaining seats with one invitation, not one per seat" do
       source(feed(job("Real role", url: "https://crystalgigs.test/jobs/9")))
 
       html = render
       html.should contain("Real role")
-      html.scan(GIGS_ORIGIN).size.should eq(2)
+      html.scan(GIGS_ORIGIN).size.should eq(1)
     end
 
-    it "points each house ad at its own route under GIGS_SITE_ORIGIN, with no tracking parameters" do
+    it "points the house ad at its own route under GIGS_SITE_ORIGIN, with no tracking parameters" do
       source(feed)
 
       html = render(limit: 2)
-      # Verified live on the CrystalGigs app: GET /jobs lists roles, GET
-      # /jobs/new is where a company posts one.
-      html.should contain(%(href="#{GIGS_ORIGIN}/jobs"))
+      # Verified live on the CrystalGigs app: GET /jobs/new is where a
+      # company posts a role, which is what an open ad slot is inviting
+      # someone to do.
       html.should contain(%(href="#{GIGS_ORIGIN}/jobs/new"))
       html.should_not contain("utm_")
     end
 
-    it "alternates between the two audiences instead of repeating one" do
+    it "never repeats the invitation card, however many seats are open" do
+      # Three slots used to fill with two pieces of copy on alternation, so
+      # a reader saw "Browse Crystal jobs on CrystalGigs" twice in one strip
+      # with "Post a Crystal role" between them. One card, once, however
+      # many seats the feed left open.
       source(feed)
 
-      html = render(limit: 2)
-      html.should contain("Browse Crystal jobs on CrystalGigs")
-      html.should contain("Post a Crystal role on CrystalGigs")
+      html = render(limit: 3)
+      html.scan("Your posting here").size.should eq(1)
+      html.scan(/class="job-ad-item/).size.should eq(1)
     end
 
     it "fills the same way on the next render, so a reload does not reshuffle it" do

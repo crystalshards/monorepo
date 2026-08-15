@@ -950,14 +950,23 @@ a.version-number:hover { text-decoration: underline; }
    the artwork. background-color: currentColor plus mask-image is what lets
    one static file do that.
 
+   Muted ink at rest, brightening to the site's accent on hover or focus:
+   the same treatment the collective's own site gives this mark, so it
+   reads as a signature next to the license line rather than a badge.
+
    The size floor guards legibility, not decoration: this is detailed line
    art, and it turns to mush below it. */
-.tbc-seal-line { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
-.tbc-seal-link { display: inline-flex; align-items: center; min-height: var(--tap); }
+.tbc-seal-line { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.75rem; flex-wrap: wrap; }
+.tbc-seal-link {
+  display: inline-flex; align-items: center; min-height: var(--tap);
+  color: var(--ink-muted);
+  transition: color 0.12s ease;
+}
+.tbc-seal-link:hover, .tbc-seal-link:focus-visible { color: var(--accent); }
 .tbc-seal {
   display: inline-block;
-  width: 1.75rem; height: 1.75rem;
-  min-width: 1.5rem; min-height: 1.5rem;
+  width: 3.5rem; height: 3.5rem;
+  min-width: 3rem; min-height: 3rem;
   flex-shrink: 0;
   background-color: currentColor;
   -webkit-mask: url("/images/tbc-seal.svg") no-repeat center / contain;
@@ -1014,11 +1023,18 @@ main.container:has(.docs-shell) {
 /* ---- left rail --------------------------------------------------------- */
 
 /* The masthead is static, so top:0 puts the rail directly under it while the
-   header is on screen and pins it to the viewport once the header scrolls off. */
+   header is on screen and pins it to the viewport once the header scrolls
+   off. max-height, not height: a package with hundreds of types needs the
+   cap so the tree scrolls inside its own box instead of pushing the page
+   down; a package with three needs no cap at all, so the rail ends with
+   its last link instead of carrying a viewport's worth of blank surface
+   colour past it. min-height:100vh did exactly that on every short page:
+   forced the rail's own background and border-right to run a full screen
+   tall regardless of what was in it, so a one-type shard read as a broken
+   sidebar sitting beside a normal page. */
 .docs-sidebar {
   position: sticky;
   top: 0;
-  min-height: 100vh;
   max-height: 100vh;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1601,6 +1617,25 @@ a.docs-external {
   background-size: var(--facet) var(--facet);
 }
 
+/* A documentation page's reading column runs edge to edge instead of under
+   --shell (see the .docs-shell rules above), so a strip still clamped and
+   centred to --shell no longer lines up with anything on that kind of
+   page: measured, it sat inset from the sidebar's own edge by a few pixels
+   of coincidence and stopped a couple hundred short of where the reading
+   column actually ends. Unclamp it for exactly the pages that unclamp
+   their content, keyed off the same .docs-shell marker the masthead rule
+   above uses, so the two can never disagree.
+
+   The top margin also drops to 0 here. .docs-main already ends in a
+   var(--bay) of its own bottom padding, so this strip's usual top margin
+   stacked on top of that padding was two section-breaks' worth of empty
+   space above it where a reader expects one. */
+body:has(.docs-shell) .job-ad {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
 .job-ad-head {
   display: flex; align-items: baseline; flex-wrap: wrap;
   gap: 0.35rem 0.75rem;
@@ -1685,11 +1720,13 @@ a.docs-external {
 
    Crystal code arrives already tokenised. `crystal docs` runs a doc comment's
    Crystal blocks through Crystal::SyntaxHighlighter::HTML before it writes
-   docs.json, and CrystalDocs::DocHtml runs a README's Crystal fences through
-   the same highlighter, so both surfaces speak that highlighter's eight
-   one-letter classes and this is the only theme either needs.
+   docs.json, and CrystalDocs::CodeHighlighter runs a README's Crystal, YAML,
+   shell and JSON fences through that same highlighter (Crystal) or a
+   hand-written one beside it that speaks the identical vocabulary (the
+   other three). Every one of them arrives here as the same eight one-letter
+   classes, so this is the only theme any of them needs.
 
-   Scoped to `pre` because that is the only place the highlighter emits. A
+   Scoped to `pre` because that is the only place a highlighter emits. A
    shard author who hand-writes <span class="k"> in their README prose gets
    nothing, which keeps our vocabulary ours.
 
