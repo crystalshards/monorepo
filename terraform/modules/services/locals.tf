@@ -447,15 +447,22 @@ locals {
   #
   # It is built from the registry codebase, so it inherits that codebase's boot
   # time demands: LUCKY_ENV, APP_DOMAIN, PORT (supplied by Cloud Run through
-  # container_port), SECRET_KEY_BASE and JOB_ADS_URL. None of those describe
-  # what it does, they are the price of loading config/**.
+  # container_port), SECRET_KEY_BASE, JOB_ADS_URL, and the four site origins in
+  # site_links_env. None of those describe what it does, they are the price of
+  # loading config/**.
+  #
+  # site_links_env is here for exactly that reason and not because a launcher
+  # renders a footer. config/site_links.cr refuses to boot in production
+  # without all four, and this service runs the same binary the registry does,
+  # so leaving them out failed the startup probe on every revision and left
+  # the deploy red with the four web services already released.
   #
   # What it actually needs is below them: the two bucket names it signs URLs
   # against, the Job it starts, and the concurrency it must not exceed.
   # DOCS_SANDBOX selects the Cloud Run Jobs sandbox implementation.
   # DOCS_SANDBOX_ALLOW_UNSAFE is deliberately absent: it exists so that building
   # without a sandbox has to be asked for by name, and production never asks.
-  docs_launcher_env = merge(local.common_env, {
+  docs_launcher_env = merge(local.common_env, local.site_links_env, {
     APP_DOMAIN = var.docs_launcher_app_domain
 
     # What verify_caller! checks every dispatch against. Without these two the
