@@ -10,5 +10,11 @@ class DocVersionFactory < Avram::Factory
     published_at Time.utc
     build_status "success"
     storage_path "sample-package/#{semver}"
+    # Left unset here on purpose: nil is what an untouched migrated row
+    # looks like, and most examples render a version without caring what it
+    # was built from. A spec proving reference resolution sets
+    # `source_commit_sha` explicitly, through the setter Avram already
+    # generates for every column, the same way callers already set
+    # `build_status` and `storage_path` above.
   end
 end

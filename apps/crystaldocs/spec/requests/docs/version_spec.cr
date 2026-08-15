@@ -112,4 +112,41 @@ describe Docs::Version do
     # Views should increase if content exists
     # updated_doc.total_views.should be >= initial_views
   end
+
+  # The standard library never goes through PackageRegistration: CoreDocs
+  # registers and records its own commit on the crystalshards side, into the
+  # exact row shape this plants directly. This is the proven case that
+  # reported the bug: a bare "crystal" row, in production already carrying
+  # this shape once CoreDocs runs, resolving a relative asset that used to
+  # 404 against crystaldocs.org itself.
+  it "resolves a relative README reference for the standard library through the row core registration produces" do
+    doc = DocFactory.create &.package_name(CrystalDocs::CORE_PACKAGE)
+
+    DocVersionFactory.create &.doc_id(doc.id)
+      .version("1.21.0")
+      .source_commit_sha("cafef00dfeedface02")
+
+    document = {
+      repository_name: "crystal-lang/crystal",
+      body:            "![Crystal - Born and raised at Manas](doc/assets/crystal-born-and-raised.svg)",
+      program:         {
+        full_name: "Top Level Namespace",
+        name:      "Top Level Namespace",
+        kind:      "module",
+        types:     [] of String,
+      },
+    }.to_json
+
+    StubDocsStorage.holding(document).install
+
+    response = BrowserClient.exec(
+      Docs::Version.with(package_name: CrystalDocs::CORE_PACKAGE, version: "1.21.0")
+    )
+
+    response.status_code.should eq(200)
+    response.body.should contain(
+      "https://raw.githubusercontent.com/crystal-lang/crystal/cafef00dfeedface02/" \
+      "doc/assets/crystal-born-and-raised.svg"
+    )
+  end
 end

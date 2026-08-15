@@ -46,7 +46,12 @@ module CrystalDocs
     # One published version. Yanked is carried rather than filtered, because a
     # yanked release is still a real release somebody may hold a link to; it is
     # only barred from being chosen as the default.
-    record Release, version : String, released_at : Time, yanked : Bool
+    # `commit_sha` is the immutable revision the registry resolved the
+    # version's tag to when it indexed the release, the same column
+    # `DocsBuilder` on the crystalshards side checks a build out at. It is
+    # nil for a release the registry indexed before that column existed, or
+    # whose tag the provider could not resolve at index time.
+    record Release, version : String, released_at : Time, yanked : Bool, commit_sha : String? = nil
 
     # One row of the browse catalogue.
     #
@@ -312,7 +317,8 @@ module CrystalDocs
     # semver's job and is done in `default_release`. Ordering here only exists
     # so that two calls return the same array.
     RELEASES_SQL = <<-SQL
-      SELECT shard_versions.version, shard_versions.released_at, shard_versions.yanked
+      SELECT shard_versions.version, shard_versions.released_at, shard_versions.yanked,
+             shard_versions.commit_sha
       FROM shard_versions
       JOIN shards ON shards.id = shard_versions.shard_id
       WHERE shards.canonical_slug = $1
@@ -525,8 +531,8 @@ module CrystalDocs
       RegistryDatabase.query_all(
         RELEASES_SQL,
         slug,
-        as: {String, Time, Bool}
-      ).map { |(version, released_at, yanked)| Release.new(version, released_at, yanked) }
+        as: {String, Time, Bool, String?}
+      ).map { |(version, released_at, yanked, commit_sha)| Release.new(version, released_at, yanked, commit_sha) }
     end
 
     # The version a reader gets when they ask for a package without naming one.

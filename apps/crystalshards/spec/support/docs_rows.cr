@@ -9,7 +9,12 @@ module DocsRows
   # A registered version, exactly as `CrystalDocs::PackageRegistration` writes
   # it: the docs row, then the version row, pending, with storage_path naming
   # where the artifact would go whether or not anything is there.
-  def self.register(package_name : String, version : String, build_status : String = "pending") : Nil
+  def self.register(
+    package_name : String,
+    version : String,
+    build_status : String = "pending",
+    commit_sha : String? = nil,
+  ) : Nil
     now = Time.utc
 
     DocsDatabase.exec(<<-SQL, package_name, now)
@@ -22,9 +27,10 @@ module DocsRows
     # sets it from the registry release's own timestamp. This helper has no
     # release to read one from, so it uses `now`; nothing plants a row through
     # this path and then asserts on published_at.
-    DocsDatabase.exec(<<-SQL, package_name, version, build_status, "#{package_name}/#{version}", now)
-      INSERT INTO doc_versions (doc_id, version, published_at, build_status, storage_path, created_at, updated_at)
-      SELECT id, $2, $5, $3, $4, $5, $5 FROM docs WHERE package_name = $1
+    DocsDatabase.exec(<<-SQL, package_name, version, build_status, "#{package_name}/#{version}", commit_sha, now)
+      INSERT INTO doc_versions
+        (doc_id, version, published_at, build_status, storage_path, source_commit_sha, created_at, updated_at)
+      SELECT id, $2, $6, $3, $4, $5, $6, $6 FROM docs WHERE package_name = $1
       ON CONFLICT (doc_id, version) DO NOTHING
       SQL
   end

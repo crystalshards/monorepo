@@ -186,6 +186,10 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
     yanked : Array(String) = [] of String,
     description : String? = nil,
     indexed : Bool = true,
+    # Keyed by version string rather than positional, because most examples
+    # do not care which commit a release names and defaulting to empty
+    # keeps every one of them unchanged.
+    commit_shas : Hash(String, String) = {} of String => String,
   ) : StubRegistryPackages
     @packages[slug] = Package.new(
       slug: slug,
@@ -196,7 +200,7 @@ class StubRegistryPackages < CrystalDocs::RegistryPackages
     )
 
     @releases[slug] = versions.map_with_index do |version, index|
-      Release.new(version, Time.utc(2024, 1, 1) + index.days, yanked.includes?(version))
+      Release.new(version, Time.utc(2024, 1, 1) + index.days, yanked.includes?(version), commit_shas[version]?)
     end
 
     self
