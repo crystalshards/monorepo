@@ -15,22 +15,45 @@ describe AuthorIdentity do
       AuthorIdentity.display_name("Ary Borenszweig").should eq("Ary Borenszweig")
     end
 
-    it "renders a bare address as its local part, never the address itself" do
-      name = AuthorIdentity.display_name("ary@example.com")
+    it "drops an unbracketed address that follows a name" do
+      name = AuthorIdentity.display_name("Ary Borenszweig ary@example.com")
 
-      name.should eq("ary")
+      name.should eq("Ary Borenszweig")
       name.should_not contain("@")
     end
 
-    it "renders a bracketed address with no name as its local part" do
+    it "drops a parenthesised address" do
+      AuthorIdentity.display_name("Ary Borenszweig (ary@example.com)").should eq("Ary Borenszweig")
+    end
+
+    it "drops every address when an entry carries more than one" do
+      name = AuthorIdentity.display_name("Ary Borenszweig <ary@example.com>, ary@work.example")
+
+      name.should eq("Ary Borenszweig")
+      name.should_not contain("@")
+    end
+
+    it "renders a bare address as the placeholder, never any part of it" do
+      name = AuthorIdentity.display_name("ary.borenszweig@example.com")
+
+      name.should eq("unnamed author")
+      name.should_not contain("ary")
+      name.should_not contain("@")
+    end
+
+    it "renders a bracketed address with no name as the placeholder" do
       name = AuthorIdentity.display_name("<ary@example.com>")
 
-      name.should eq("ary")
-      name.should_not contain("@")
+      name.should eq("unnamed author")
+      name.should_not contain("ary")
     end
 
-    it "falls back to a neutral placeholder when even the local part is empty" do
+    it "falls back to the placeholder when nothing but punctuation is left" do
       AuthorIdentity.display_name("<>").should eq("unnamed author")
+    end
+
+    it "keeps punctuation that belongs to the name" do
+      AuthorIdentity.display_name("Borenszweig, Ary <ary@example.com>").should eq("Borenszweig, Ary")
     end
 
     it "strips surrounding whitespace" do

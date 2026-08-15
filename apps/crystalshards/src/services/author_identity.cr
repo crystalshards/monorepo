@@ -10,48 +10,46 @@
 # anywhere that reads an author string. This is the one place in the app that
 # parses one, so every caller goes through it instead of repeating the regex.
 module AuthorIdentity
-  # `Name <email>`. The name half is captured greedily up to the last "<...>"
-  # pair, so a name that itself contains an angle bracket (shard.yml enforces
-  # nothing about the shape of this field) still resolves at the real
-  # address rather than at the first one.
-  BRACKETED_PATTERN = /\A(.*)<\s*([^<>]*)\s*>\s*\z/
+  # An address shaped run, wherever it sits in the entry. `authors:` is free
+  # text and nothing validates it, so an address turns up outside angle
+  # brackets as often as inside them, and "Jane jane@example.com" hands a
+  # scraper exactly as much as "Jane <jane@example.com>" does. Matching the
+  # run rather than a whole-string shape is what makes the removal total.
+  EMAIL_PATTERN = /[^\s@<>()\[\],;]+@[^\s@<>()\[\],;]+/
 
-  # A bare address with no brackets and no name at all. shard.yml accepts
-  # this too, because `authors:` is free text and nothing validates it.
-  BARE_EMAIL_PATTERN = /\A[^\s@<>]+@[^\s@<>]+\z/
+  # The punctuation an address leaves behind once it is gone: the empty
+  # bracket or paren pair that used to hold it. Left in place it renders as
+  # "Jane <>" under an author heading, which reads as a rendering bug.
+  LEFTOVER_PATTERN = /<\s*>|\(\s*\)|\[\s*\]/
 
-  # What an address-only author renders as once its address is gone and no
-  # name was ever given to replace it.
+  # What an author renders as when the entry carried no name of its own.
+  # Deliberately not the local part of the address: "jane.smith" is still
+  # half of a working address and a guessable domain recovers the rest, and
+  # an entry that gave us only a mailbox never offered a name to publish.
   PLACEHOLDER = "unnamed author"
 
   # The display name for one `authors:` entry, with any address dropped.
   #
-  # A plain name with no address passes through unchanged. A "Name <email>"
-  # entry keeps the name. An entry that is only an address, bracketed or
-  # bare, keeps the local part of the address: it still reads as an
-  # identity, a handle rather than a mailbox, and it is never something a
-  # scraper can mail.
+  # A plain name with no address passes through unchanged. Any address in the
+  # entry is removed wherever it appears. An entry that was only an address
+  # has no name left to show, so it renders as the placeholder and no part of
+  # the address survives.
   def self.display_name(raw : String) : String
     entry = raw.strip
     return entry if entry.empty?
 
-    if match = BRACKETED_PATTERN.match(entry)
-      name = match[1].strip
-      return name unless name.empty?
-
-      return local_part(match[2].strip)
-    end
-
-    return local_part(entry) if BARE_EMAIL_PATTERN.matches?(entry)
-
-    entry
+    name = tidy(entry.gsub(EMAIL_PATTERN, ""))
+    name.empty? ? PLACEHOLDER : name
   end
 
-  # The part of an address before the "@". An address so malformed that even
-  # this is empty (a bare "<>", say) falls back to a neutral placeholder
-  # rather than rendering an empty name under an "Author" heading.
-  private def self.local_part(email : String) : String
-    local = email.split('@', 2).first.strip
-    local.empty? ? PLACEHOLDER : local
+  # Closes the gap the removal opened: the emptied brackets, the doubled
+  # spaces, and a separator that was only ever there to hold the name and the
+  # address apart. Internal punctuation is left alone, because "Doe, Jane" is
+  # a name and not a leftover.
+  private def self.tidy(text : String) : String
+    text.gsub(LEFTOVER_PATTERN, " ")
+      .gsub(/\s+/, " ")
+      .strip
+      .strip(" \t,;:-")
   end
 end
