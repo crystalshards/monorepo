@@ -168,10 +168,10 @@ locals {
 
       INDEX_MAX_SHARDS = tostring(var.index_max_shards)
 
-      # The one bound in this set that is not sized against a rate limit. The
-      # dependency harvest spends no host requests, so it is bounded against
-      # INDEX_MAX_SHARDS instead: it must not register shards faster than
-      # indexing can give them content. See its variable.
+      # Finding these leads costs nothing, because they come from manifests
+      # already stored here rather than from any host. Reading one costs the
+      # same three core requests indexing a shard costs, so this is bounded
+      # against what the three phases above leave unspent. See its variable.
       DEPENDENCY_MAX_CANDIDATES = tostring(var.dependency_max_candidates)
     }
     secret_env = merge({

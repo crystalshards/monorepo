@@ -8,11 +8,56 @@ require "../../../src/services/shard_indexer"
 
 # Discovery from the dependency graph.
 #
-# Nothing here touches a host, and that is the property under test as much as
-# any count: the leads come out of Postgres and registering one is an insert, so
-# a spec proving this works needs no recorded HTTP at all. The one exception is
-# the end-to-end case, which runs the real indexer through RecordedGithub to
-# prove the slug this phase reads is the slug indexing writes.
+# Finding a lead touches no host, and that is a property under test as much as
+# any count: the leads come out of Postgres, so a spec proving that half works
+# needs no recorded HTTP at all. Reading one does touch a host, and goes through
+# DependencySweep.indexer, which every spec here replaces except the end-to-end
+# case. That one runs the real indexer through RecordedGithub, to prove the slug
+# this phase reads is the slug indexing writes.
+#
+# Every spec that runs the phase MUST install an indexer. The default calls the
+# real ShardIndexer, which would reach api.github.com from the suite.
+private def default_indexer : Proc(Shard, ShardIndexer::Result)
+  ->(shard : Shard) { ShardIndexer.index(shard) }
+end
+
+# Replaces the per-lead read with `answer` and records the slugs it was handed,
+# so a spec can assert what a run actually went and read as well as its totals.
+private def with_indexer(
+  answer : Proc(Shard, ShardIndexer::Result),
+  read : Array(String) = [] of String,
+  &
+)
+  Discovery::DependencySweep.indexer = ->(shard : Shard) do
+    read << (shard.canonical_slug || shard.name)
+    answer.call(shard)
+  end
+
+  begin
+    yield
+  ensure
+    Discovery::DependencySweep.indexer = default_indexer
+  end
+end
+
+private def indexes(versions : Int32 = 1) : Proc(Shard, ShardIndexer::Result)
+  ->(shard : Shard) do
+    ShardIndexer::Result.new(ShardIndexer::Outcome::Indexed, shard, versions: versions)
+  end
+end
+
+private def gone(detail : String = "the repository is no longer reachable") : Proc(Shard, ShardIndexer::Result)
+  ->(shard : Shard) do
+    ShardIndexer::Result.new(ShardIndexer::Outcome::Unavailable, shard, detail: detail)
+  end
+end
+
+private def unreadable(detail : String = "502 from the host") : Proc(Shard, ShardIndexer::Result)
+  ->(shard : Shard) do
+    ShardIndexer::Result.new(ShardIndexer::Outcome::Failed, shard, detail: detail)
+  end
+end
+
 private def options(max_candidates : Int32 = 200) : Discovery::DependencySweep::Options
   Discovery::DependencySweep::Options.new(max_candidates: max_candidates)
 end
@@ -143,13 +188,24 @@ describe Discovery::DependencySweep do
   end
 
   describe ".run" do
-    it "registers a repository the dependency graph names and the crawler never found" do
+    # The whole point, in one spec: a repository no crawler found, resolved
+    # locally to nothing, then read from its host and stored with content.
+    it "registers a repository the graph names and reads it in the same pass" do
       edge("radix", "github.com/luislavena/radix")
 
-      report = Discovery::DependencySweep.run(options)
+      read = [] of String
+      report = uninitialized Discovery::DependencySweep::Report
+      with_indexer(indexes(versions: 4), read) do
+        report = Discovery::DependencySweep.run(options)
+      end
 
       report.registered.should eq(1)
+      report.indexed.should eq(1)
+      report.versions.should eq(4)
       report.failed.should eq(0)
+
+      # Registering and reading are one pass, not two runs apart.
+      read.should eq(["github.com/luislavena/radix"])
 
       shard = ShardQuery.new.canonical_slug("github.com/luislavena/radix").first
       shard.name.should eq("radix")
@@ -157,9 +213,65 @@ describe Discovery::DependencySweep do
       shard.owner.should eq("luislavena")
       shard.repo.should eq("radix")
       shard.repository_url.should eq("https://github.com/luislavena/radix")
-      # Discovery writes identity and stops. Indexing is what gives it content,
-      # and a nil indexed_at is the signal that says so.
-      shard.indexed_at.should be_nil
+    end
+
+    # A manifest outlives a rename, so the graph names repositories that have
+    # since moved or been deleted. Reading on arrival is what turns those into
+    # a row that says so, in the run that found it, rather than one that looks
+    # live until something else checks.
+    it "marks a lead whose repository is gone rather than leaving it looking live" do
+      edge("moved", "github.com/sdogruyol/kemal")
+
+      report = uninitialized Discovery::DependencySweep::Report
+      with_indexer(gone("that owner and name no longer address a repository")) do
+        report = Discovery::DependencySweep.run(options)
+      end
+
+      report.registered.should eq(1)
+      report.indexed.should eq(0)
+      report.unavailable.should eq(1)
+      # Not a failure. A dependency on something since deleted is an ordinary
+      # fact about an ecosystem, and failing the Job over one would put a red
+      # mark on nearly every run.
+      report.ok?.should be_true
+      rendered(report).should contain("the host no longer serves")
+    end
+
+    # A host having a bad second says nothing about the lead. The row stays,
+    # the reason is recorded, and IndexSweep reaches it again by staleness.
+    it "keeps a lead whose host would not answer, without failing the run" do
+      edge("flaky", "github.com/acme/flaky")
+
+      report = uninitialized Discovery::DependencySweep::Report
+      with_indexer(unreadable("502 from the host")) do
+        report = Discovery::DependencySweep.run(options)
+      end
+
+      report.registered.should eq(1)
+      report.index_failed.should eq(1)
+      report.ok?.should be_true
+      report.failures.first.should contain("502 from the host")
+      ShardQuery.new.canonical_slug("github.com/acme/flaky").first?.should_not be_nil
+    end
+
+    # One bad lead must not cost the batch the rows already written, which is
+    # the same rescue IndexSweep keeps around its own per-shard call.
+    it "survives a read that raises and carries on with the rest" do
+      edge("boom", "github.com/acme/aaa-boom")
+      edge("fine", "github.com/acme/zzz-fine")
+
+      exploding = ->(shard : Shard) do
+        raise "socket went away" if shard.repo == "aaa-boom"
+        ShardIndexer::Result.new(ShardIndexer::Outcome::Indexed, shard)
+      end
+
+      report = uninitialized Discovery::DependencySweep::Report
+      with_indexer(exploding) { report = Discovery::DependencySweep.run(options) }
+
+      report.registered.should eq(2)
+      report.indexed.should eq(1)
+      report.index_failed.should eq(1)
+      report.failures.first.should contain("socket went away")
     end
 
     # Not a GitHub-only mechanism, and this is the coverage it buys that no
@@ -172,9 +284,13 @@ describe Discovery::DependencySweep do
       edge("gadget", "bitbucket.org/acme/gadget")
 
       report = uninitialized Discovery::DependencySweep::Report
-      added = slugs_registered_by { report = Discovery::DependencySweep.run(options) }
+      added = [] of String
+      with_indexer(indexes) do
+        added = slugs_registered_by { report = Discovery::DependencySweep.run(options) }
+      end
 
       report.registered.should eq(3)
+      report.indexed.should eq(3)
       added.should eq([
         "bitbucket.org/acme/gadget",
         "codeberg.org/acme/widget",
@@ -192,7 +308,10 @@ describe Discovery::DependencySweep do
       edge("scoped", "git.sr.ht/user/scoped")
 
       report = uninitialized Discovery::DependencySweep::Report
-      added = slugs_registered_by { report = Discovery::DependencySweep.run(options) }
+      added = [] of String
+      with_indexer(indexes) do
+        added = slugs_registered_by { report = Discovery::DependencySweep.run(options) }
+      end
 
       report.registered.should eq(0)
       report.failed.should eq(0)
@@ -211,7 +330,10 @@ describe Discovery::DependencySweep do
       edge("zzz-storable", "github.com/acme/zzz")
 
       report = uninitialized Discovery::DependencySweep::Report
-      added = slugs_registered_by { report = Discovery::DependencySweep.run(options(max_candidates: 1)) }
+      added = [] of String
+      with_indexer(indexes) do
+        added = slugs_registered_by { report = Discovery::DependencySweep.run(options(max_candidates: 1)) }
+      end
 
       added.should eq(["github.com/acme/zzz"])
       report.registered.should eq(1)
@@ -223,7 +345,7 @@ describe Discovery::DependencySweep do
       edge("thing", "gitea.example.com/acme/thing")
       edge("storable", "github.com/acme/storable")
 
-      Discovery::DependencySweep.run(options)
+      with_indexer(indexes) { Discovery::DependencySweep.run(options) }
 
       Discovery::DependencySweep.outstanding.should eq(0)
       Discovery::DependencySweep.unsupported_hosts.should eq({"gitea.example.com" => 1})
@@ -237,7 +359,10 @@ describe Discovery::DependencySweep do
       edge("scoped", "git.sr.ht/~user/scoped")
 
       report = uninitialized Discovery::DependencySweep::Report
-      added = slugs_registered_by { report = Discovery::DependencySweep.run(options) }
+      added = [] of String
+      with_indexer(indexes) do
+        added = slugs_registered_by { report = Discovery::DependencySweep.run(options) }
+      end
 
       report.attempted.should eq(0)
       report.failed.should eq(0)
@@ -252,7 +377,10 @@ describe Discovery::DependencySweep do
       edge("third", "github.com/acme/third")
 
       report = uninitialized Discovery::DependencySweep::Report
-      added = slugs_registered_by { report = Discovery::DependencySweep.run(options(max_candidates: 2)) }
+      added = [] of String
+      with_indexer(indexes) do
+        added = slugs_registered_by { report = Discovery::DependencySweep.run(options(max_candidates: 2)) }
+      end
 
       report.registered.should eq(2)
       added.size.should eq(2)
@@ -261,11 +389,17 @@ describe Discovery::DependencySweep do
       Discovery::DependencySweep.due(10).map(&.slug).should eq(["github.com/acme/third"])
     end
 
+    # No leads means no reads. The indexer is installed anyway, so that a
+    # regression which started reading something would reach a fake rather than
+    # api.github.com from the suite.
     it "does nothing when the graph names no repository the registry is missing" do
-      report = Discovery::DependencySweep.run(options)
+      read = [] of String
+      report = uninitialized Discovery::DependencySweep::Report
+      with_indexer(indexes, read) { report = Discovery::DependencySweep.run(options) }
 
       report.attempted.should eq(0)
       report.registered.should eq(0)
+      read.should be_empty
       rendered(report).should contain("Nothing to harvest")
     end
   end
@@ -283,34 +417,41 @@ describe Discovery::DependencySweep do
   end
 
   describe ".render" do
-    it "states the cost, the bound and what is left" do
+    it "states the bound, where the leads come from and what is left" do
       edge("radix", "github.com/luislavena/radix")
       edge("ameba", "github.com/crystal-ameba/ameba")
 
-      report = Discovery::DependencySweep.run(options(max_candidates: 1))
+      report = uninitialized Discovery::DependencySweep::Report
+      with_indexer(indexes) { report = Discovery::DependencySweep.run(options(max_candidates: 1)) }
       output = rendered(report)
 
       output.should contain("Bound: 1 repositories this run")
-      output.should contain("no host requests")
-      output.should contain("registered 1 from the dependency graph")
+      output.should contain("costs no host requests")
+      output.should contain("registered 1 from the dependency graph, indexed 1")
       output.should contain("1 more repositories are named by dependencies and not yet registered")
     end
 
     it "names the hosts a dependency reached that the registry cannot store" do
       edge("thing", "gitea.example.com/acme/thing")
 
-      output = rendered(Discovery::DependencySweep.run(options))
+      report = uninitialized Discovery::DependencySweep::Report
+      with_indexer(indexes) { report = Discovery::DependencySweep.run(options) }
+      output = rendered(report)
 
       output.should contain("on a host the registry cannot store")
       output.should contain("gitea.example.com: 1 repository")
     end
   end
 
-  # The contract the whole feature rests on: the slug this phase reads is the
-  # slug indexing writes. Proven through the real indexer and the real resolver,
-  # because a spec that inserted resolved_slug itself would pass with the
-  # producer wired to nothing.
-  it "harvests a repository from a manifest indexing has just read" do
+  # The contract the whole feature rests on, driven end to end with no seams
+  # except the recorded transport: index a shard, have its manifest name a
+  # repository the registry has never seen, and come out the other side with
+  # that repository stored and carrying its own content.
+  #
+  # The real indexer and the real resolver on both halves, because a spec that
+  # inserted resolved_slug itself would pass with the producer wired to nothing,
+  # and one that faked the read would pass with the consumer wired to nothing.
+  it "reads a repository a manifest named and the registry had never seen" do
     consumer = shard_at("github.com", "acme", "consumer")
 
     manifest = <<-YAML
@@ -319,36 +460,47 @@ describe Discovery::DependencySweep do
       dependencies:
         radix:
           github: luislavena/radix
-        router:
-          gitlab: acme/router
       YAML
 
-    recorded = RecordedGithub.new("acme/consumer")
-      .repository(stars: 4, default_branch: "main")
-      .tags("v1.0.0")
-      .file("v1.0.0", "shard.yml", manifest)
+    # radix as GitHub would answer for it, under the name the manifest does NOT
+    # use. The row is created from the dependency key and then replaced by what
+    # the repository says about itself, so the description proves the read
+    # happened rather than the registration.
+    recorded = {
+      "acme/consumer" => RecordedGithub.new("acme/consumer")
+        .repository(stars: 4, default_branch: "main")
+        .tags("v1.0.0")
+        .file("v1.0.0", "shard.yml", manifest),
+      "luislavena/radix" => RecordedGithub.new("luislavena/radix")
+        .repository(stars: 300, description: "Radix tree implementation", default_branch: "master")
+        .tags("v0.4.1")
+        .file("v0.4.1", "shard.yml", "name: radix\nversion: 0.4.1\nlicense: MIT\n"),
+    }
 
-    result = RecordedGithub.install(recorded) { ShardIndexer.index(consumer) }
-    result.outcome.should eq(ShardIndexer::Outcome::Indexed)
-    result.dependencies.should eq(2)
+    RecordedGithub.install(recorded) do
+      result = ShardIndexer.index(consumer)
+      result.outcome.should eq(ShardIndexer::Outcome::Indexed)
+      result.dependencies.should eq(1)
 
-    # Indexing found neither repository, so both edges carry a null
-    # dependent_shard_id and the slug that says which repository each one meant.
-    version = ShardVersionQuery.new.shard_id(consumer.id).indexed_at.is_not_nil.first
-    edges = DependencyQuery.new.shard_version_id(version.id).to_a
-    edges.map(&.dependent_shard_id).should eq([nil, nil])
-    edges.map(&.resolved_slug).compact.sort.should eq([
-      "github.com/luislavena/radix",
-      "gitlab.com/acme/router",
-    ])
+      # Indexing found no row for radix, so the edge carries a null
+      # dependent_shard_id and the slug naming which repository it meant.
+      version = ShardVersionQuery.new.shard_id(consumer.id).indexed_at.is_not_nil.first
+      edge = DependencyQuery.new.shard_version_id(version.id).first
+      edge.dependent_shard_id.should be_nil
+      edge.resolved_slug.should eq("github.com/luislavena/radix")
 
-    report = uninitialized Discovery::DependencySweep::Report
-    added = slugs_registered_by { report = Discovery::DependencySweep.run(options) }
+      report = Discovery::DependencySweep.run(options)
+      report.registered.should eq(1)
+      report.indexed.should eq(1)
+    end
 
-    report.registered.should eq(2)
-    added.should eq([
-      "github.com/luislavena/radix",
-      "gitlab.com/acme/router",
-    ])
+    # Stored, and stored with the repository's own facts rather than an
+    # identity and the dependency key.
+    radix = ShardQuery.new.canonical_slug("github.com/luislavena/radix").first
+    radix.indexed_at.should_not be_nil
+    radix.github_stars.should eq(300)
+    radix.description.should eq("Radix tree implementation")
+    radix.license.should eq("MIT")
+    radix.latest_version.should eq("0.4.1")
   end
 end
