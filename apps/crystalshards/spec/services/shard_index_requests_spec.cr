@@ -293,6 +293,7 @@ describe ShardIndexRequests do
       end
     end
   end
+end
 
 # terraform/modules/services/locals.tf wires GITHUB_TOKEN into the
 # crystalshards service env, the exact name Discovery::Credentials::TOKEN_ENV

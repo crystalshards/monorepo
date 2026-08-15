@@ -1,13 +1,20 @@
 ENV["LUCKY_ENV"] = "test"
 ENV["DEV_PORT"] = "5001"
 ENV["GITHUB_WEBHOOK_SECRET"] ||= "test_webhook_secret_for_specs"
-# Required by CrystalShards::DocsSite, which has no default in any environment.
-# `||=` so a spec can still assert what happens when it is absent by clearing
-# it, and so CI's own value wins if one is set there.
+# Required by SiteLinks (footer cross links) and CrystalShards::DocsSite
+# (documentation links), neither of which has a default in any environment.
+# `||=` so a spec can still assert what happens when one is absent by
+# clearing it, and so CI's own values win if they are set there.
+ENV["SHARDS_SITE_ORIGIN"] ||= "http://localhost:3000"
 ENV["DOCS_SITE_ORIGIN"] ||= "http://localhost:3001"
+<<<<<<< HEAD
 # Not required outside production, but specs want house ads on by default so
 # they can exercise the fallback without each one wiring an origin by hand.
 ENV["GIGS_SITE_ORIGIN"] ||= "http://localhost:3002"
+=======
+ENV["GIGS_SITE_ORIGIN"] ||= "http://localhost:3002"
+ENV["BITS_SITE_ORIGIN"] ||= "http://localhost:3003"
+>>>>>>> ui/bushido-seal-and-license
 require "spec"
 require "../src/app"
 require "./support/**"
