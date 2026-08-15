@@ -53,3 +53,34 @@ jobs:
             --region "$REGION" \
             --update-env-vars "FORCE_REBUILD=${FORCE_REBUILD}" \
             --wait
+
+      # gcloud reports only that the execution failed. Everything that says
+      # why (the clone, the compile, the upload, the reason a build gave up)
+      # is in the Job's own log, and reading it needed a console visit and a
+      # credential nobody has at 5am. discover.yml already solves this the
+      # same way; this is that step, so a failed publication is diagnosable
+      # from the run that failed.
+      - name: What the publication did
+        if: always()
+        shell: bash
+        env:
+          PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          REGION: us-central1
+        run: |
+          set -uo pipefail
+
+          execution="$(gcloud run jobs executions list \
+            --job publish-core-docs --region "$REGION" --project "$PROJECT_ID" \
+            --limit=1 --format='value(name)' --sort-by=~metadata.creationTimestamp)"
+
+          if [ -z "$execution" ]; then
+            echo "No execution to read. The run never started."
+            exit 0
+          fi
+
+          echo "::group::Publication log (${execution})"
+          gcloud logging read \
+            "resource.type=cloud_run_job AND labels.\"run.googleapis.com/execution_name\"=\"${execution}\"" \
+            --project "$PROJECT_ID" --limit=300 --format='value(textPayload)' \
+            --order=asc 2>/dev/null || echo "(no entries yet; Cloud Logging lags a few seconds)"
+          echo "::endgroup::"
