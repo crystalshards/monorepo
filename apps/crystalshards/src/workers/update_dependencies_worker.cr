@@ -143,11 +143,12 @@ struct UpdateDependenciesWorker < BaseJob
       return false
     end
 
+    resolution = resolve(dependency)
     now = Time.utc
-    result = AppDatabase.exec(<<-SQL, shard_version.id, dependency.name, requirement, dependency.scope, resolve_dependent_shard(dependency).try(&.id), now)
+    result = AppDatabase.exec(<<-SQL, shard_version.id, dependency.name, requirement, dependency.scope, resolution.shard.try(&.id), resolution.slug, now)
       INSERT INTO dependencies
-        (shard_version_id, name, version_requirement, scope, dependent_shard_id, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $6)
+        (shard_version_id, name, version_requirement, scope, dependent_shard_id, resolved_slug, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
       ON CONFLICT (shard_version_id, name, scope) DO NOTHING
       SQL
 
@@ -181,15 +182,29 @@ struct UpdateDependenciesWorker < BaseJob
   # which is a confidently wrong edge in the one figure this graph exists to
   # produce. Two shards sharing a name is the normal case the canonical slug
   # exists for, so guessing between them is never better than saying nothing.
-  private def self.resolve_dependent_shard(dependency : Declared) : Shard?
+  #
+  # The slug comes back alongside the row, and is recorded even when the row is
+  # nil. That is the point of returning both: "which repository does this name"
+  # and "which row does it point at" are different questions, and the first is
+  # answerable for a repository the registry has never seen. Discarding it, as
+  # this used to, is how the registry came to hold thousands of edges naming
+  # repositories it could have gone and indexed, with no record of which.
+  private record Resolution, slug : String?, shard : Shard?
+
+  private def self.resolve(dependency : Declared) : Resolution
     spec = dependency.spec.as_h?
 
     if spec && declares_source?(spec)
       slug = source_slug(spec)
-      return slug ? ShardQuery.new.canonical_slug(slug).first? : nil
+      return Resolution.new(slug, slug.try { |value| ShardQuery.new.canonical_slug(value).first? })
     end
 
-    ShardQuery.new.resolve(dependency.name)
+    # No declared source, so the manifest named a string rather than a
+    # repository. The slug can then only be whichever row already answers to
+    # that name, and nil when none does or more than one does: an unsourced
+    # dependency is not a lead, because there is nothing to go and fetch.
+    shard = ShardQuery.new.resolve(dependency.name)
+    Resolution.new(shard.try(&.canonical_slug), shard)
   end
 
   # Whether the dependency named a repository at all, regardless of whether we
