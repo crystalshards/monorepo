@@ -1014,7 +1014,9 @@ main.container:has(.docs-shell) {
 .docs-shell {
   display: grid;
   grid-template-columns: 18rem minmax(0, 1fr);
-  align-items: start;          /* not stretch, or the rail cannot be sticky */
+  align-items: stretch;        /* the rail is a plain box now, stretched to the
+                                   row; the sticky behaviour lives one level in,
+                                   see the left rail comment below */
   width: 100%;
   max-width: none;             /* deliberately not clamped to --shell */
 }
@@ -1022,25 +1024,52 @@ main.container:has(.docs-shell) {
 
 /* ---- left rail --------------------------------------------------------- */
 
-/* The masthead is static, so top:0 puts the rail directly under it while the
-   header is on screen and pins it to the viewport once the header scrolls
-   off. max-height, not height: a package with hundreds of types needs the
-   cap so the tree scrolls inside its own box instead of pushing the page
-   down; a package with three needs no cap at all, so the rail ends with
-   its last link instead of carrying a viewport's worth of blank surface
-   colour past it. min-height:100vh did exactly that on every short page:
-   forced the rail's own background and border-right to run a full screen
-   tall regardless of what was in it, so a one-type shard read as a broken
-   sidebar sitting beside a normal page. */
+/* Full column height and viewport-pinned scrolling cannot both be true of one
+   box: a sticky element's own height is its content plus whatever max-height
+   it declares, so a rail that is also the sticky element can only ever be as
+   tall as a screenful of tree, never as tall as the page beside it. This
+   splits the two jobs across two elements instead.
+
+   `.docs-sidebar` is the grid item. `align-items: stretch` above makes it
+   fill the row, and grid already sizes an auto row to its tallest column, so
+   this box's background and border-right run exactly as far down as
+   `.docs-main` does, on a long README and a short one alike, with no extra
+   rule keeping them in sync; that agreement is grid's own layout, not
+   something this file has to maintain by hand.
+
+   `.docs-sidebar-inner`, nested one level inside it, carries everything
+   positional: sticky, top:0 so it pins directly under the static masthead
+   once the header scrolls off, and max-height:100vh with overflow-y:auto so
+   a package with hundreds of types scrolls inside its own box instead of
+   pushing the page down. Its height is its own content, uncapped by the
+   outer box, so a short tree just leaves the rest of the (taller) outer box
+   showing plain surface colour beneath it, and because a sticky element's
+   containing block is its parent, it stays pinned through the whole outer
+   box, i.e. through the whole length of `.docs-main`, and only scrolls away
+   once the reader passes the bottom of the content beside it.
+
+   The previous version put all of this, including a bare min-height:100vh,
+   on one element. That forced the rail's own background and border-right to
+   run a full screen tall regardless of what was in it, so a one-type shard
+   read as a broken sidebar sitting beside a normal page. Restoring that
+   min-height would not fix today's defect either: the bug was never the
+   value, it was pinning the rail's own height to the viewport instead of to
+   the row it sits in. The split above is the actual fix; if the shell as a
+   whole ever needs a height floor for a very short page, that floor belongs
+   on `.docs-shell`, so both columns stretch to it together, not back on
+   `.docs-sidebar` alone. */
 .docs-sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--edge);
+}
+
+.docs-sidebar-inner {
   position: sticky;
   top: 0;
   max-height: 100vh;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 1.35rem 1.15rem 2rem;
-  background: var(--surface);
-  border-right: 1px solid var(--edge);
 }
 
 .docs-nav { display: grid; gap: 1.6rem; }
