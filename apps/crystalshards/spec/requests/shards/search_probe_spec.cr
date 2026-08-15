@@ -96,7 +96,11 @@ describe "expanding a search to GitHub" do
   # service specs because supplying the wrong number is an action-level mistake
   # that would probe on every search.
   it "does not probe a search the registry already answered" do
-    4.times do |index|
+    # Sized from the threshold rather than written as a number, so raising the
+    # threshold cannot leave this spec quietly asserting the opposite of what it
+    # says. It was written as 4 and became wrong the moment the threshold moved
+    # from 3 to 10.
+    ShardSearchProbe::THIN_RESULTS.times do |index|
       ShardFactory.create &.name("router-#{index}").at("github.com", "acme", "router-#{index}")
     end
 
