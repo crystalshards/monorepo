@@ -185,8 +185,9 @@ class Shards::ShowPage < MainLayout
       else
         notice "info", "fa-hourglass-half" do
           text "This shard has been found but not read yet. "
-          text "Its releases, manifest and README are fetched on a later pass, "
-          text "so everything below is unknown rather than absent."
+          text "Visiting this page has requested indexing for it, and "
+          text "nothing is known yet, so everything below is unknown "
+          text "rather than absent."
         end
       end
     elsif version = @selected_version

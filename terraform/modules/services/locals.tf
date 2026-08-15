@@ -324,6 +324,30 @@ locals {
         # table ownership where the migrations put it and avoids cross database
         # grants entirely.
         DOCS_DATABASE_URL = var.database_url_secret_ids["crystaldocs"]
+
+        # The same secret discovery_credentials["GITHUB_TOKEN"] gives the
+        # discover-shards Job, read here rather than provisioned again, so
+        # there is one github-token secret with two readers rather than a
+        # second copy that can drift from it.
+        #
+        # On-demand indexing reads a shard's host from inside a web request:
+        # visiting a never-indexed shard's page now runs ShardIndexer for it
+        # before rendering. GitHub gives an anonymous caller sixty requests an
+        # hour and an authenticated one five thousand, and the anonymous
+        # budget is shared by every visitor to the whole site at once, not
+        # per shard: without this, the first crawler to walk a handful of
+        # cold shards spends the hour's entire allowance, and every reader
+        # after it gets a failed attempt instead of an index for the rest of
+        # it. This service only ever reads public repository facts, tags and
+        # raw file contents with it, and asks for nothing else. Whether the
+        # token itself is scoped that narrowly is a property of the secret
+        # value an operator provisions, not of this code: a token minted with
+        # broader access (a classic PAT with `repo`, say, rather than public,
+        # read-only access) would extend that broader exposure to this
+        # service's own attack surface, which now includes ordinary,
+        # untrusted web traffic in a way the discovery Job's scheduled,
+        # input-free execution never did.
+        GITHUB_TOKEN = google_secret_manager_secret.discovery_credentials["GITHUB_TOKEN"].secret_id
       }
     }
 
