@@ -1,5 +1,24 @@
 require "../spec_helper"
 
+# A counter an indexer fake shares with the example that installed it.
+# Atomic(Int32) is a struct, so passing one into a helper copies it and the
+# example's own copy never sees the increment. This is a class, so the fake
+# and the example hold the same object, and the count stays atomic inside
+# because two of these examples drive the indexer from two fibers at once.
+private class CallCounter
+  def initialize
+    @count = Atomic(Int32).new(0)
+  end
+
+  def add(by : Int32 = 1) : Nil
+    @count.add(by)
+  end
+
+  def get : Int32
+    @count.get
+  end
+end
+
 private def reload(shard : Shard) : Shard
   ShardQuery.new.id(shard.id).first
 end
@@ -7,15 +26,21 @@ end
 # Every example installs its own indexer fake and restores the real seams in
 # an `ensure`, the same discipline IndexShardWorker.dispatcher and
 # IndexSweep.indexer already require of their own specs.
+# The two originals are read before the `begin`, deliberately. A local first
+# assigned inside a body that has an `ensure` is nilable as far as the
+# compiler is concerned, because the raise could have happened before the
+# assignment, and restoring a nil here would not compile.
 private def with_indexer(fake : Proc(Shard, ShardIndexer::Result), &)
   original_indexer = ShardIndexRequests.indexer
   original_timeout = ShardIndexRequests.inline_timeout
-  ShardIndexRequests.indexer = fake
 
-  yield
-ensure
-  ShardIndexRequests.indexer = original_indexer
-  ShardIndexRequests.inline_timeout = original_timeout
+  begin
+    ShardIndexRequests.indexer = fake
+    yield
+  ensure
+    ShardIndexRequests.indexer = original_indexer
+    ShardIndexRequests.inline_timeout = original_timeout
+  end
 end
 
 # A fake indexer that succeeds immediately, writing indexed_at and a version
@@ -23,7 +48,7 @@ end
 # counts invocations with Atomic rather than a plain Int32: several examples
 # call this from more than one fiber at once, and a plain counter's
 # read-modify-write can lose an increment under exactly that concurrency.
-private def succeeding_indexer(calls : Atomic(Int32)? = nil) : Proc(Shard, ShardIndexer::Result)
+private def succeeding_indexer(calls : CallCounter? = nil) : Proc(Shard, ShardIndexer::Result)
   ->(shard : Shard) {
     calls.try(&.add(1))
     SaveShard.update!(shard, indexed_at: Time.utc, latest_version: "1.0.0", index_error: nil)
@@ -34,7 +59,7 @@ end
 # A fake indexer that fails the way a real one does on an unreachable host:
 # it stamps index_error and leaves indexed_at nil, mirroring
 # ShardIndexer#finish.
-private def failing_indexer(calls : Atomic(Int32)? = nil) : Proc(Shard, ShardIndexer::Result)
+private def failing_indexer(calls : CallCounter? = nil) : Proc(Shard, ShardIndexer::Result)
   ->(shard : Shard) {
     calls.try(&.add(1))
     SaveShard.update!(shard, index_error: "the repository could not be read")
@@ -44,7 +69,7 @@ end
 
 # A fake indexer that never reports back inside the example's shrunk
 # inline_timeout, standing in for a host that never answers.
-private def hanging_indexer(calls : Atomic(Int32)? = nil) : Proc(Shard, ShardIndexer::Result)
+private def hanging_indexer(calls : CallCounter? = nil) : Proc(Shard, ShardIndexer::Result)
   ->(shard : Shard) {
     calls.try(&.add(1))
     sleep 1.second
@@ -98,7 +123,7 @@ describe ShardIndexRequests do
 
   describe "repeated visits" do
     it "indexes exactly once however many times the shard is visited" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(succeeding_indexer(calls)) do
         shard = ShardFactory.create &.name("kemal").at("github.com", "kemalcr", "kemal")
@@ -118,7 +143,7 @@ describe ShardIndexRequests do
     # on the winner either, so the fake indexer blocks on `release` until the
     # test has already observed every loser return.
     it "indexes exactly once when the visits are concurrent, and a losing request does not wait on the winner" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
       release = Channel(Nil).new
       results = Channel(Shard?).new(8)
 
@@ -157,7 +182,7 @@ describe ShardIndexRequests do
 
   describe "a shard that is already indexed" do
     it "does not index and returns nil" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(succeeding_indexer(calls)) do
         shard = ShardFactory.create &.name("kemal")
@@ -174,7 +199,7 @@ describe ShardIndexRequests do
 
   describe "a shard whose index is already in flight" do
     it "does not index while the claim is fresh" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(succeeding_indexer(calls)) do
         shard = ShardFactory.create &.name("kemal")
@@ -194,7 +219,7 @@ describe ShardIndexRequests do
   # starves the on-demand path for shards that would succeed.
   describe "the retry floor" do
     it "does not retry a failure that just happened" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(failing_indexer(calls)) do
         shard = ShardFactory.create &.name("kemal")
@@ -210,7 +235,7 @@ describe ShardIndexRequests do
     end
 
     it "retries once the floor has passed" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(succeeding_indexer(calls)) do
         shard = ShardFactory.create &.name("kemal")
@@ -228,7 +253,7 @@ describe ShardIndexRequests do
 
   describe "a shard with no identity" do
     it "does not index, because there is no host to fetch from and no key to key the claim on" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(succeeding_indexer(calls)) do
         shard = insert_unidentified_shard("mystery", "not-a-url")
@@ -261,7 +286,7 @@ describe ShardIndexRequests do
   # not be held hostage to a host that never answers at all.
   describe "a host that never answers" do
     it "gives up after inline_timeout, renders as unindexed, and leaves the row reclaimable after the floor" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(hanging_indexer(calls)) do
         ShardIndexRequests.inline_timeout = 10.milliseconds
@@ -280,7 +305,7 @@ describe ShardIndexRequests do
 
   describe "different shards" do
     it "are claimed and indexed independently" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(succeeding_indexer(calls)) do
         kemal = ShardFactory.create &.name("kemal").at("github.com", "kemalcr", "kemal")

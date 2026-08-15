@@ -1,17 +1,42 @@
 require "../../spec_helper"
 
+# A counter an indexer fake shares with the example that installed it.
+# Atomic(Int32) is a struct, so passing one into a helper copies it and the
+# example's own copy never sees the increment. This is a class, so the fake
+# and the example hold the same object, and the count stays atomic inside
+# because two of these examples drive the indexer from two fibers at once.
+private class CallCounter
+  def initialize
+    @count = Atomic(Int32).new(0)
+  end
+
+  def add(by : Int32 = 1) : Nil
+    @count.add(by)
+  end
+
+  def get : Int32
+    @count.get
+  end
+end
+
+# The two originals are read before the `begin`, deliberately. A local first
+# assigned inside a body that has an `ensure` is nilable as far as the
+# compiler is concerned, because the raise could have happened before the
+# assignment, and restoring a nil here would not compile.
 private def with_indexer(fake : Proc(Shard, ShardIndexer::Result), &)
   original_indexer = ShardIndexRequests.indexer
   original_timeout = ShardIndexRequests.inline_timeout
-  ShardIndexRequests.indexer = fake
 
-  yield
-ensure
-  ShardIndexRequests.indexer = original_indexer
-  ShardIndexRequests.inline_timeout = original_timeout
+  begin
+    ShardIndexRequests.indexer = fake
+    yield
+  ensure
+    ShardIndexRequests.indexer = original_indexer
+    ShardIndexRequests.inline_timeout = original_timeout
+  end
 end
 
-private def succeeding_indexer(calls : Atomic(Int32)? = nil) : Proc(Shard, ShardIndexer::Result)
+private def succeeding_indexer(calls : CallCounter? = nil) : Proc(Shard, ShardIndexer::Result)
   ->(shard : Shard) {
     calls.try(&.add(1))
     SaveShard.update!(shard, indexed_at: Time.utc, latest_version: "1.6.0")
@@ -20,7 +45,7 @@ private def succeeding_indexer(calls : Atomic(Int32)? = nil) : Proc(Shard, Shard
   }
 end
 
-private def failing_indexer(calls : Atomic(Int32)? = nil) : Proc(Shard, ShardIndexer::Result)
+private def failing_indexer(calls : CallCounter? = nil) : Proc(Shard, ShardIndexer::Result)
   ->(shard : Shard) {
     calls.try(&.add(1))
     SaveShard.update!(shard, index_error: "the repository could not be read")
@@ -28,7 +53,7 @@ private def failing_indexer(calls : Atomic(Int32)? = nil) : Proc(Shard, ShardInd
   }
 end
 
-private def hanging_indexer(calls : Atomic(Int32)? = nil) : Proc(Shard, ShardIndexer::Result)
+private def hanging_indexer(calls : CallCounter? = nil) : Proc(Shard, ShardIndexer::Result)
   ->(shard : Shard) {
     calls.try(&.add(1))
     sleep 1.second
@@ -59,7 +84,7 @@ describe "indexing a shard on first visit" do
 
   describe "a concurrent second visit" do
     it "does not index and renders the honest state, while the first visit still indexes" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
       release = Channel(Nil).new
       responses = Channel(HTTP::Client::Response).new(2)
 
@@ -102,7 +127,7 @@ describe "indexing a shard on first visit" do
 
   describe "a shard that is already indexed" do
     it "does not index" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(succeeding_indexer(calls)) do
         shard = ShardFactory.create &.name("kemal")
@@ -138,7 +163,7 @@ describe "indexing a shard on first visit" do
       # Reclaimable after the floor: back-date the failed attempt past
       # RETRY_FLOOR and prove a later visit indexes it rather than refusing
       # forever.
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
       with_indexer(succeeding_indexer(calls)) do
         stale = ShardFactory.create &.name("radix")
           .at("github.com", "luislavena", "radix")
@@ -154,7 +179,7 @@ describe "indexing a shard on first visit" do
 
   describe "a timeout" do
     it "renders the honest state and leaves the row reclaimable after the floor" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(hanging_indexer(calls)) do
         ShardIndexRequests.inline_timeout = 10.milliseconds
@@ -177,7 +202,7 @@ describe "indexing a shard on first visit" do
   # Everything below is about the show routes being spend endpoints.
   describe "spend is bounded by real shards, not by URLs" do
     it "commissions one indexing pass for a crawler hitting many invented version URLs under one cold shard" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(succeeding_indexer(calls)) do
         shard = ShardFactory.create &.name("kemal").at("github.com", "kemalcr", "kemal")
@@ -198,7 +223,7 @@ describe "indexing a shard on first visit" do
     end
 
     it "counts each shard separately, because each is real work" do
-      calls = Atomic(Int32).new(0)
+      calls = CallCounter.new
 
       with_indexer(succeeding_indexer(calls)) do
         kemal = ShardFactory.create &.name("kemal").at("github.com", "kemalcr", "kemal")

@@ -97,8 +97,14 @@ describe Jobs::Show do
       # The full HTML description, escaped the same way the visible page is.
       json["description"].as_s.should eq("Build things.<br>Ship things.")
 
-      Time.parse_rfc3339(json["datePosted"].as_s).should eq(job.published_at)
-      Time.parse_rfc3339(json["validThrough"].as_s).should eq(job.expires_at)
+      # Compared at whole seconds, which is the precision the emitted RFC 3339
+      # string carries. The stored timestamps keep microseconds, and asserting
+      # against those would only be asserting that we had written the
+      # timestamp less readably than schema.org needs it.
+      Time.parse_rfc3339(json["datePosted"].as_s)
+        .should eq(job.published_at.not_nil!.at_beginning_of_second)
+      Time.parse_rfc3339(json["validThrough"].as_s)
+        .should eq(job.expires_at.not_nil!.at_beginning_of_second)
 
       json["employmentType"].as_s.should eq("FULL_TIME")
 

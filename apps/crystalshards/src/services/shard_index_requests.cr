@@ -53,22 +53,9 @@ module ShardIndexRequests
   # fake. Specs swap it out to control the outcome (indexed, failed, or
   # slow enough to trip inline_timeout) without reaching a real host, and
   # must restore it in an `ensure`.
-  #
-  # Written out rather than declared with `class_property`, which hands back a
-  # nilable getter for a class variable and would make every caller, including
-  # the `ensure` that restores the real proc, deal with a nil that cannot
-  # occur.
-  @@indexer : Proc(Shard, ShardIndexer::Result) = ->(shard : Shard) {
+  class_property indexer : Proc(Shard, ShardIndexer::Result) = ->(shard : Shard) {
     ShardIndexer.index(shard)
   }
-
-  def self.indexer : Proc(Shard, ShardIndexer::Result)
-    @@indexer
-  end
-
-  def self.indexer=(indexer : Proc(Shard, ShardIndexer::Result))
-    @@indexer = indexer
-  end
 
   # The same race CrystalDocs::DocBuildRequests wins the same way: an
   # unconditional UPDATE would let two readers landing on the same cold shard

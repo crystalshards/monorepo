@@ -206,7 +206,7 @@ class JobPostingSchema
   private def salary_unit : String
     case @job.job_type
     when "contract", "freelance", "internship" then "HOUR"
-    else                                             "YEAR"
+    else                                            "YEAR"
     end
   end
 end
