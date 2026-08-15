@@ -887,6 +887,27 @@ a.version-number:hover { text-decoration: underline; }
 }
 .footer-links a:hover { color: var(--accent); text-decoration: underline; }
 
+/* The Bushido Collective seal, rendered as a CSS mask rather than an <img>:
+   an <img> pointed at an external SVG file ignores page CSS entirely, and
+   this seal has to invert with the rest of the footer's text between light
+   and dark schemes without shipping a second, differently colored copy of
+   the artwork. background-color: currentColor plus mask-image is what lets
+   one static file do that.
+
+   The size floor guards legibility, not decoration: this is detailed line
+   art, and it turns to mush below it. */
+.tbc-seal-line { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+.tbc-seal-link { display: inline-flex; align-items: center; min-height: var(--tap); }
+.tbc-seal {
+  display: inline-block;
+  width: 1.75rem; height: 1.75rem;
+  min-width: 1.5rem; min-height: 1.5rem;
+  flex-shrink: 0;
+  background-color: currentColor;
+  -webkit-mask: url("/images/tbc-seal.svg") no-repeat center / contain;
+          mask: url("/images/tbc-seal.svg") no-repeat center / contain;
+}
+
 /* ============================================================================
    Documentation surface
 

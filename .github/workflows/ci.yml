@@ -100,9 +100,13 @@ jobs:
           STORAGE_SECRET_KEY: minioadmin
           DOCS_BUCKET: crystaldocs-test
           PACKAGES_BUCKET: packages-test
-          # Required by crystalshards with no default in the code. The value is
-          # irrelevant to a spec; that one must be set is the point.
+          # Required by every app with no default in the code, one per
+          # public site. The values are irrelevant to a spec; that all four
+          # are set is the point.
+          SHARDS_SITE_ORIGIN: http://localhost:3000
           DOCS_SITE_ORIGIN: http://localhost:3001
+          GIGS_SITE_ORIGIN: http://localhost:3002
+          BITS_SITE_ORIGIN: http://localhost:3003
         run: |
           echo "Running specs for ${{ matrix.app }}..."
           crystal spec
