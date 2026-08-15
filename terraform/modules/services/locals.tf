@@ -356,6 +356,20 @@ locals {
         # service's own attack surface, which now includes ordinary,
         # untrusted web traffic in a way the discovery Job's scheduled,
         # input-free execution never did.
+        #
+        # Search probing widens that surface again, and differently. On-demand
+        # indexing sends this token a repository identity the registry already
+        # stored; ShardSearchProbe sends it a string a visitor typed, as part of
+        # a code search query. So the term is reduced to the characters a
+        # package name can hold before it is interpolated, because the risk is
+        # not injection in the SQL sense but a qualifier like `org:` silently
+        # changing which repositories get registered, under our credential, on
+        # behalf of whoever typed it. See KeywordCrawler#sanitized_term.
+        #
+        # The rate limit reasoning above applies doubly here: GitHub's code
+        # search allows ten requests a MINUTE, on a bucket shared with the
+        # discovery Job's exhaustive sweep. A term is therefore probed at most
+        # once a day, claimed through search_probes before any request is sent.
         GITHUB_TOKEN = google_secret_manager_secret.discovery_credentials["GITHUB_TOKEN"].secret_id
       }
     }

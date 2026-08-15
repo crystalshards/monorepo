@@ -17,41 +17,33 @@ class Shards::Index < BrowserAction
   param has_docs : Bool?
 
   get "/shards" do
-    shards_query = ShardQuery.new
-      .preload_shard_versions
+    total_count = filtered.select_count
 
-    # Search matches name, description and identity, so two shards sharing a
-    # name both appear, each with its own host and its own URL.
-    if search_query = query
-      shards_query = shards_query.search(search_query)
+    # A search this registry could not answer is taken to GitHub, once, and the
+    # page is rendered from whatever that found.
+    #
+    # The sweep has finished: github.com reported completed_exhaustive, so a
+    # query returning nothing here is usually a query for something the one
+    # enumeration we run could never have seen, rather than one that was too
+    # early. The visitor has just said exactly what they were looking for, which
+    # is a better query than any partition of file sizes, and it costs one
+    # request to ask it.
+    #
+    # ShardSearchProbe decides whether a probe is worth running at all: it is
+    # off without a credential, ignores short terms, ignores searches the
+    # registry already answered, and probes any one term at most once a day.
+    # Everything here has to know is whether new rows appeared, because the
+    # count and the page were both read before they did.
+    if registered = ShardSearchProbe.request(query, total_count)
+      if registered > 0
+        total_count = filtered.select_count
+      end
     end
 
-    # Apply license filter
-    if filter_license = license
-      shards_query = shards_query.license(filter_license)
-    end
-
-    # Apply minimum stars filter
-    if filter_min_stars = min_stars
-      shards_query = shards_query.github_stars.gte(filter_min_stars)
-    end
-
-    # Apply has documentation filter
-    if filter_has_docs = has_docs
-      shards_query = shards_query.documentation_url.is_not_nil if filter_has_docs
-    end
-
-    # One definition of the sorts, on ShardQuery. An unrecognised sort, which
-    # now includes the retired "downloads", falls through to popularity rather
-    # than erroring: an old bookmark still returns a sensible page.
-    shards_query = shards_query.sort_by_column(sort)
-
-    total_count = shards_query.select_count
-    offset_value = (page - 1) * per_page
-
-    paginated_shards = shards_query
+    paginated_shards = filtered
+      .sort_by_column(sort)
       .limit(per_page)
-      .offset(offset_value)
+      .offset((page - 1) * per_page)
       .to_a
 
     # Every card shows a dependent count, so the whole page is counted in one
@@ -70,5 +62,35 @@ class Shards::Index < BrowserAction
       page: page,
       per_page: per_page,
       total_count: total_count
+  end
+
+  # The search and its filters, without an order or a page.
+  #
+  # Built on demand rather than once into a local, because a probe that
+  # registers rows makes any query built before it stale. Two calls to this are
+  # two queries against the same criteria; one query object reused across a
+  # write would be the same criteria against a snapshot that has moved.
+  private def filtered : ShardQuery
+    shards_query = ShardQuery.new.preload_shard_versions
+
+    # Search matches name, description and identity, so two shards sharing a
+    # name both appear, each with its own host and its own URL.
+    if search_query = query
+      shards_query = shards_query.search(search_query)
+    end
+
+    if filter_license = license
+      shards_query = shards_query.license(filter_license)
+    end
+
+    if filter_min_stars = min_stars
+      shards_query = shards_query.github_stars.gte(filter_min_stars)
+    end
+
+    if filter_has_docs = has_docs
+      shards_query = shards_query.documentation_url.is_not_nil if filter_has_docs
+    end
+
+    shards_query
   end
 end
