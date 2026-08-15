@@ -493,4 +493,186 @@ describe CrystalDocs::DocHtml do
       html.should contain(%(<a rel="nofollow noopener">click</a>))
     end
   end
+
+  # markd 0.5.0 has no table rule of its own, so these pin the boundary this
+  # module adds on top of it: a GFM table renders as a real table, a cell
+  # keeps its own inline markdown, the table this module builds survives
+  # `sanitize` rather than being stripped by it, and the placeholder that
+  # carries a table's HTML through markd cannot be forged from the
+  # README's own text.
+  describe "rendering GFM tables" do
+    it "renders a plain table as table, thead and tbody" do
+      html = CrystalDocs::DocHtml.markdown(
+        "| Player | Preferences |\n| ------ | ------ |\n| Jason | dark mode |\n"
+      )
+
+      html.should contain("<table>")
+      html.should contain("<thead>")
+      html.should contain("<tbody>")
+      html.should contain("<th>Player</th>")
+      html.should contain("<th>Preferences</th>")
+      html.should contain("<td>Jason</td>")
+      html.should contain("<td>dark mode</td>")
+      html.should_not contain("| Player | Preferences |")
+    end
+
+    it "carries alignment from the delimiter row's leading and trailing colons" do
+      html = CrystalDocs::DocHtml.markdown(
+        "| Left | Center | Right |\n| :--- | :---: | ---: |\n| a | b | c |\n"
+      )
+
+      html.should contain(%(<th align="left">Left</th>))
+      html.should contain(%(<th align="center">Center</th>))
+      html.should contain(%(<th align="right">Right</th>))
+      html.should contain(%(<td align="left">a</td>))
+      html.should contain(%(<td align="center">b</td>))
+      html.should contain(%(<td align="right">c</td>))
+    end
+
+    it "renders a cell's own inline markdown: a code span and a link" do
+      html = CrystalDocs::DocHtml.markdown(
+        "| Cell |\n| --- |\n| `code` and [docs](https://crystal-lang.org) |\n"
+      )
+
+      html.should contain("<code>code</code>")
+      html.should contain(%(<a href="https://crystal-lang.org" rel="nofollow noopener">docs</a>))
+    end
+
+    it "unescapes a pipe escaped inside a cell, including inside a code span" do
+      html = CrystalDocs::DocHtml.markdown(
+        "| Col |\n| --- |\n| a \\| b |\n| `x\\|y` |\n"
+      )
+
+      html.should contain("<td>a | b</td>")
+      html.should contain("<td><code>x|y</code></td>")
+      html.should_not contain("\\|")
+    end
+
+    it "pads a row with too few cells and ignores the excess in one with too many" do
+      html = CrystalDocs::DocHtml.markdown(
+        "| A | B |\n| - | - |\n| short |\n| too | many | cells |\n"
+      )
+
+      html.should contain("<td>short</td><td></td>")
+      html.should contain("<td>too</td><td>many</td></tr>")
+      html.should_not contain("cells</td>")
+    end
+
+    it "renders a table at the very start of a document" do
+      html = CrystalDocs::DocHtml.markdown(
+        "| a | b |\n| - | - |\n| 1 | 2 |\n\nAfter the table.\n"
+      )
+
+      html.should contain("<table>")
+      html.should contain("After the table.")
+    end
+
+    it "renders a table at the very end of a document" do
+      html = CrystalDocs::DocHtml.markdown(
+        "Before the table.\n\n| a | b |\n| - | - |\n| 1 | 2 |\n"
+      )
+
+      html.should contain("Before the table.")
+      html.should contain("<table>")
+    end
+
+    it "renders two tables in one document" do
+      html = CrystalDocs::DocHtml.markdown(
+        "| a | b |\n| - | - |\n| 1 | 2 |\n\nBetween.\n\n| c | d |\n| - | - |\n| 3 | 4 |\n"
+      )
+
+      html.scan(/<table>/).size.should eq(2)
+      html.should contain("<td>1</td>")
+      html.should contain("<td>3</td>")
+      html.should contain("Between.")
+    end
+
+    it "leaves a line of pipes with no delimiter row as an ordinary paragraph" do
+      html = CrystalDocs::DocHtml.markdown("| abc | def |\nsome text\n")
+
+      html.should_not contain("<table>")
+      html.should contain("<p>")
+      html.should contain("abc")
+      html.should contain("def")
+    end
+
+    it "does not read a setext heading's own underline as a one-column delimiter row" do
+      html = CrystalDocs::DocHtml.markdown("Foo\n---\n\nbody\n")
+
+      html.should_not contain("<table>")
+      html.should contain("Foo</h2>")
+    end
+
+    it "leaves a table written inside a fenced code block as the text it is" do
+      html = CrystalDocs::DocHtml.markdown("```\n| a | b |\n| - | - |\n| 1 | 2 |\n```\n")
+
+      html.should_not contain("<table>")
+      html.should contain("| a | b |")
+    end
+
+    it "omits tbody entirely when a table has no body rows" do
+      html = CrystalDocs::DocHtml.markdown("| a | b |\n| - | - |\n")
+
+      html.should contain("<table>")
+      html.should_not contain("<tbody>")
+    end
+
+    it "resolves a repository-relative image inside a cell the same way it does in prose" do
+      html = CrystalDocs::DocHtml.markdown(
+        "| Badge |\n| --- |\n| ![Build](assets/badge.svg) |\n",
+        repository: "github.com/crystal-lang/crystal", ref: "1.21.0"
+      )
+
+      raw = "https://raw.githubusercontent.com/crystal-lang/crystal/1.21.0/assets/badge.svg"
+      html.should contain(%(src="#{raw}"))
+    end
+
+    it "never lets a script tag inside a cell reach the page" do
+      html = CrystalDocs::DocHtml.markdown("| Col |\n| --- |\n| <script>alert(1)</script> |\n")
+
+      html.should_not contain("<script")
+      html.should_not contain("alert(1)")
+    end
+
+    it "refuses a javascript: link inside a cell" do
+      html = CrystalDocs::DocHtml.markdown("| Col |\n| --- |\n| [xss](javascript:alert(1)) |\n")
+
+      html.should_not contain("javascript:")
+      html.should contain("xss")
+    end
+
+    it "cannot be tricked into injecting markup by guessing at the placeholder" do
+      guess = "crystaldocstable" + "0" * 32
+      html = CrystalDocs::DocHtml.markdown("Here is some text: #{guess}\n")
+
+      html.should_not contain("<table>")
+      html.should contain(guess)
+    end
+
+    # `markdown` always sends its output through `sanitize`, so every test
+    # above already proves the table survives that pass. These call
+    # `sanitize` directly, the way the rest of this file isolates the
+    # allowlist from parsing, to pin the allowlist's own shape: exactly the
+    # tags and the three alignment values this module's own table builder
+    # uses, nothing a shard author could reach some other way.
+    it "keeps a hand written table's tags and its align attribute through the sanitizer" do
+      html = CrystalDocs::DocHtml.sanitize(
+        %(<table><thead><tr><th align="center">A</th></tr></thead>) +
+        %(<tbody><tr><td align="center">1</td></tr></tbody></table>)
+      )
+
+      html.should contain("<table>")
+      html.should contain("<thead>")
+      html.should contain("<tbody>")
+      html.should contain(%(<th align="center">A</th>))
+      html.should contain(%(<td align="center">1</td>))
+    end
+
+    it "rebuilds align from a fixed set rather than trusting the value written" do
+      html = CrystalDocs::DocHtml.sanitize(%(<table><tr><td align="justify">x</td></tr></table>))
+
+      html.should_not contain("align=")
+      html.should contain("<td>x</td>")
+    end
+  end
 end

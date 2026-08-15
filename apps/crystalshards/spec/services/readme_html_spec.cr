@@ -282,4 +282,182 @@ describe CrystalShards::ReadmeHtml do
       html.should contain(%(href="https://github.com/kemalcr/kemal/blob/master/actions.html"))
     end
   end
+
+  # markd 0.5.0 has no table rule of its own, so these pin the boundary this
+  # module adds on top of it: a GFM table renders as a real table, a cell
+  # keeps its own inline markdown, and the placeholder that carries a
+  # table's HTML through markd cannot be forged from the README's own text.
+  describe "rendering GFM tables" do
+    it "renders a plain table as table, thead and tbody" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| Player | Preferences |\n| ------ | ------ |\n| Jason | dark mode |\n",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain("<table>")
+      html.should contain("<thead>")
+      html.should contain("<tbody>")
+      html.should contain("<th>Player</th>")
+      html.should contain("<th>Preferences</th>")
+      html.should contain("<td>Jason</td>")
+      html.should contain("<td>dark mode</td>")
+      html.should_not contain("| Player | Preferences |")
+    end
+
+    it "carries alignment from the delimiter row's leading and trailing colons" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| Left | Center | Right |\n| :--- | :---: | ---: |\n| a | b | c |\n",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain(%(<th align="left">Left</th>))
+      html.should contain(%(<th align="center">Center</th>))
+      html.should contain(%(<th align="right">Right</th>))
+      html.should contain(%(<td align="left">a</td>))
+      html.should contain(%(<td align="center">b</td>))
+      html.should contain(%(<td align="right">c</td>))
+    end
+
+    it "renders a cell's own inline markdown: a code span and a link" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| Cell |\n| --- |\n| `code` and [docs](https://crystal-lang.org) |\n",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain("<code>code</code>")
+      html.should contain(%(<a href="https://crystal-lang.org">docs</a>))
+    end
+
+    it "unescapes a pipe escaped inside a cell, including inside a code span" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| Col |\n| --- |\n| a \\| b |\n| `x\\|y` |\n",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain("<td>a | b</td>")
+      html.should contain("<td><code>x|y</code></td>")
+      html.should_not contain("\\|")
+    end
+
+    it "pads a row with too few cells and ignores the excess in one with too many" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| A | B |\n| - | - |\n| short |\n| too | many | cells |\n",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain("<td>short</td><td></td>")
+      html.should contain("<td>too</td><td>many</td></tr>")
+      html.should_not contain("cells</td>")
+    end
+
+    it "renders a table at the very start of a document" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| a | b |\n| - | - |\n| 1 | 2 |\n\nAfter the table.\n",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain("<table>")
+      html.should contain("After the table.")
+    end
+
+    it "renders a table at the very end of a document" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "Before the table.\n\n| a | b |\n| - | - |\n| 1 | 2 |\n",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain("Before the table.")
+      html.should contain("<table>")
+    end
+
+    it "renders two tables in one document" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| a | b |\n| - | - |\n| 1 | 2 |\n\nBetween.\n\n| c | d |\n| - | - |\n| 3 | 4 |\n",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.scan(/<table>/).size.should eq(2)
+      html.should contain("<td>1</td>")
+      html.should contain("<td>3</td>")
+      html.should contain("Between.")
+    end
+
+    it "leaves a line of pipes with no delimiter row as an ordinary paragraph" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| abc | def |\nsome text\n", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should_not contain("<table>")
+      html.should contain("<p>")
+      html.should contain("abc")
+      html.should contain("def")
+    end
+
+    it "does not read a setext heading's own underline as a one-column delimiter row" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "Foo\n---\n\nbody\n", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should_not contain("<table>")
+      html.should contain("<h2>Foo</h2>")
+    end
+
+    it "leaves a table written inside a fenced code block as the text it is" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "```\n| a | b |\n| - | - |\n| 1 | 2 |\n```\n",
+        "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should_not contain("<table>")
+      html.should contain("| a | b |")
+    end
+
+    it "omits tbody entirely when a table has no body rows" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| a | b |\n| - | - |\n", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should contain("<table>")
+      html.should_not contain("<tbody>")
+    end
+
+    it "resolves a repository-relative image inside a cell the same way it does in prose" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| Badge |\n| --- |\n| ![Build](badge.svg) |\n",
+        "github.com", "kemalcr", "kemal", "v1.6.0"
+      )
+
+      html.should contain(%(src="https://raw.githubusercontent.com/kemalcr/kemal/v1.6.0/badge.svg"))
+    end
+
+    it "never lets a script tag inside a cell reach the page" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| Col |\n| --- |\n| <script>alert(1)</script> |\n",
+        "github.com", "a", "b", "master"
+      )
+
+      html.should_not contain("<script")
+      html.should_not contain("</script>")
+    end
+
+    it "refuses a javascript: link inside a cell" do
+      html = CrystalShards::ReadmeHtml.markdown(
+        "| Col |\n| --- |\n| [xss](javascript:alert(1)) |\n",
+        "github.com", "a", "b", "master"
+      )
+
+      html.should_not contain("javascript:")
+      html.should contain("xss")
+    end
+
+    it "cannot be tricked into injecting markup by guessing at the placeholder" do
+      guess = "crystaltable" + "0" * 32
+      html = CrystalShards::ReadmeHtml.markdown(
+        "Here is some text: #{guess}\n", "github.com", "kemalcr", "kemal", "master"
+      )
+
+      html.should_not contain("<table>")
+      html.should contain(guess)
+    end
+  end
 end

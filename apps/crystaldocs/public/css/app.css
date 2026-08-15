@@ -1356,6 +1356,14 @@ main.container:has(.docs-shell) {
 }
 .docs-readme th { background: var(--surface-sunk); font-weight: 600; }
 
+/* A delimiter row's colon asked for one of these two; the attribute
+   selector outweighs the bare th/td rule above by specificity regardless
+   of source order, so a centred or right-aligned column actually renders
+   that way instead of silently falling back to the default above. Left is
+   that default already, so a `:---` column needs no rule of its own here. */
+.docs-readme th[align="center"], .docs-readme td[align="center"] { text-align: center; }
+.docs-readme th[align="right"], .docs-readme td[align="right"] { text-align: right; }
+
 .docs-readme blockquote {
   margin: 1rem 0; padding: 0.75rem 1rem;
   border-left: 3px solid var(--accent);
