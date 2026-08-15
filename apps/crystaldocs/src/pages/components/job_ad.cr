@@ -4,9 +4,10 @@ require "../../services/job_ads"
 #
 # CrystalGigs' own feed drives this whenever it has real jobs to advertise.
 # When it answers with fewer than `limit`, including a genuinely empty board,
-# the slot fills the remainder with first-party CrystalGigs house ads rather
-# than leaving a gap: an empty board is a real answer CrystalGigs gave, and
-# it has earned the right to be advertised on the strength of that answer.
+# the remaining space is filled by a single first-party invitation card
+# rather than left as a gap: an empty board is a real answer CrystalGigs
+# gave, and it has earned the right to advertise the slot itself on the
+# strength of that answer.
 #
 # A fetch that failed, is backing off, or never got the chance to run is a
 # different thing entirely. It has not established that CrystalGigs, or the
@@ -29,15 +30,17 @@ class Components::JobAd < Lucky::BaseComponent
   # codebase reads its target rather than hardcoding it.
   private record HouseAd, title : String, path : String
 
-  # One per audience this strip actually serves: a developer looking for
-  # Crystal work goes to the job board, a company looking to hire one goes to
-  # post a role. Copy only; the honesty is in render_house_ad, which labels
-  # every one of these as CrystalGigs' own placement rather than letting the
+  # The one invitation the strip ever shows for itself. However many real
+  # slots the feed left open, one, two or all three, this fills the strip
+  # exactly once: three cards all reading "Browse Crystal jobs on
+  # CrystalGigs" is not three ads, it is the same pitch stuttering, and a
+  # reader notices the repeat before they notice the offer. An open slot
+  # reads as inventory for sale, not as a plea, so the copy names the slot
+  # itself rather than sending the reader off to browse or post before they
+  # have been told what this even is. The honesty is in render_house_ad,
+  # which labels this as CrystalGigs' own placement rather than letting the
   # copy alone imply it.
-  HOUSE_ADS = [
-    HouseAd.new("Browse Crystal jobs on CrystalGigs", "/jobs"),
-    HouseAd.new("Post a Crystal role on CrystalGigs", "/jobs/new"),
-  ]
+  HOUSE_AD = HouseAd.new("Your posting here", "/jobs/new")
 
   def render
     answer = CrystalDocs::JobAds.answer(limit)
@@ -75,17 +78,13 @@ class Components::JobAd < Lucky::BaseComponent
       ul class: "job-ad-list" do
         ads.each { |ad| render_ad(ad) }
 
-        # House ads fill whatever the feed left empty, so the slot always
-        # holds exactly `limit` cards. A strip that is sometimes three wide
-        # and sometimes one wide, depending on how many real jobs happened to
-        # be open, reads as a layout bug rather than an ad rotation. Cycling
-        # by position rather than Random.rand keeps a given render's fill
-        # identical to the next one: nothing here changes because someone
-        # hit reload.
-        if origin
-          missing = limit - ads.size
-          missing.times { |i| render_house_ad(HOUSE_ADS[i % HOUSE_ADS.size], origin) }
-        end
+        # One invitation card fills whatever the feed left open, never one
+        # per empty slot: see HOUSE_AD above for why a repeated pitch reads
+        # as broken. A strip that is sometimes three wide and sometimes one,
+        # depending on how many real jobs happened to be open today, is an
+        # honest picture of what CrystalGigs actually had to offer rather
+        # than a fixed width padded out to look busier than it is.
+        render_house_ad(HOUSE_AD, origin) if origin && ads.size < limit
       end
     end
   end
@@ -132,7 +131,7 @@ class Components::JobAd < Lucky::BaseComponent
 
       para class: "job-ad-meta" do
         span class: "job-ad-company" do
-          text "CrystalGigs"
+          text "Reach Crystal developers on CrystalGigs"
         end
         span class: "job-ad-house" do
           text "First party"
