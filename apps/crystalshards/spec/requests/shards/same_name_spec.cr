@@ -59,10 +59,13 @@ describe "two shards sharing a name on different hosts" do
     ShardVersionFactory.create &.shard_id(github.id).version("1.0.0")
     ShardVersionFactory.create &.shard_id(gitlab.id).version("2.0.0")
 
-    BrowserClient.exec(Shards::Show.with(**identity_of(github)))
-      .body.should contain("github: kemalcr/router")
-    BrowserClient.exec(Shards::Show.with(**identity_of(gitlab)))
-      .body.should contain("gitlab: acme/router")
+    github_body = BrowserClient.exec(Shards::Show.with(**identity_of(github))).body
+    github_body.should contain("github:")
+    github_body.should contain("kemalcr/router")
+
+    gitlab_body = BrowserClient.exec(Shards::Show.with(**identity_of(gitlab))).body
+    gitlab_body.should contain("gitlab:")
+    gitlab_body.should contain("acme/router")
   end
 
   it "resolves a lookup to the right one" do

@@ -229,14 +229,8 @@ class Shards::ShowPage < MainLayout
 
       div class: "code-block" do
         pre do
-          code do
-            text "# Add this to your shard.yml\n"
-            text "dependencies:\n"
-            text "  #{@shard.name}:\n"
-            text "#{install_source_line}"
-            if line = install_constraint_line
-              text "\n#{line}"
-            end
+          code class: "language-yaml" do
+            raw CrystalShards::CodeHighlighter.highlight(install_snippet, "yaml")
           end
         end
       end
@@ -263,10 +257,25 @@ class Shards::ShowPage < MainLayout
 
       div class: "code-block" do
         pre do
-          code do
-            text "shards install"
+          code class: "language-shell" do
+            raw CrystalShards::CodeHighlighter.highlight("shards install", "shell")
           end
         end
+      end
+    end
+  end
+
+  # The literal shard.yml block above, built as one string so it can go
+  # through `CodeHighlighter` once rather than as four separate `text` calls
+  # that could never be colored without also being escaped a second time.
+  private def install_snippet : String
+    String.build do |io|
+      io << "# Add this to your shard.yml\n"
+      io << "dependencies:\n"
+      io << "  " << @shard.name << ":\n"
+      io << install_source_line
+      if line = install_constraint_line
+        io << '\n' << line
       end
     end
   end
