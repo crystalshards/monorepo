@@ -27,6 +27,20 @@ module CrystalShards
   # DocHtml has no need for: a doc comment never references a path in the
   # shard's own tree, and a README routinely does (`![Logo](docs/logo.png)`).
   module ReadmeHtml
+    # Markd emits a fenced block's source verbatim, safe mode included:
+    # nothing in a code fence is markup, it is source somebody wants to
+    # read, and the base renderer merely escapes it. `CodeHighlighter` is
+    # the module `CrystalDocs`'s own README renderer runs a fence through
+    # too, so a Crystal, YAML, shell or JSON block reads the same on either
+    # site.
+    private class FenceRenderer < Markd::HTMLRenderer
+      def code_block_body(node : Markd::Node, language : String?)
+        # Already chomped by `chomp_code_blocks` below, before this ever
+        # runs.
+        literal(CodeHighlighter.highlight(node.text, language))
+      end
+    end
+
     # Renders a shard's README as safe HTML. `host`, `owner` and `repo` are
     # the shard's identity, used only to resolve a repository-relative image
     # or link; `ref` is the git ref those resolved URLs are built against.
@@ -39,7 +53,7 @@ module CrystalShards
       resolve_urls(document, host, owner, repo, ref)
       chomp_code_blocks(document)
 
-      Markd::HTMLRenderer.new(options).render(document)
+      FenceRenderer.new(options).render(document)
     end
 
     # Markd keeps the newline before a fence's closing backticks as part of

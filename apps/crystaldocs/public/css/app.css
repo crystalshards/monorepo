@@ -1685,11 +1685,13 @@ a.docs-external {
 
    Crystal code arrives already tokenised. `crystal docs` runs a doc comment's
    Crystal blocks through Crystal::SyntaxHighlighter::HTML before it writes
-   docs.json, and CrystalDocs::DocHtml runs a README's Crystal fences through
-   the same highlighter, so both surfaces speak that highlighter's eight
-   one-letter classes and this is the only theme either needs.
+   docs.json, and CrystalDocs::CodeHighlighter runs a README's Crystal, YAML,
+   shell and JSON fences through that same highlighter (Crystal) or a
+   hand-written one beside it that speaks the identical vocabulary (the
+   other three). Every one of them arrives here as the same eight one-letter
+   classes, so this is the only theme any of them needs.
 
-   Scoped to `pre` because that is the only place the highlighter emits. A
+   Scoped to `pre` because that is the only place a highlighter emits. A
    shard author who hand-writes <span class="k"> in their README prose gets
    nothing, which keeps our vocabulary ours.
 

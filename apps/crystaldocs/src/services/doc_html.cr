@@ -1,4 +1,3 @@
-require "crystal/syntax_highlighter/html"
 require "html"
 require "uri"
 require "markd"
@@ -64,11 +63,12 @@ module CrystalDocs
     }
 
     # The whole vocabulary `Crystal::SyntaxHighlighter::HTML` emits: comment,
-    # interpolation, keyword, ident, number, operator, string, const. The
-    # compiler runs Crystal code blocks in doc comments through that exact
-    # highlighter before writing docs.json, and this module runs README code
-    # blocks through it too, so both surfaces arrive here speaking one
-    # vocabulary and one theme styles them.
+    # interpolation, keyword, ident, number, operator, string, const.
+    # `CodeHighlighter` maps every language it colours onto this same set
+    # rather than inventing one of its own, so a Crystal block from the
+    # compiler, a YAML or shell or JSON fence from a README, and a `code`
+    # element an author wrote by hand in a doc comment all arrive here
+    # speaking one vocabulary and one theme styles them.
     HIGHLIGHT_CLASSES = Set{"c", "i", "k", "m", "n", "o", "s", "t"}
 
     # The only elements an anchor link is given somewhere to land.
@@ -93,29 +93,15 @@ module CrystalDocs
     # not: `crystal docs` runs a Crystal block through
     # `Crystal::SyntaxHighlighter::HTML` before it writes docs.json, which is
     # why a doc comment arrives here already highlighted. A README arrives raw,
-    # so it goes through the same highlighter and the two surfaces match.
+    # so it goes through `CodeHighlighter`, which runs a Crystal fence through
+    # that identical highlighter and colours a handful of other languages
+    # besides, and the two surfaces match either way.
     private class FenceRenderer < Markd::HTMLRenderer
-      # Only a block its author labelled Crystal. The compiler treats an
-      # unlabelled block as Crystal because a doc comment is Crystal by
-      # context; a README's unlabelled blocks are usually shell sessions or
-      # shard.yml, and the Crystal lexer would colour those as something they
-      # are not.
-      CRYSTAL_FENCES = Set{"crystal", "cr"}
-
       def code_block_body(node : Markd::Node, language : String?)
-        # Chomped on both paths so a fence renders the same whatever its
-        # language: the source ends in the newline before the closing fence,
-        # and keeping it leaves a blank last line inside the padded block.
-        code = node.text.chomp
-
-        if language && CRYSTAL_FENCES.includes?(language.downcase)
-          # `highlight!` escapes the text of every token it emits, and falls
-          # back to plain escaped source when the lexer rejects the block,
-          # which a snippet that elides code with `...` routinely does.
-          literal(Crystal::SyntaxHighlighter::HTML.highlight!(code))
-        else
-          output(code)
-        end
+        # Chomped so a fence renders the same whatever its language: the
+        # source ends in the newline before the closing fence, and keeping
+        # it leaves a blank last line inside the padded block.
+        literal(CodeHighlighter.highlight(node.text.chomp, language))
       end
     end
 
