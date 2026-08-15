@@ -6,6 +6,8 @@ class Jobs::ShowPage < MainLayout
   end
 
   def content
+    mount JobPostingJsonLd, job: @job
+
     article class: "job-detail" do
       div class: "job-detail-header" do
         div class: "job-detail-title-section" do
@@ -70,7 +72,7 @@ class Jobs::ShowPage < MainLayout
             text "Job Description"
           end
           div class: "job-description-content" do
-            render_markdown(@job.description)
+            raw @job.description_html
           end
         end
 
@@ -185,18 +187,6 @@ class Jobs::ShowPage < MainLayout
       months = days // 30
       "#{months} month#{months > 1 ? "s" : ""} ago"
     end
-  end
-
-  # Job descriptions are written by whoever posts the job, so this is
-  # untrusted input going into `raw`. It was passed through unescaped, which
-  # made any description containing a script tag stored XSS on this origin.
-  #
-  # Escape first, then add the line breaks. The reverse order would escape the
-  # breaks we just inserted, and escaping afterwards would be no protection at
-  # all. This is the only markup the function has ever produced: it is a
-  # newline-to-break conversion, not a Markdown renderer.
-  private def render_markdown(text : String)
-    raw HTML.escape(text).gsub("\n", "<br>")
   end
 
   private def current_url : String

@@ -12,6 +12,16 @@ class Head < Lucky::BaseComponent
 
   ICON_HREF = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
 
+  # Deliberately no `meta name="robots"` tag anywhere in this component.
+  # Every job posting depends on being crawled and indexed for Google Jobs
+  # and every equivalent search feature to ever see it - a `noindex` here
+  # would silently disqualify the entire board, on every page, with no error
+  # anywhere to notice it by. Absence is the correct, indexable default,
+  # which is also why this is a comment and not a redundant "index, follow"
+  # tag: an explicit tag would not stop a future `noindex` from also being
+  # added, it would just be one more thing to add alongside it. Add a
+  # `noindex` on any *specific* page only for a documented reason, never
+  # here where it would apply to all of them.
   def render
     head do
       meta charset: "utf-8"
