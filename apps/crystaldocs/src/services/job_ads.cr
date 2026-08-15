@@ -85,10 +85,34 @@ module CrystalDocs
       @@transport = transport
     end
 
+    # Whether `ads` is CrystalGigs' own answer, including a genuinely empty
+    # board, or a stand-in for one it never gave: unreachable, backing off,
+    # already being fetched by another fiber, disabled, or asked for zero.
+    # `ads` is `NONE` either way when `answered?` is false, so a caller that
+    # only wants "what to render" can keep using `current` below and never
+    # see the difference. A caller that has to decide what an empty result
+    # *means*, the ad strip's house-ad fallback among them, reads
+    # `answered?` first: an empty board is a claim that CrystalGigs has
+    # nothing to advertise, and a feed we could not reach has not earned the
+    # right to make it.
+    struct Answer
+      getter ads : Array(Ad)
+      getter? answered : Bool
+
+      def initialize(@ads : Array(Ad), @answered : Bool)
+      end
+    end
+
     # What the ad strip should render right now. Never raises.
     def self.current(limit : Int32) : Array(Ad)
-      return NONE unless JobAdsConfig.enabled?
-      return NONE if limit < 1
+      answer(limit).ads
+    end
+
+    # Like `current`, but keeps the distinction `current` throws away. See
+    # `Answer` for why a caller would want it.
+    def self.answer(limit : Int32) : Answer
+      return Answer.new(NONE, false) unless JobAdsConfig.enabled?
+      return Answer.new(NONE, false) if limit < 1
 
       now = Time.utc
 
@@ -113,17 +137,19 @@ module CrystalDocs
       end
 
       state, cached = decision
-      return cached.first(limit) if state == :serve
-      return NONE if state == :stand_down
+      return Answer.new(cached.first(limit), true) if state == :serve
+      return Answer.new(NONE, false) if state == :stand_down
 
-      refresh(now).first(limit)
+      refresh(now, limit)
     end
 
-    # Synchronous fetch and store. Returns what the strip should render.
-    private def self.refresh(now : Time) : Array(Ad)
+    # Synchronous fetch and store. Returns what the strip should render,
+    # tagged with whether this fetch actually succeeded.
+    private def self.refresh(now : Time, limit : Int32) : Answer
       # Outside the mutex on purpose. Holding the lock across a network call
       # would serialise every page render in the process behind one socket.
-      store(now, fetch)
+      ads = fetch
+      Answer.new(store(now, ads).first(limit), !ads.nil?)
     ensure
       # `store` already clears the claim on every path it can take. This is
       # here so no future edit above can leave the flag stuck true, which

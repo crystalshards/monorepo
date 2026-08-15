@@ -81,6 +81,11 @@ services:
       # hardcoded production URL made every documentation link on a development
       # machine point at production, and nothing failed to reveal it.
       DOCS_SITE_ORIGIN: http://localhost:3001
+      # Where crystalgigs.com answers, browser-facing rather than the internal
+      # Docker hostname above: house ad links have to be clickable from
+      # outside the Docker network, the same reason DOCS_SITE_ORIGIN is
+      # localhost here rather than the service name.
+      GIGS_SITE_ORIGIN: http://localhost:3002
     depends_on:
       postgres:
         condition: service_healthy
@@ -107,6 +112,9 @@ services:
       # Shared with CrystalShards, which writes what this app reads.
       DOCS_BUCKET: crystal-docs
       JOB_ADS_URL: http://crystalgigs:3002/api/ads
+      # Where crystalgigs.com answers, browser-facing for the same reason
+      # noted on CrystalShards above.
+      GIGS_SITE_ORIGIN: http://localhost:3002
       PORT: 3001
     depends_on:
       postgres:

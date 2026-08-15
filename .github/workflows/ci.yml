@@ -103,6 +103,10 @@ jobs:
           # Required by crystalshards with no default in the code. The value is
           # irrelevant to a spec; that one must be set is the point.
           DOCS_SITE_ORIGIN: http://localhost:3001
+          # Required by crystaldocs and crystalshards with no default in the
+          # code, for the ad strip's house-ad fallback. Same reasoning as
+          # DOCS_SITE_ORIGIN above.
+          GIGS_SITE_ORIGIN: http://localhost:3002
         run: |
           echo "Running specs for ${{ matrix.app }}..."
           crystal spec
