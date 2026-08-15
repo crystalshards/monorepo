@@ -11,6 +11,15 @@ class JobQuery < Job::BaseQuery
     expires_at.is_nil.or { expires_at.gt(Time.utc) }
   end
 
+  # The board's one definition of "still worth advertising anywhere": the
+  # jobs list, the ad feed, and the Google Jobs sitemap all mean the same
+  # three things by "open" as `Job#open?` means at the row level. A new
+  # caller reaches for this instead of re-deriving the same three-method
+  # chain a fourth time.
+  def open_only
+    active_only.published_only.not_expired
+  end
+
   def featured_only
     featured(true)
   end
