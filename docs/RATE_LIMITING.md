@@ -26,7 +26,23 @@ CrystalShards platform actions declare rate limits with Lucky's built-in `Lucky:
 | Endpoint | Method | Rate Limit | Window |
 |----------|--------|------------|--------|
 | `/api/posts` | POST | 10 requests | 1 hour |
+| `/api/newsletter/subscriptions` | POST | 10 requests per client address | 1 hour |
 | All other endpoints | GET | No limit | - |
+
+`/api/newsletter/subscriptions` is also bounded on a second axis, because an
+open endpoint that sends mail is a spam relay if either axis is left open:
+
+- Per subscribed address, `CrystalBits::Subscriptions::ATTEMPTS_PER_ADDRESS`
+  attempts per `ATTEMPTS_PER_ADDRESS_WINDOW` (5 per hour). Excess attempts
+  get the same redirect a successful subscribe gets, with no further effect.
+- Per subscribed address, at most one confirmation email per
+  `CrystalBits::Subscriptions::CONFIRMATION_RESEND_INTERVAL` (1 hour).
+  Re-submitting an unconfirmed address re-sends the confirmation, never in a
+  stream.
+
+The response never reveals whether an address is new, already subscribed, or
+already confirmed: every non-junk submission redirects to the same
+confirmation_sent page.
 
 ### CrystalDocs (crystaldocs.org)
 
@@ -126,7 +142,17 @@ end
 
 ## Configuration
 
-`Lucky::RateLimit` reads and writes `LuckyCache.settings.storage`. That setting defaults to `LuckyCache::NullStore`, which discards writes and reads back nothing, and no app in this repo overrides it. Until a store that retains values is configured, the counters never accumulate, so the limits listed above are declared but not enforced.
+`Lucky::RateLimit` reads and writes `LuckyCache.settings.storage`. That
+setting defaults to `LuckyCache::NullStore`, which discards writes and reads
+back nothing. CrystalBits configures `LuckyCache::MemoryStore` in
+`config/cache.cr`, so its limits are enforced per process; the other apps
+still run the NullStore, so their declared limits never accumulate.
+
+A memory store is per process and per instance. That is enough for what these
+limits protect against: casual abuse and bursts. An attacker with many
+instances' worth of traffic to spread across still meets the per-address
+floors on the newsletter endpoint, which are the properties that actually
+make it safe.
 
 ## Best Practices
 
@@ -149,7 +175,7 @@ end
 
 ### Rate Limits Not Working
 
-1. **Check the cache store**: `LuckyCache.settings.storage` must retain values. The default `NullStore` drops every counter, so nothing accumulates
+1. **Check the cache store**: `LuckyCache.settings.storage` must retain values. The default `NullStore` drops every counter, so nothing accumulates. CrystalBits configures `LuckyCache::MemoryStore` in `config/cache.cr`; the other apps have no override yet
 2. **Test locally**: Use `curl` or `httpie` to test rate limiting manually
 
 ### False Positives (Legitimate Users Being Limited)

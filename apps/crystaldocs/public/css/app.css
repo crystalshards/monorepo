@@ -978,6 +978,29 @@ a.version-number:hover { text-decoration: underline; }
 }
 .footer-links a:hover { color: var(--accent); text-decoration: underline; }
 
+/* Newsletter signup: the one cross-site form on this site. It posts straight
+   to CrystalBits, which owns the subscriber store and the confirmation flow.
+   A plain flex row, so it renders the same with no script. */
+.newsletter-signup { margin: 1.25rem 0 0.5rem; }
+.newsletter-signup-title { color: var(--ink); font-size: var(--step-1); margin: 0 0 0.35rem; }
+.newsletter-signup-copy { margin: 0 0 0.85rem; max-width: 34rem; }
+.newsletter-signup-form { display: flex; flex-wrap: wrap; gap: 0.5rem; max-width: 30rem; }
+.newsletter-signup-input {
+  flex: 1 1 12rem; min-width: 0;
+  min-height: 2.5rem;
+  border: 1px solid var(--edge-strong); background: var(--surface); color: var(--ink);
+  padding: 0.5rem 0.75rem; font: 400 0.95rem var(--sans);
+}
+.newsletter-signup-input::placeholder { color: var(--ink-faint); }
+.newsletter-signup-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
+  min-height: 2.5rem; padding: 0.6rem 1.35rem;
+  border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent);
+  font: 600 0.92rem var(--sans); cursor: pointer;
+}
+.newsletter-signup-button:hover { background: var(--accent-deep); border-color: var(--accent-deep); }
+.newsletter-signup-note { margin: 0.6rem 0 0; font: 400 0.78rem var(--mono); color: var(--ink-faint); }
+
 /* The Bushido Collective seal, rendered as a CSS mask rather than an <img>:
    an <img> pointed at an external SVG file ignores page CSS entirely, and
    this seal has to invert with the rest of the footer's text between light

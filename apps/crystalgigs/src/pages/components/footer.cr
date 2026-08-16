@@ -2,6 +2,10 @@ class Footer < Lucky::BaseComponent
   def render
     footer class: "site-footer" do
       div class: "footer-content" do
+        # Spans the full grid row above the link sections; its own CSS block
+        # carries the width.
+        mount NewsletterSignup
+
         div class: "footer-section" do
           h2 do
             text "CrystalGigs"

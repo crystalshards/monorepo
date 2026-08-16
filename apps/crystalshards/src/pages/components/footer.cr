@@ -5,6 +5,7 @@ class Footer < Lucky::BaseComponent
         para do
           text "CrystalShards.org - The Crystal Language Package Registry"
         end
+        mount NewsletterSignup
         # "API" used to sit here pointing at /api, which is not a route: it
         # returned a server error from every page on the site. The masthead
         # already links the live API endpoint, and an HTML API reference is

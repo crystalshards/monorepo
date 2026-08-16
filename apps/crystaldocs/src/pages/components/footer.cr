@@ -5,6 +5,7 @@ class Components::Footer < Lucky::BaseComponent
         para do
           text "CrystalDocs.org - Crystal Shard Documentation Hosting"
         end
+        mount Components::NewsletterSignup
         # rel=noopener goes with every target=_blank: without it the opened
         # page can reach back through window.opener.
         div class: "footer-links" do
