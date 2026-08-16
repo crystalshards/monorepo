@@ -65,6 +65,25 @@ describe Newsletter::Subscribe do
     subscriber1.confirmation_token.should_not eq(subscriber2.confirmation_token)
   end
 
+  it "sends one confirmation email" do
+    BrowserClient.exec(Newsletter::Subscribe, subscriber: {email: "test@example.com"})
+
+    Carbon::DevAdapter.delivered_emails.size.should eq(1)
+    Carbon::DevAdapter.delivered_emails.first.to.should eq([Carbon::Address.new("test@example.com")])
+  end
+
+  it "redirects a known address to the same confirmation page as a new one" do
+    # Subscription state is never part of the answer: the same page, the same
+    # flash, so the form cannot be used to probe who is subscribed.
+    SubscriberFactory.create &.email("known@example.com")
+
+    response = BrowserClient.exec(Newsletter::Subscribe, subscriber: {email: "known@example.com"})
+
+    response.status.should eq(HTTP::Status.new(302))
+    response.headers["Location"].should contain("/newsletter/confirmation_sent")
+    SubscriberQuery.new.select_count.should eq(1)
+  end
+
   it "accepts the field name the rendered signup form posts" do
     # SaveSubscriber reads params through the raising Avram::Params#nested, so a
     # form field the operation's param_key does not cover raises instead of
