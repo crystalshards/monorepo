@@ -137,6 +137,71 @@ jobs:
           echo "Checking Crystal formatting for ${{ matrix.app }}: ${targets[*]}"
           crystal tool format --check "${targets[@]}"
 
+  # Two things that reached main once each and that nothing else here would
+  # have caught.
+  #
+  # A merge resolved with `git add -A` after a truncated `git status` committed
+  # conflict markers into docker-compose.yml. Every Crystal check passed,
+  # because the file holds no Crystal, and the break only showed up when
+  # somebody tried to bring the stack up locally.
+  #
+  # The compose file is the local development contract. It is not deployed, so
+  # no deploy job validates it, which is exactly why it can rot unnoticed.
+  repo-hygiene:
+    name: Repository Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Refuse conflict markers in tracked files
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          # Anchored to the start of a line and requiring the trailing space or
+          # end of line that git writes, so prose about conflicts and a row of
+          # equals signs in a comment do not trip it.
+          if git grep -nE '^(<{7}|>{7}) |^={7}$' -- . > /tmp/markers.txt; then
+            echo "Conflict markers are committed in these files:" >&2
+            cat /tmp/markers.txt >&2
+            exit 1
+          fi
+          echo "No conflict markers in tracked files."
+
+      - name: Check docker-compose.yml parses and has no duplicate keys
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Duplicate keys are the second half of this: YAML takes the last one
+          # silently, so a service can carry two values for one variable and
+          # run with whichever came last.
+          python3 - <<'PY'
+          import collections, sys, yaml
+
+          class Strict(yaml.SafeLoader):
+              pass
+
+          def no_duplicate_keys(loader, node, deep=False):
+              keys = [loader.construct_object(k, deep=deep) for k, _ in node.value]
+              repeated = [k for k, n in collections.Counter(keys).items() if n > 1]
+              if repeated:
+                  sys.exit(f"docker-compose.yml repeats {repeated} at {node.start_mark}")
+              return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+          Strict.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, no_duplicate_keys)
+
+          with open("docker-compose.yml") as handle:
+              document = yaml.load(handle, Strict)
+
+          services = document.get("services") or {}
+          if not services:
+              sys.exit("docker-compose.yml declares no services, so this check proved nothing.")
+
+          print(f"docker-compose.yml parses, {len(services)} services, no duplicate keys.")
+          PY
+
   # The deploy decides whether docs-launcher will accept a build token by
   # running two jq programs against the live service description. Both have
   # been wrong in production: one read a path Cloud Run does not use and
