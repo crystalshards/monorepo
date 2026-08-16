@@ -39,9 +39,11 @@
 #
 # What a sweep needs is a database connection, the models and operations discovery
 # writes through, and the crawlers. So DATABASE_URL is the only variable this
-# binary requires. The host credentials are all optional and independent: a host
-# with one is crawled, a host without one is skipped by name, and the run still
-# succeeds.
+# binary requires. The host credentials are all optional and independent, in two
+# different senses. github.com and bitbucket.org cannot be read without one, so a
+# run without theirs skips them by name and still succeeds. gitlab.com and
+# codeberg.org are read anonymously: their token raises the rate limit and
+# changes nothing about coverage, so a run without one crawls them anyway.
 require "./shards"
 require "./app_database"
 require "../config/database"

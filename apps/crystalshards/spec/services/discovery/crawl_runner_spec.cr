@@ -81,7 +81,7 @@ describe Discovery::CrawlRunner do
     end
   end
 
-  describe "a host with no token configured" do
+  describe "a host whose token is required and missing" do
     it "refuses to start and says which variable is missing" do
       without_tokens do
         report = Discovery::CrawlRunner.run("github.com")
@@ -97,37 +97,49 @@ describe Discovery::CrawlRunner do
 
     it "records the refusal on the host's row instead of leaving it silent" do
       without_tokens do
-        Discovery::CrawlRunner.run("gitlab.com")
+        Discovery::CrawlRunner.run("bitbucket.org")
 
-        state = CrawlStateQuery.new.for_host("gitlab.com")
+        state = CrawlStateQuery.new.for_host("bitbucket.org")
         state.should_not be_nil
         state.not_nil!.status.should eq(CrawlState::Status::FAILED)
         state.not_nil!.stop_reason.should eq(CrawlState::StopReason::TOKEN_MISSING)
-        state.not_nil!.last_error.to_s.should contain("GITLAB_TOKEN")
+        state.not_nil!.last_error.to_s.should contain("BITBUCKET_APP_PASSWORD")
         state.not_nil!.trustworthy?.should be_false
       end
     end
 
     it "keeps a cursor it already had, so configuring the token resumes rather than restarts" do
       SaveCrawlState.create!(
-        host: "codeberg.org",
+        host: "bitbucket.org",
         status: CrawlState::Status::PARTIAL,
         cursor: "4",
         stop_reason: CrawlState::StopReason::RATE_LIMITED,
       )
 
       without_tokens do
-        Discovery::CrawlRunner.run("codeberg.org")
+        Discovery::CrawlRunner.run("bitbucket.org")
       end
 
-      CrawlStateQuery.new.for_host("codeberg.org").not_nil!.cursor.should eq("4")
+      CrawlStateQuery.new.for_host("bitbucket.org").not_nil!.cursor.should eq("4")
     end
 
-    it "names every host's variable in the message it fails with" do
+    it "names every required host's variable in the message it fails with" do
       without_tokens do
         Discovery::Credentials.missing_message("github.com").should contain("GITHUB_TOKEN")
-        Discovery::Credentials.missing_message("gitlab.com").should contain("GITLAB_TOKEN")
-        Discovery::Credentials.missing_message("codeberg.org").should contain("CODEBERG_TOKEN")
+        Discovery::Credentials.missing_message("bitbucket.org").should contain("BITBUCKET_APP_PASSWORD")
+      end
+    end
+
+    it "does not refuse a host whose public API answers anonymously" do
+      # gitlab.com and codeberg.org were gated on a token for GitHub's reasons
+      # rather than their own. Both were measured against the live hosts with no
+      # credential: the listing their crawler pages through and the raw shard.yml
+      # fetch behind it each answered 200. A refusal here cost real coverage.
+      without_tokens do
+        Discovery::Credentials.token_required?("gitlab.com").should be_false
+        Discovery::Credentials.token_required?("codeberg.org").should be_false
+        Discovery::Credentials.token_required?("github.com").should be_true
+        Discovery::Credentials.token_required?("bitbucket.org").should be_true
       end
     end
 
@@ -137,8 +149,8 @@ describe Discovery::CrawlRunner do
         Discovery::Credentials.token_for("github.com").should eq("gh-token")
         Discovery::Credentials.configured?("gitlab.com").should be_false
 
-        expect_raises(Discovery::MissingTokenError, /GITLAB_TOKEN/) do
-          Discovery::Credentials.token_for("gitlab.com")
+        expect_raises(Discovery::MissingTokenError, /BITBUCKET_APP_PASSWORD/) do
+          Discovery::Credentials.token_for("bitbucket.org")
         end
       end
     end

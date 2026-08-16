@@ -122,7 +122,7 @@ private def empty_result(opts : Discovery::Sweep::Options) : Discovery::Sweep::R
 end
 
 describe Discovery::Sweep do
-  describe "a host with no credential" do
+  describe "a host whose credential is required" do
     it "is skipped rather than crawled, and the run still succeeds" do
       swept = [] of SweptCall
 
@@ -132,38 +132,66 @@ describe Discovery::Sweep do
         end
       end
 
-      # Nothing was asked of any host, and that is not a failure. GitHub alone
-      # covers most of the ecosystem, so a deployment with one token is a working
-      # deployment rather than a degraded one.
-      swept.should be_empty
-      result.reports.should be_empty
-      result.skips.map(&.host).should eq(Discovery::CrawlRunner::HOSTS)
+      # Only the two hosts that cannot be read anonymously sit out. GitHub's code
+      # search answers an unauthenticated request with 401, and Bitbucket gives an
+      # anonymous caller 60 requests an hour, so starting either without a token
+      # would produce a handful of rows that read like an empty host.
+      swept.map(&.[0]).should eq(["gitlab.com", "codeberg.org"])
+      result.reports.map(&.host).should eq(["gitlab.com", "codeberg.org"])
+      result.skips.map(&.host).should eq(["github.com", "bitbucket.org"])
       result.ok?.should be_true
       result.exit_code.should eq(0)
+    end
+
+    it "crawls the hosts whose token is optional with no credential at all" do
+      # The behaviour this whole distinction exists for. gitlab.com's crawler uses
+      # the topic-scoped project listing and codeberg.org's uses Forgejo's public
+      # repository search; both answer anonymously, as does each one's raw
+      # shard.yml fetch. Gating them on a token cost coverage and bought nothing.
+      without_tokens do
+        Discovery::Credentials.crawlable?("gitlab.com").should be_true
+        Discovery::Credentials.crawlable?("codeberg.org").should be_true
+
+        # Crawlable is not configured. A reader of the summary should still be
+        # able to tell that no token is present.
+        Discovery::Credentials.configured?("gitlab.com").should be_false
+        Discovery::Credentials.configured?("codeberg.org").should be_false
+
+        Discovery::Credentials.crawlable?("github.com").should be_false
+        Discovery::Credentials.crawlable?("bitbucket.org").should be_false
+      end
     end
 
     it "does not write a failed row for a host nobody has enabled" do
       # CrawlRunner.run records TOKEN_MISSING against the host, which is right
       # when an operator named that host and wrong when a schedule passed it. Left
-      # unfiltered, a registry holding only GITHUB_TOKEN would carry three
-      # permanently FAILED rows describing configuration that was never wrong,
-      # which is what a status page would then show as a broken indexer.
+      # unfiltered, a registry holding only GITHUB_TOKEN would carry permanently
+      # FAILED rows describing configuration that was never wrong, which is what
+      # a status page would then show as a broken indexer.
+      #
+      # The runner is stubbed because the two optional hosts are really crawled
+      # now, and a spec about state rows must not depend on gitlab.com answering.
       without_tokens do
-        Discovery::Sweep.run(options)
+        with_runner(completing) { Discovery::Sweep.run(options) }
       end
 
-      Discovery::CrawlRunner::HOSTS.each do |host|
+      ["github.com", "bitbucket.org"].each do |host|
         CrawlStateQuery.new.for_host(host).should be_nil
       end
     end
 
     it "names the variable that would enable it, on its own line" do
-      result = without_tokens { Discovery::Sweep.run(options) }
+      result = without_tokens do
+        with_runner(completing) { Discovery::Sweep.run(options) }
+      end
       output = rendered(result)
 
       output.should contain("github.com: no credential. Set GITHUB_TOKEN to crawl it.")
-      output.should contain("gitlab.com: no credential. Set GITLAB_TOKEN to crawl it.")
-      output.should contain("codeberg.org: no credential. Set CODEBERG_TOKEN to crawl it.")
+
+      # The two optional hosts are crawled, so neither may appear as a skip. A
+      # line telling an operator to set GITLAB_TOKEN "to crawl it" would be false.
+      output.should_not contain("gitlab.com: no credential")
+      output.should_not contain("codeberg.org: no credential")
     end
 
     it "names both halves of a credential pair, not just the secret" do
@@ -174,7 +202,7 @@ describe Discovery::Sweep do
         .should eq(["BITBUCKET_USERNAME", "BITBUCKET_APP_PASSWORD"])
 
       result = with_tokens({"BITBUCKET_APP_PASSWORD" => "secret"}) do
-        Discovery::Sweep.run(options)
+        with_runner(completing) { Discovery::Sweep.run(options) }
       end
 
       rendered(result).should contain(
@@ -184,19 +212,23 @@ describe Discovery::Sweep do
     end
 
     it "says plainly that a run which crawled nothing still succeeded" do
-      result = without_tokens { Discovery::Sweep.run(options) }
+      # Reachable only when every requested host required a credential, which is
+      # why this asks for github.com alone rather than the default host list.
+      result = without_tokens do
+        with_runner(completing) { Discovery::Sweep.run(options, hosts: ["github.com"]) }
+      end
       output = rendered(result)
 
       # The output an operator is most likely to misread. "Crawled nothing" and
       # "the sweep is broken" have to be distinguishable without reading code.
       output.should contain("Crawled: nothing.")
-      output.should contain("no host has a credential")
+      output.should contain("no requested host has the credential it requires")
       output.should contain("Exit 0.")
     end
   end
 
   describe "a host with a credential" do
-    it "crawls only the configured hosts and skips the rest" do
+    it "crawls the configured hosts and the anonymous ones, and skips the rest" do
       swept = [] of SweptCall
 
       result = with_tokens({"GITHUB_TOKEN" => "gh-token"}) do
@@ -205,20 +237,22 @@ describe Discovery::Sweep do
         end
       end
 
-      swept.map(&.[0]).should eq(["github.com"])
-      result.reports.map(&.host).should eq(["github.com"])
-      result.skips.map(&.host).should eq(["gitlab.com", "codeberg.org", "bitbucket.org"])
+      # One token buys github.com. gitlab.com and codeberg.org need no token at
+      # all, so they run beside it. bitbucket.org is the only host left out.
+      swept.map(&.[0]).should eq(["github.com", "gitlab.com", "codeberg.org"])
+      result.reports.map(&.host).should eq(["github.com", "gitlab.com", "codeberg.org"])
+      result.skips.map(&.host).should eq(["bitbucket.org"])
       result.exit_code.should eq(0)
     end
 
-    it "reports one crawled host beside three unconfigured ones as a success" do
+    it "reports the crawled hosts beside the unconfigured one as a success" do
       result = with_tokens({"GITHUB_TOKEN" => "gh-token"}) do
         with_runner(completing) do
           Discovery::Sweep.run(options)
         end
       end
 
-      rendered(result).should contain("Sweep succeeded: crawled 1 host, skipped 3.")
+      rendered(result).should contain("Sweep succeeded: crawled 3 hosts, skipped 1.")
       result.ok?.should be_true
     end
   end
@@ -234,8 +268,10 @@ describe Discovery::Sweep do
         )
       end
 
+      # Scoped to one host because the subject is what a failure does to the exit
+      # code, not which hosts a default run reaches.
       result = with_tokens({"GITHUB_TOKEN" => "gh-token"}) do
-        with_runner(failing) { Discovery::Sweep.run(options) }
+        with_runner(failing) { Discovery::Sweep.run(options, hosts: ["github.com"]) }
       end
 
       result.ok?.should be_false
@@ -252,7 +288,7 @@ describe Discovery::Sweep do
       counted = ->(host : String) { report_for(host, failed: 2) }
 
       result = with_tokens({"GITHUB_TOKEN" => "gh-token"}) do
-        with_runner(counted) { Discovery::Sweep.run(options) }
+        with_runner(counted) { Discovery::Sweep.run(options, hosts: ["github.com"]) }
       end
 
       result.ok?.should be_false
@@ -268,7 +304,7 @@ describe Discovery::Sweep do
       end
 
       result = with_tokens({"GITHUB_TOKEN" => "gh", "GITLAB_TOKEN" => "gl"}) do
-        with_runner(raising, swept) { Discovery::Sweep.run(options) }
+        with_runner(raising, swept) { Discovery::Sweep.run(options, hosts: ["github.com", "gitlab.com"]) }
       end
 
       # Letting the exception out would lose gitlab.com and, worse, lose the
@@ -290,7 +326,7 @@ describe Discovery::Sweep do
       end
 
       result = with_tokens({"GITHUB_TOKEN" => "gh", "GITLAB_TOKEN" => "gl"}) do
-        with_runner(mixed) { Discovery::Sweep.run(options) }
+        with_runner(mixed) { Discovery::Sweep.run(options, hosts: ["github.com", "gitlab.com"]) }
       end
 
       output = rendered(result)
@@ -305,7 +341,9 @@ describe Discovery::Sweep do
       swept = [] of SweptCall
 
       with_tokens({"GITHUB_TOKEN" => "gh", "GITLAB_TOKEN" => "gl"}) do
-        with_runner(completing, swept) { Discovery::Sweep.run(options(max_pages: 4)) }
+        with_runner(completing, swept) do
+          Discovery::Sweep.run(options(max_pages: 4), hosts: ["github.com", "gitlab.com"])
+        end
       end
 
       swept.should eq([{"github.com", false, 4}, {"gitlab.com", false, 4}])
@@ -315,7 +353,9 @@ describe Discovery::Sweep do
       swept = [] of SweptCall
 
       with_tokens({"GITHUB_TOKEN" => "gh"}) do
-        with_runner(completing, swept) { Discovery::Sweep.run(options(max_pages: 2)) }
+        with_runner(completing, swept) do
+          Discovery::Sweep.run(options(max_pages: 2), hosts: ["github.com"])
+        end
       end
 
       # `fresh` false is the whole resume story: CrawlRunner reads the saved
@@ -328,7 +368,9 @@ describe Discovery::Sweep do
       swept = [] of SweptCall
 
       with_tokens({"GITHUB_TOKEN" => "gh"}) do
-        with_runner(completing, swept) { Discovery::Sweep.run(options(max_pages: 2, fresh: true)) }
+        with_runner(completing, swept) do
+          Discovery::Sweep.run(options(max_pages: 2, fresh: true), hosts: ["github.com"])
+        end
       end
 
       swept.should eq([{"github.com", true, 2}])
@@ -435,7 +477,9 @@ describe Discovery::Sweep do
 
   describe "what the job log says" do
     it "carries the coverage boundary with the numbers" do
-      result = without_tokens { Discovery::Sweep.run(options) }
+      result = without_tokens do
+        with_runner(completing) { Discovery::Sweep.run(options) }
+      end
       output = rendered(result)
 
       # Coverage is part of the result, not a footnote. A reader who sees a shard
@@ -515,7 +559,9 @@ describe Discovery::Sweep do
         end
 
         begin
-          Discovery::Sweep.run(options)
+          # One host, because the subject is the order of the two phases rather
+          # than which hosts the default list reaches.
+          Discovery::Sweep.run(options, hosts: ["github.com"])
         ensure
           Discovery::Sweep.runner = default_runner
           Discovery::Sweep.seeder = default_seeder
@@ -534,7 +580,7 @@ describe Discovery::Sweep do
       seed = [] of Discovery::Sweep::Options
 
       result = with_tokens({"GITHUB_TOKEN" => "gh"}) do
-        with_runner(completing, seed: seed) { Discovery::Sweep.run(options) }
+        with_runner(completing, seed: seed) { Discovery::Sweep.run(options, hosts: ["github.com"]) }
       end
 
       # A second enumeration of github.com, not a fifth host. Folding it into
@@ -632,7 +678,7 @@ describe Discovery::Sweep do
         end
 
         begin
-          Discovery::Sweep.run(options)
+          Discovery::Sweep.run(options, hosts: ["github.com"])
         ensure
           Discovery::Sweep.runner = default_runner
           Discovery::Sweep.seeder = default_seeder

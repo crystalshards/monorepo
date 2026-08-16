@@ -241,11 +241,21 @@ module Discovery
       seed = seed_high_value(options, hosts)
 
       hosts.each do |host|
-        unless Credentials.configured?(host)
+        unless Credentials.crawlable?(host)
           skip = Skip.new(host, required_variables(host))
           Log.info { "Discovery skipped #{skip}" }
           skips << skip
           next
+        end
+
+        # A host being crawled without its optional token is not a problem, but
+        # it is a fact an operator reading the summary should not have to infer
+        # from the absence of a skip line.
+        if Credentials::OPTIONAL_TOKEN_HOSTS.includes?(host) && !Credentials.configured?(host)
+          Log.info do
+            "#{host}: crawling anonymously. Set #{required_variables(host).join(" and ")} " \
+            "for a higher rate limit; coverage is the same either way."
+          end
         end
 
         reports << sweep_host(host, options)
@@ -432,8 +442,9 @@ module Discovery
       end
 
       if result.reports.empty?
-        return "Sweep succeeded and crawled nothing: no host has a credential. That is configuration, " \
-               "not an error, so this run is a success. Set the variables listed above and the next run crawls those hosts. Exit 0."
+        return "Sweep succeeded and crawled nothing: no requested host has the credential it requires. " \
+               "That is configuration, not an error, so this run is a success. Set the variables listed above " \
+               "and the next run crawls those hosts. Exit 0."
       end
 
       hosts = result.reports.size == 1 ? "1 host" : "#{result.reports.size} hosts"
