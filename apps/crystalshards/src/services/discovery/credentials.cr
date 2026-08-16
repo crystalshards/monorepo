@@ -3,15 +3,29 @@ module Discovery
   class MissingTokenError < Exception
   end
 
-  # Host tokens are configuration, and a crawl without one fails closed.
+  # Host tokens are configuration. Whether a crawl without one fails closed
+  # depends on the host, and the difference was measured rather than assumed.
   #
-  # This is not caution for its own sake. GitHub's code search API, which is the
-  # only way to ask "which repositories have a shard.yml at their root", answers
-  # an unauthenticated request with 401 Requires authentication. Its other APIs
-  # allow 60 requests an hour unauthenticated, which a sweep exhausts inside the
-  # first page and then spends the rest of the run backing off. A crawl that
-  # starts anyway produces a handful of shards and a `partial` row, which reads
-  # like a host with almost no Crystal on it rather than like a missing token.
+  # GitHub and Bitbucket genuinely require one. GitHub's code search API, the
+  # only way to ask "which repositories have a shard.yml at their root",
+  # answers an unauthenticated request with 401, and the rest of its API allows
+  # 60 requests an hour, which a sweep exhausts inside the first page.
+  # Bitbucket gives an anonymous caller 60 an hour and answers many workspace
+  # enumerations with 403 whether or not they hold shards. A crawl that starts
+  # anyway on either host produces a handful of shards and a `partial` row,
+  # which reads like a host with almost no Crystal on it rather than like a
+  # missing token.
+  #
+  # GitLab and Codeberg do not. Neither crawler uses the endpoint that would
+  # need auth: GitLab's uses the topic scoped project listing precisely because
+  # blob search 401s, and Codeberg's uses Forgejo's public repository search.
+  # Both were checked against the live hosts with no credential at all: the
+  # listing and the raw shard.yml fetch each answered 200, and the whole sweep
+  # is around a hundred requests, far inside the anonymous allowances. Refusing
+  # to crawl them without a token cost real coverage for no safety.
+  #
+  # So a token is optional on those two. It is still used when present, which
+  # buys a higher rate limit and nothing else.
   module Credentials
     TOKEN_ENV = {
       "github.com"    => "GITHUB_TOKEN",
@@ -19,6 +33,10 @@ module Discovery
       "codeberg.org"  => "CODEBERG_TOKEN",
       "bitbucket.org" => "BITBUCKET_APP_PASSWORD",
     }
+
+    # The hosts whose public API a sweep can read anonymously. Everything else
+    # in TOKEN_ENV fails closed without its credential.
+    OPTIONAL_TOKEN_HOSTS = Set{"gitlab.com", "codeberg.org"}
 
     # Bitbucket is the one host whose credential is a pair. Its API takes an app
     # password over HTTP Basic, and Basic needs the account it belongs to, so
@@ -60,8 +78,27 @@ module Discovery
       end
     end
 
+    # The token a crawler must have. Only ever called for a host that requires
+    # one; an optional token host reaches its crawler through `token_for?` and
+    # a nil, which the crawlers already accept by omitting the auth header.
     def self.token_for(host : String) : String
       token_for?(host) || raise MissingTokenError.new(missing_message(host))
+    end
+
+    # Whether this host can be crawled at all right now.
+    #
+    # True for an optional token host whether or not a token is present, which
+    # is the whole point: gitlab.com and codeberg.org answer the calls their
+    # crawlers make without one.
+    def self.crawlable?(host : String) : Bool
+      return true if OPTIONAL_TOKEN_HOSTS.includes?(host)
+
+      configured?(host)
+    end
+
+    # Whether a token is required before this host will answer.
+    def self.token_required?(host : String) : Bool
+      TOKEN_ENV.has_key?(host) && !OPTIONAL_TOKEN_HOSTS.includes?(host)
     end
 
     # The account an app password belongs to, for the one host that needs it.
@@ -79,6 +116,10 @@ module Discovery
     # Configured means the host can actually authenticate, which for a host with
     # a credential pair means both halves. Treating the app password alone as
     # configured would start a sweep that 401s on its first request.
+    #
+    # Distinct from `crawlable?`: a host can be crawlable with no credential and
+    # unconfigured at the same time, which is exactly the state gitlab.com and
+    # codeberg.org are in by default.
     def self.configured?(host : String) : Bool
       return false if token_for?(host).nil?
       return true unless USERNAME_ENV.has_key?(host)

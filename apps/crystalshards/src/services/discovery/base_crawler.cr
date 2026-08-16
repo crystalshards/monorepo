@@ -37,7 +37,14 @@ module Discovery
       sleeper : Proc(Time::Span, Nil)? = nil,
       @max_pages : Int32? = nil,
     )
-      resolved_token = token || Credentials.token_for(@host)
+      # A required-token host raises here rather than starting a crawl that
+      # 401s on its first page. An optional-token host passes nil through, and
+      # its auth_headers omits the header entirely.
+      resolved_token = token || if Credentials.token_required?(@host)
+        Credentials.token_for(@host)
+      else
+        Credentials.token_for?(@host)
+      end
       @report = CrawlReport.new(@host)
       @client = build_client(base_url || default_base_url, resolved_token, sleeper)
     end

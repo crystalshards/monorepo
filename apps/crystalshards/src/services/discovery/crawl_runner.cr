@@ -137,10 +137,12 @@ module Discovery
         return report
       end
 
-      # Fail closed before anything is requested. A sweep that starts without the
-      # token produces a handful of rows and a partial state, which reads like a
-      # host with no shards on it rather than like missing configuration.
-      unless token || Credentials.configured?(host)
+      # Fail closed before anything is requested, for the hosts that need a
+      # credential. A sweep that starts without one produces a handful of rows
+      # and a partial state, which reads like a host with no shards on it
+      # rather than like missing configuration. gitlab.com and codeberg.org
+      # answer their crawlers' calls anonymously, so they are not gated here.
+      unless token || Credentials.crawlable?(host)
         report = CrawlReport.new(host)
         report.status = CrawlState::Status::FAILED
         report.stop_reason = CrawlState::StopReason::TOKEN_MISSING
