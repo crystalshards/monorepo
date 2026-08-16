@@ -71,7 +71,10 @@ describe Admin::Moderation::Index do
     as_editor do |auth|
       body = get_moderation(auth).body
 
-      body.downcase.should_not contain("<script")
+      # The page ships its own first-party script tag (the announcement bar's
+      # dismiss control), so the tripwire is the submitted tag itself rather
+      # than the string "<script" anywhere on the page.
+      body.downcase.should_not contain("<script>alert")
       body.should_not contain("alert('pwn the editor')")
     end
   end

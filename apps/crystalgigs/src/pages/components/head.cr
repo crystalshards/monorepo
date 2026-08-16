@@ -54,6 +54,11 @@ class Head < Lucky::BaseComponent
       meta name: "theme-color", content: "#f4f6f6", media: "(prefers-color-scheme: light)"
       meta name: "theme-color", content: "#070a0b", media: "(prefers-color-scheme: dark)"
 
+      # The announcement bar is a complete, server-rendered element without
+      # this; the script only reveals its dismiss control and remembers the
+      # choice.
+      tag "script", src: asset("js/announcement_bar.js"), defer: "defer"
+
       csrf_meta_tags
     end
   end

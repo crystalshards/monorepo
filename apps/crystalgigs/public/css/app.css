@@ -193,6 +193,40 @@ code, kbd, samp { font-family: var(--mono); font-size: 0.92em; }
 .icon { color: var(--ore); margin-right: 0.35rem; }
 
 /* ============================================================================
+   Announcement bar
+   ========================================================================= */
+
+/* One quiet line above the masthead, pointing at this site's announcement on
+   CrystalBits. Deliberately the least decorated element on the page: paper
+   ground, a hairline beneath, small muted type, the link in the site accent.
+   Static, not pinned, so it scrolls away with the first screenful and leaves
+   the sticky masthead to pin at the viewport top exactly as it always has. */
+.announcement-bar {
+  background: var(--paper);
+  border-bottom: 1px solid var(--edge);
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+.announcement-bar-inner {
+  display: flex; align-items: baseline; gap: 0.75rem;
+  max-width: var(--shell); margin: 0 auto; padding: 0.45rem 1.5rem;
+}
+.announcement-bar-inner p { margin: 0; }
+.announcement-bar a { color: var(--accent); font-weight: 500; }
+
+/* No `display` here: the button arrives with the hidden attribute, which
+   announcement_bar.js removes, and any author display rule would outrank the
+   UA's [hidden] and show a button with no script behind it. */
+.announcement-bar-dismiss {
+  margin-left: auto;
+  border: 0; background: none; padding: 0.15rem 0.4rem;
+  color: var(--ink-faint); font: inherit; cursor: pointer;
+}
+.announcement-bar-dismiss:hover { color: var(--ink); }
+.announcement-bar-dismiss:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+/* ============================================================================
    Header
    ========================================================================= */
 

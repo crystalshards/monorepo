@@ -1,3 +1,4 @@
 {
-  "css/app.css": "/css/app.css"
+  "css/app.css": "/css/app.css",
+  "js/announcement_bar.js": "/js/announcement_bar.js"
 }
