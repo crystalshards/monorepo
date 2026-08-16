@@ -1,5 +1,6 @@
 {
   "/css/app.css": "/css/app.css",
+  "/js/announcement_bar.js": "/js/announcement_bar.js",
   "/js/docs_nav.js": "/js/docs_nav.js",
   "/js/search_suggest.js": "/js/search_suggest.js"
 }

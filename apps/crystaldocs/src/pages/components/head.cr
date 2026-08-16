@@ -55,6 +55,11 @@ class Components::Head < Lucky::BaseComponent
       # suggestion list and nothing else.
       tag "script", src: asset("js/search_suggest.js"), defer: "defer"
 
+      # The announcement bar is a complete, server-rendered element without
+      # this; the script only reveals its dismiss control and remembers the
+      # choice.
+      tag "script", src: asset("js/announcement_bar.js"), defer: "defer"
+
       csrf_meta_tags
     end
   end

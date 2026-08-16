@@ -63,7 +63,10 @@ describe News::Show do
     response = BrowserClient.exec(News::Show.with(slug: item.slug))
 
     response.status.should eq(HTTP::Status.new(200))
-    response.body.downcase.should_not contain("<script")
+    # The page ships its own first-party script tag (the announcement bar's
+    # dismiss control), so the tripwire is the submitted tag itself rather
+    # than the string "<script" anywhere on the page.
+    response.body.downcase.should_not contain("<script>alert")
     response.body.should_not contain("alert('xss')")
     response.body.should contain("Real prose here")
   end

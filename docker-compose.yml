@@ -84,16 +84,13 @@ services:
       # production, and nothing failed to reveal it.
       SHARDS_SITE_ORIGIN: http://localhost:3000
       DOCS_SITE_ORIGIN: http://localhost:3001
-<<<<<<< HEAD
-      # Where crystalgigs.com answers, browser-facing rather than the internal
-      # Docker hostname above: house ad links have to be clickable from
-      # outside the Docker network, the same reason DOCS_SITE_ORIGIN is
-      # localhost here rather than the service name.
-      GIGS_SITE_ORIGIN: http://localhost:3002
-=======
+      # Where crystalgigs.com and crystalbits.org answer, browser-facing
+      # rather than the internal Docker hostnames above: house ad links and
+      # footer cross links have to be clickable from outside the Docker
+      # network, the same reason DOCS_SITE_ORIGIN is localhost here rather
+      # than the service name.
       GIGS_SITE_ORIGIN: http://localhost:3002
       BITS_SITE_ORIGIN: http://localhost:3003
->>>>>>> ui/bushido-seal-and-license
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,11 +117,10 @@ services:
       # Shared with CrystalShards, which writes what this app reads.
       DOCS_BUCKET: crystal-docs
       JOB_ADS_URL: http://crystalgigs:3002/api/ads
-      # Where crystalgigs.com answers, browser-facing for the same reason
-      # noted on CrystalShards above.
-      GIGS_SITE_ORIGIN: http://localhost:3002
       PORT: 3001
-      # The other three sites' origins, for the footer's cross links. See
+      # All four site origins, for the footer's cross links and the house ad
+      # links this app renders. Browser-facing rather than the internal Docker
+      # hostnames, because a reader clicks these from outside the network. See
       # crystalshards' block above for why these have no default.
       SHARDS_SITE_ORIGIN: http://localhost:3000
       DOCS_SITE_ORIGIN: http://localhost:3001
