@@ -1752,6 +1752,96 @@ body:has(.docs-shell) .job-ad {
   .job-ad-list { grid-template-columns: minmax(0, 1fr); }
 }
 
+
+/* ============================================================================
+   CrystalBits strip
+
+   Recent articles from the sister site, mounted at the foot of the home
+   page. Drawn as an inset like the ad strip: sunk ground, a rule along the
+   top, and the source line before anything else, so the strip never reads
+   as this site's own content. Unlike the ad strip there is no fallback
+   card; the component renders nothing when CrystalBits has nothing recent
+   or cannot be reached, so none of these rules need an empty state.
+   ========================================================================= */
+
+.bits-strip {
+  margin: var(--bay) 0 0;
+  padding: 1.1rem var(--pad) 1.25rem;
+  background: var(--surface-sunk);
+  border: 1px solid var(--edge);
+  border-top: 2px solid var(--edge-strong);
+  clip-path: polygon(0 0, calc(100% - var(--facet)) 0, 100% var(--facet), 100% 100%, 0 100%);
+  /* The notch sits at the top-right, where the accent 2px top rule would
+     have to taper into the base 1px edge to stay pixel-accurate; that is
+     more machinery than a cross-link strip warrants, so the diagonal
+     continues the base border weight and colour instead. */
+  background-image: linear-gradient(45deg, transparent calc(50% - 1px), var(--edge) calc(50% - 1px), var(--edge) 50%, transparent 50%);
+  background-origin: border-box;
+  background-position: top right;
+  background-repeat: no-repeat;
+  background-size: var(--facet) var(--facet);
+}
+
+.bits-strip-head {
+  display: flex; align-items: baseline; flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+/* The source line comes first in the markup and reads first, because a
+   reader should know these are another site's articles before they follow
+   one. */
+.bits-strip-source {
+  order: -1; flex-basis: 100%;
+  margin: 0 0 0.15rem;
+  font: 600 var(--step--1)/1.2 var(--mono);
+  letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.bits-strip-icon { margin-right: 0.4rem; color: var(--ink-faint); }
+
+.bits-strip-heading {
+  margin: 0;
+  font: 700 var(--step-1)/1.2 var(--cond);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.bits-strip-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--gap);
+  list-style: none; margin: 0; padding: 0;
+}
+
+.bits-strip-item {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 0.3rem;
+  padding: 0.85rem 1rem;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+}
+
+.bits-strip-title {
+  display: inline-flex; align-items: center; min-height: var(--tap);
+  font: 600 var(--step-0)/1.3 var(--sans);
+  color: var(--ink);
+  /* Underlined, because the accent alone does not carry meaning. */
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.bits-strip-title:hover { color: var(--accent); }
+
+.bits-strip-excerpt {
+  margin: 0;
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+}
+
+@media (max-width: 40rem) {
+  .bits-strip { padding: 1rem 1.1rem 1.15rem; }
+  .bits-strip-list { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* ============================================================================
    Code highlighting
 

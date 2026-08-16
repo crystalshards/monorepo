@@ -17,6 +17,10 @@ class Home::IndexPage < MainLayout
     render_getting_started
     render_job_lists
     render_hiring_cta
+    # Last, so nothing a reader came for waits on it. The strip renders
+    # nothing at all when CrystalBits has nothing recent or cannot be
+    # reached, so this line adds no markup on a bad day.
+    mount BitsStrip
   end
 
   private def render_intro
