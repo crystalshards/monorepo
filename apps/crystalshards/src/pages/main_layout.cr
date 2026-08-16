@@ -15,6 +15,10 @@ abstract class MainLayout
         # the masthead instead of tabbing it on every navigation (WCAG 2.4.1).
         a "Skip to main content", href: "#main", class: "skip-link"
 
+        # Above the masthead, and after the skip link so the skip link stays
+        # the first thing a keyboard user reaches. Static, not pinned: it
+        # scrolls away with the first screenful.
+        mount AnnouncementBar
         mount Header
         tag "main", class: "container", id: "main" do
           content
