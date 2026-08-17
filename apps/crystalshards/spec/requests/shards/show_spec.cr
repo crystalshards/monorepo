@@ -25,6 +25,72 @@ describe Shards::Show do
     end
   end
 
+  # The registry used to address a shard by its provider token rather than by
+  # the host it lives on. Crawlers still hold thousands of the old addresses,
+  # and each one was a 404 for a page that exists.
+  describe "the legacy provider-token address" do
+    it "redirects permanently to the canonical address" do
+      shard = ShardFactory.create &.name("kemal")
+        .host("github.com")
+        .owner("kemalcr")
+        .repo("kemal")
+        .canonical_slug("github.com/kemalcr/kemal")
+
+      response = BrowserClient.exec(Shards::Show.with(host: "github", owner: "kemalcr", repo: "kemal"))
+
+      response.status_code.should eq(301)
+      response.headers["Location"].should eq("/shards/github.com/kemalcr/kemal")
+    end
+
+    it "expands whatever host the row carries, not a list written in the code" do
+      ShardFactory.create &.name("shard-on-codeberg")
+        .host("codeberg.org")
+        .owner("someone")
+        .repo("thing")
+        .canonical_slug("codeberg.org/someone/thing")
+
+      response = BrowserClient.exec(Shards::Show.with(host: "codeberg", owner: "someone", repo: "thing"))
+
+      response.status_code.should eq(301)
+      response.headers["Location"].should eq("/shards/codeberg.org/someone/thing")
+    end
+
+    it "refuses to guess when one owner and repo sit on two matching hosts" do
+      ShardFactory.create &.name("dual-a")
+        .host("github.com")
+        .owner("acme")
+        .repo("tool")
+        .canonical_slug("github.com/acme/tool")
+      ShardFactory.create &.name("dual-b")
+        .host("github.example")
+        .owner("acme")
+        .repo("tool")
+        .canonical_slug("github.example/acme/tool")
+
+      begin
+        response = BrowserClient.exec(Shards::Show.with(host: "github", owner: "acme", repo: "tool"))
+        response.status_code.should eq(404)
+      rescue Lucky::RouteNotFoundError
+        # Refusing to answer is the point.
+      end
+    end
+
+    it "still 404s a canonical address that does not exist" do
+      ShardFactory.create &.name("real")
+        .host("github.com")
+        .owner("acme")
+        .repo("real")
+        .canonical_slug("github.com/acme/real")
+
+      begin
+        response = BrowserClient.exec(Shards::Show.with(host: "github.com", owner: "acme", repo: "missing"))
+        response.status_code.should eq(404)
+      rescue Lucky::RouteNotFoundError
+        # Expected.
+      end
+    end
+  end
+
   describe "shard information display" do
     it "shows shard name" do
       shard = ShardFactory.create &.name("awesome-shard")

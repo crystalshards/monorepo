@@ -19,10 +19,16 @@ class Shards::Show < BrowserAction
       .canonical_slug("#{host}/#{owner}/#{repo}")
       .first?
 
-    if shard.nil?
+    if shard
+      render_show_page(shard)
+    elsif (legacy = ShardQuery.new.resolve_legacy_provider(host, owner, repo)) && (slug = legacy.canonical_slug)
+      # The address the registry used before shards were addressed by host.
+      # A permanent redirect rather than a render: the canonical address is
+      # the one to hold, link and index, and 301 is what tells a crawler to
+      # replace the one it has.
+      redirect to: "/shards/#{slug}", status: 301
+    else
       raise Lucky::RouteNotFoundError.new(context)
     end
-
-    render_show_page(shard)
   end
 end
