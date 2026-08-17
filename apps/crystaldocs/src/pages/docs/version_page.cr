@@ -23,6 +23,7 @@ class Docs::VersionPage < MainLayout
         doc_version: doc_version,
         types: document.try(&.all_types) || [] of CrystalDocs::DocType,
         current_full_name: nil,
+        known_versions: known_versions,
         documented: !document.nil?
 
       div class: "docs-main" do
@@ -74,52 +75,11 @@ class Docs::VersionPage < MainLayout
         end
       end
 
-      render_version_switcher
       render_build_status
 
       if description = doc.description
         para class: "docs-summary" do
           text description
-        end
-      end
-    end
-  end
-
-  # The label carries `for` and the select carries the matching `id`. A screen
-  # reader announced this as a bare "combo box" before that was fixed.
-  #
-  # Two groups, because "documented" and "we could build this if you asked"
-  # are different offers and a flat list makes them look identical. A reader
-  # picking from the second group gets the build-in-progress page, which is
-  # the honest outcome rather than a 404.
-  private def render_version_switcher
-    return if known_versions.empty?
-
-    built, unbuilt = known_versions.partition(&.built?)
-
-    div class: "docs-version-switcher" do
-      label "Version:", for: "version-select"
-
-      tag "select", id: "version-select", onchange: "window.location.href = this.value" do
-        render_version_group("Documented", built)
-        render_version_group("Not built yet", unbuilt)
-      end
-    end
-  end
-
-  # `group_label` rather than `label`: Lucky's HTML builder defines `label` as
-  # a tag method on this class, and a parameter of that name shadows it.
-  private def render_version_group(group_label : String, entries : Array(CrystalDocs::VersionCatalogue::Entry))
-    return if entries.empty?
-
-    tag "optgroup", label: group_label do
-      entries.each do |entry|
-        href = CrystalDocs::PackagePaths.version_path(doc.package_name, entry.version)
-
-        if entry.version == doc_version.version
-          tag("option", value: href, selected: "selected") { text entry.version }
-        else
-          tag("option", value: href) { text entry.version }
         end
       end
     end

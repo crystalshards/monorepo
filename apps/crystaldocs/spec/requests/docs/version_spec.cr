@@ -55,10 +55,15 @@ describe Docs::Version do
       .version("2.0.0")
 
     response = BrowserClient.exec(Docs::Version.with(package_name: "test-package", version: "1.0.0"))
-
     response.status_code.should eq(200)
     response.body.should contain("Version:")
-    # Version switcher should list both versions
+
+    # The original example stopped at the label and left "should list both
+    # versions" as a comment, so the switcher's actual contents were never
+    # checked. They are now.
+    response.body.should contain(%(id="version-select"))
+    response.body.should contain(%(value="/docs/test-package/1.0.0"))
+    response.body.should contain(%(value="/docs/test-package/2.0.0"))
   end
 
   it "displays breadcrumb navigation" do
@@ -174,5 +179,42 @@ describe Docs::Version do
 
     # 2.0.0 has no doc_versions row at all and is still reachable.
     response.body.should contain("/docs/test-package/2.0.0")
+  end
+
+  # The regression that made the feature invisible in practice. The switcher
+  # shipped on the version overview only, and a reader spends nearly all their
+  # time on a type page, which had no way to change version at all.
+  it "carries the version switcher on a type page, not only the overview" do
+    RegistrySchema.reset
+    shard = RegistrySchema.shard("test-package", "test-package")
+    RegistrySchema.version(shard, "2.0.0")
+    RegistrySchema.version(shard, "1.0.0")
+
+    doc = DocFactory.create &.package_name("test-package")
+    DocVersionFactory.create &.doc_id(doc.id).version("1.0.0").build_status("success")
+
+    StubDocsStorage.new(CrystalDocs::DocsStorageService::Fetch.found(<<-JSON)).install
+      {
+        "program": {
+          "full_name": "Top Level Namespace",
+          "name": "Top Level Namespace",
+          "types": [{"full_name": "Widget", "name": "Widget", "kind": "class"}]
+        }
+      }
+      JSON
+
+    response = BrowserClient.exec(
+      Lucky::RouteHelper.new(:get, "/docs/test-package/1.0.0/Widget")
+    )
+
+    response.status_code.should eq(200)
+    response.body.should contain(%(id="version-select"))
+    response.body.should contain(%(<optgroup label="Not built yet">))
+
+    # Options point at the version overview rather than at this type inside the
+    # target version: an unbuilt version has no row and would redirect back,
+    # and a built one may not define the type at all and would 404.
+    response.body.should contain(%(value="/docs/test-package/2.0.0"))
+    response.body.should_not contain(%(value="/docs/test-package/2.0.0/Widget"))
   end
 end
