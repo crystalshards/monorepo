@@ -19,6 +19,13 @@ class Stats::Index < BrowserAction
     # recording yet" forever while raw rows pile up behind it.
     CrystalGigs::Stats.ensure_fresh
 
+    # Pulls whatever Search Console owes us into search_console_daily before
+    # the page reads it, claimed and bounded the same way. This call is the
+    # only thing that ever invokes the fetcher: without it the service is
+    # fully built, configured and granted, and never runs, and the section
+    # sits on "waiting on the first fetch" forever while looking healthy.
+    CrystalGigs::SearchConsole.refresh
+
     # Deliberately the listing and not `job`, which is where every individual
     # posting lands. This board charges employers to post, so a public list
     # of postings ranked by views is a public list of how each employer's

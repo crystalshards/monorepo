@@ -19,6 +19,13 @@ class Stats::Index < BrowserAction
     # recording yet" forever while raw rows pile up behind it.
     CrystalDocs::Stats.ensure_fresh
 
+    # Pulls whatever Search Console owes us into search_console_daily before
+    # the page reads it, claimed and bounded the same way. This call is the
+    # only thing that ever invokes the fetcher: without it the service is
+    # fully built, configured and granted, and never runs, and the section
+    # sits on "waiting on the first fetch" forever while looking healthy.
+    CrystalDocs::SearchConsole.refresh
+
     # All three documentation kinds, in one list, because this site's read
     # surface is not a single page per package: a reader lands on a package,
     # opens a version, then reads types under it. Leading with `package`
