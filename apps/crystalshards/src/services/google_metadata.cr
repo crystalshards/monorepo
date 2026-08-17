@@ -23,6 +23,11 @@ module CrystalShards
       end
     end
 
+    # Explicitly typed: an unannotated `@@ivar ||=` cannot be inferred, and
+    # the first call site to hit that was SearchConsole, which is also the
+    # first caller of service_account_email at all.
+    @@service_account_email : String?
+
     def self.service_account_email : String
       @@service_account_email ||= get("/computeMetadata/v1/instance/service-accounts/default/email")
     end

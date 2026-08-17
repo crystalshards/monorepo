@@ -17,6 +17,11 @@ class Footer < Lucky::BaseComponent
               li { a href: "/posts" do
                 text "All Posts"
               end }
+              # Internal, so no target=_blank: what this site is read for is
+              # part of the site rather than a reference out of it.
+              li { a href: "/stats" do
+                text "Stats"
+              end }
               render_site_links
             end
           end

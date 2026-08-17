@@ -61,7 +61,7 @@ describe Api::Shards::Versions::Downloads::Create do
     updated_shard.not_nil!.total_downloads.should eq(1)
   end
 
-  it "captures request metadata" do
+  it "records the agent and the time, and no address anywhere in the row" do
     shard = ShardFactory.create &.name("test-shard")
     version = ShardVersionFactory.create &.shard_id(shard.id).version("0.1.0")
 
@@ -74,8 +74,40 @@ describe Api::Shards::Versions::Downloads::Create do
 
     download = DownloadQuery.new.shard_version_id(version.id).first?
     download.should_not be_nil
-    # In test environment, IP address may be nil
     download.not_nil!.user_agent.should_not be_nil
     download.not_nil!.downloaded_at.should_not be_nil
+
+    # Asked of the schema rather than of the model: a column the model has
+    # stopped mapping is still a column holding addresses, and this is the
+    # assertion that fails if the drop migration is ever reverted.
+    columns = AppDatabase.query_all(<<-SQL, as: String)
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'downloads'
+      SQL
+    columns.should_not contain("ip_address")
+  end
+
+  it "records the country the edge resolved, and nothing when it resolved none" do
+    shard = ShardFactory.create &.name("test-shard")
+    version = ShardVersionFactory.create &.shard_id(shard.id).version("0.1.0")
+
+    ApiClient.new
+      .raw_headers({PageViews::GEO_HEADER => "FR"})
+      .exec(Api::Shards::Versions::Downloads::Create.with(
+        **identity_of(shard),
+        version_number: "0.1.0"
+      )).status.should eq(HTTP::Status.new(200))
+
+    DownloadQuery.new.shard_version_id(version.id).first?.not_nil!.country_code.should eq("FR")
+
+    # A reader the balancer could not place is recorded as unknown, never as
+    # a guess: the header arrives empty and the column stays NULL.
+    other = ShardVersionFactory.create &.shard_id(shard.id).version("0.2.0")
+    ApiClient.exec(Api::Shards::Versions::Downloads::Create.with(
+      **identity_of(shard),
+      version_number: "0.2.0"
+    )).status.should eq(HTTP::Status.new(200))
+
+    DownloadQuery.new.shard_version_id(other.id).first?.not_nil!.country_code.should be_nil
   end
 end

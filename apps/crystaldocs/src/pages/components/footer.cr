@@ -12,6 +12,11 @@ class Components::Footer < Lucky::BaseComponent
           a "GitHub", href: "https://github.com/crystalshards", target: "_blank", rel: "noopener"
           render_site_links
           a "Crystal Language", href: "https://crystal-lang.org", target: "_blank", rel: "noopener"
+          # Internal, so no target=_blank. Both stay on the site: what it
+          # serves and what it costs are part of the site, not references
+          # out of it.
+          a "Stats", href: "/stats"
+          a "Sponsor", href: "/sponsor"
         end
         render_bushido_line
       end

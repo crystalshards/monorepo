@@ -31,4 +31,7 @@ require "./actions/mixins/**"
 require "./actions/**"
 require "./workers/**"
 require "../db/migrations/**"
+# Handlers after everything they call: the collector names PageViews, which
+# the services glob above has already loaded.
+require "./handlers/**"
 require "./app_server"

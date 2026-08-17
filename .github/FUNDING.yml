@@ -1,0 +1,17 @@
+# Sponsorship for the CrystalShards organisation's sites: CrystalShards,
+# CrystalDocs, CrystalGigs and CrystalBits, all maintained by The Bushido
+# Collective.
+#
+# PENDING DECISION: the owner has not yet chosen between the collective's
+# existing sponsorship page and a GitHub Sponsors profile on the
+# crystalshards organisation. Every line below is a commented PLACEHOLDER,
+# not a live destination; exactly one of them will be uncommented when the
+# decision is made. Until then the /sponsor pages on each site render their
+# "not yet open for sponsorship" state, driven by the same unset value
+# (SPONSORSHIP_URL) that decides what the button here will eventually say.
+#
+# PLACEHOLDER, pending the decision above: a GitHub Sponsors profile.
+# github: [crystalshards]
+#
+# PLACEHOLDER, pending the decision above: the collective's own page.
+# custom: ["https://thebushido.co"]

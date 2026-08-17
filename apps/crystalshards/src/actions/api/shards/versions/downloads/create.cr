@@ -33,13 +33,19 @@ class Api::Shards::Versions::Downloads::Create < ApiAction
       elsif version.yanked
         json({error: "This version has been yanked and is no longer available"}, status: 410)
       else
-        # Track download
+        # No address is recorded. A download is a count against a version,
+        # and the row needs nothing that identifies who asked for it; the
+        # page view collector holds this site to the same rule.
+        #
+        # The country comes from the edge, which sets X-Client-Geo-Location
+        # to a CLDR region it resolved. The header read here used to be
+        # Cloudflare's CF-IPCountry, which nothing in this deployment sets,
+        # so every row recorded an unknown country.
         SaveDownload.create!(
           shard_id: shard.id.not_nil!,
           shard_version_id: version.id.not_nil!,
-          ip_address: request.remote_address.try(&.to_s),
           user_agent: request.headers["User-Agent"]? || "unknown",
-          country_code: request.headers["CF-IPCountry"]?,
+          country_code: request.headers[PageViews::GEO_HEADER]?.presence,
           downloaded_at: Time.utc
         )
 

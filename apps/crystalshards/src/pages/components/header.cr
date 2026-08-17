@@ -20,6 +20,9 @@ class Header < Lucky::BaseComponent
           a href: "/shards", class: "nav-link" do
             text "Browse"
           end
+          a href: "/stats", class: "nav-link" do
+            text "Stats"
+          end
           a href: "https://crystaldocs.org", class: "nav-link", target: "_blank", rel: "noopener" do
             text "Documentation"
           end
