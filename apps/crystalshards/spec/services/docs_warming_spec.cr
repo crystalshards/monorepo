@@ -138,4 +138,34 @@ describe CrystalShards::DocsWarming do
       options.enqueue.should eq(CrystalShards::DocsWarming::DEFAULT_ENQUEUE)
     end
   end
+
+  describe "when the queue refuses" do
+    # The first live run of this Job printed nineteen packages under
+    # "Commissioned:", raised on every one of them, and exited 0. A warmer that
+    # reports success while queueing nothing is worse than one that does
+    # nothing at all: the missing documentation is the only remaining symptom,
+    # and the Job an operator would check is green.
+    it "counts a refused enqueue as a failure and fails the run" do
+      RefusingJobQueue.install
+      shard_with("github.com/acme/refused", "1.0.0", stars: 500)
+
+      report = warm
+
+      report.enqueued.should be_empty
+      report.failures.map(&.candidate.package_name).should eq(["github.com/acme/refused"])
+      report.exit_code.should eq(1)
+    end
+
+    it "says plainly that an identical reason everywhere is configuration" do
+      RefusingJobQueue.install
+      2.times { |i| shard_with("github.com/acme/ref#{i}", "1.0.0", stars: 100 - i) }
+
+      report = warm
+      rendered = String.build { |io| CrystalShards::DocsWarming.render(report, io) }
+
+      rendered.should contain("Refused by the queue:")
+      rendered.should contain("misconfigured Job, not a bad shard")
+      rendered.should_not contain("Exit 0.")
+    end
+  end
 end
