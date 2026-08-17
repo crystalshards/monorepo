@@ -3,6 +3,10 @@ class Docs::VersionPage < MainLayout
   needs doc_version : DocVersion
   needs document : CrystalDocs::DocsDocument?
 
+  # Every version this site can name, built or not. Supplied by the action
+  # because it reaches the registry database, which a page must not do.
+  needs known_versions : Array(CrystalDocs::VersionCatalogue::Entry)
+
   # Present only when there is no document and a build has been asked for.
   # Nil when the document rendered, and nil when storage never answered,
   # because nothing was queued in either case.
@@ -83,22 +87,39 @@ class Docs::VersionPage < MainLayout
 
   # The label carries `for` and the select carries the matching `id`. A screen
   # reader announced this as a bare "combo box" before that was fixed.
+  #
+  # Two groups, because "documented" and "we could build this if you asked"
+  # are different offers and a flat list makes them look identical. A reader
+  # picking from the second group gets the build-in-progress page, which is
+  # the honest outcome rather than a 404.
   private def render_version_switcher
-    versions = doc.doc_versions.sort_by(&.version).reverse
-    return if versions.size < 1
+    return if known_versions.empty?
+
+    built, unbuilt = known_versions.partition(&.built?)
 
     div class: "docs-version-switcher" do
       label "Version:", for: "version-select"
 
       tag "select", id: "version-select", onchange: "window.location.href = this.value" do
-        versions.each do |candidate|
-          href = CrystalDocs::PackagePaths.version_path(doc.package_name, candidate.version)
+        render_version_group("Documented", built)
+        render_version_group("Not built yet", unbuilt)
+      end
+    end
+  end
 
-          if candidate.version == doc_version.version
-            tag("option", value: href, selected: "selected") { text candidate.version }
-          else
-            tag("option", value: href) { text candidate.version }
-          end
+  # `group_label` rather than `label`: Lucky's HTML builder defines `label` as
+  # a tag method on this class, and a parameter of that name shadows it.
+  private def render_version_group(group_label : String, entries : Array(CrystalDocs::VersionCatalogue::Entry))
+    return if entries.empty?
+
+    tag "optgroup", label: group_label do
+      entries.each do |entry|
+        href = CrystalDocs::PackagePaths.version_path(doc.package_name, entry.version)
+
+        if entry.version == doc_version.version
+          tag("option", value: href, selected: "selected") { text entry.version }
+        else
+          tag("option", value: href) { text entry.version }
         end
       end
     end

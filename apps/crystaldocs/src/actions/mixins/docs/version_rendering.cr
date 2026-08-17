@@ -18,6 +18,12 @@ module Docs::VersionRendering
   private def render_version(doc : Doc, doc_version : DocVersion)
     result = CrystalDocs::DocsLoader.build.load(doc.package_name, doc_version.version)
 
+    # Computed once, for all three outcomes. The switcher is on the page in
+    # every one of them, and it lists what the registry knows as well as what
+    # this site has built, so a reader on a failed or unbuilt version can still
+    # move to one that worked.
+    known_versions = CrystalDocs::VersionCatalogue.for(doc)
+
     if document = result.document
       # docs.total_views is no longer incremented here. Counting on render
       # counted every bot and kept no time dimension; the column is now
@@ -27,6 +33,7 @@ module Docs::VersionRendering
         doc: doc,
         doc_version: doc_version,
         document: document,
+        known_versions: known_versions,
         build_request: nil
     elsif result.store_answered?
       # Storage answered and holds nothing, or holds something unparseable.
@@ -42,6 +49,7 @@ module Docs::VersionRendering
         doc: doc,
         doc_version: doc_version,
         document: nil,
+        known_versions: known_versions,
         build_request: request_build(doc, doc_version)
     else
       # Storage never answered. Whether documentation exists is unknown, and a
@@ -50,6 +58,7 @@ module Docs::VersionRendering
         doc: doc,
         doc_version: doc_version,
         document: nil,
+        known_versions: known_versions,
         build_request: nil
     end
   end
