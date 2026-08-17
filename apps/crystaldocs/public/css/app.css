@@ -1155,6 +1155,37 @@ main.container:has(.docs-shell) {
   margin: 0 0 0.5rem;
 }
 
+/* The version switcher, in the rail directly under the package name.
+
+   It lives here rather than in the page header because the rail is on every
+   documentation page and the header is only on the overview: a reader deep in
+   a type page had no way to change version at all.
+
+   Sized to the rail rather than to the text. A native select is the whole
+   control here, so it has to be wide enough to show the longest version a
+   package publishes without truncating it. */
+.docs-nav-version { display: grid; gap: 0.3rem; margin: 0 0 0.5rem; }
+
+.docs-nav-version-label {
+  font: 500 0.7rem/1 var(--mono);
+  letter-spacing: 0.13em; text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.docs-nav-version-select {
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--edge);
+  border-radius: 0;
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 0.85rem/1.4 var(--mono);
+  transition: border-color 0.12s ease;
+}
+.docs-nav-version-select:hover { border-color: var(--edge-strong); }
+.docs-nav-version-select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
 .docs-nav-list { list-style: none; margin: 0; padding: 0; }
 .docs-nav-item { margin: 0; }
 

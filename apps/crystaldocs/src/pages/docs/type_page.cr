@@ -5,6 +5,10 @@ class Docs::TypePage < MainLayout
   needs type : CrystalDocs::DocType
   needs linker : CrystalDocs::TypeLinker
 
+  # Supplied for the sidebar's version switcher. This page is where a reader
+  # actually spends their time, and it had no way to change version at all.
+  needs known_versions : Array(CrystalDocs::VersionCatalogue::Entry)
+
   def page_title
     "#{type.full_name} - #{doc.package_name} #{doc_version.version}"
   end
@@ -16,6 +20,7 @@ class Docs::TypePage < MainLayout
         doc_version: doc_version,
         types: document.all_types,
         current_full_name: type.full_name,
+        known_versions: known_versions,
         # This page cannot exist without a document; it renders a type out of it.
         documented: true
 

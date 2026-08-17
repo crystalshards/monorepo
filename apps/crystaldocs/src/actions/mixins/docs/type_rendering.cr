@@ -32,6 +32,7 @@ module Docs::TypeRendering
         doc_version: doc_version,
         document: document,
         type: type,
+        known_versions: CrystalDocs::VersionCatalogue.for(doc),
         linker: build_linker(doc, doc_version, document)
     end
   end

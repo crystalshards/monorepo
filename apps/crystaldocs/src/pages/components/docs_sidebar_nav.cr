@@ -4,6 +4,13 @@ class Components::DocsSidebarNav < Lucky::BaseComponent
   needs types : Array(CrystalDocs::DocType)
   needs current_full_name : String?
 
+  # Every version this site can name, built or not. The switcher lives here
+  # rather than on the version page because this component is mounted by both
+  # the version overview and every type page, and a reader spends nearly all
+  # their time on the latter. It was only on the overview before, so the page
+  # people actually read had no way to change version at all.
+  needs known_versions : Array(CrystalDocs::VersionCatalogue::Entry)
+
   # Whether there is a document at all. An empty type list means two entirely
   # different things depending on this, and the sidebar said the same sentence
   # for both: a package with a document that declares nothing public, and a
@@ -28,9 +35,7 @@ class Components::DocsSidebarNav < Lucky::BaseComponent
               end
             end
 
-            para class: "docs-nav-version" do
-              text doc_version.version
-            end
+            render_version_switcher
           end
 
           # A registry package can define hundreds of types, so the tree needs a
@@ -49,6 +54,61 @@ class Components::DocsSidebarNav < Lucky::BaseComponent
           end
 
           render_type_tree
+        end
+      end
+    end
+  end
+
+  # Every option points at the version's overview page, never at the current
+  # type inside that version, and that is deliberate in both directions.
+  #
+  # An unbuilt version has no doc_versions row, and `Docs::Type` answers a type
+  # URL for a version it has no row for by redirecting back to the current one:
+  # the reader would click 1.9.0 and land back on 1.12.0 with no explanation.
+  # A built version can be missing the type outright, and `render_type` raises
+  # RouteNotFound for that, so the reader would get a 404 for asking a
+  # reasonable question.
+  #
+  # The overview always resolves, and for an unbuilt version it is also what
+  # commissions the build. Losing the reader's position in the type tree is the
+  # smaller cost.
+  private def render_version_switcher
+    # Rendered even when there is only one version to offer. A select with one
+    # option is not a useful control, but it still names the version in the
+    # place every other page puts it, and the alternative is a sidebar whose
+    # shape changes depending on how many releases the registry happens to
+    # know about.
+    return if known_versions.empty?
+
+    built, unbuilt = known_versions.partition(&.built?)
+
+    div class: "docs-nav-version docs-version-switcher" do
+      # Visible, not screen-reader-only. A bare select showing "1.12.0" under a
+      # package name reads as a stray control; the word is what makes it a
+      # version picker at a glance.
+      label "Version:", for: "version-select", class: "docs-nav-version-label"
+
+      tag "select", id: "version-select", class: "docs-nav-version-select",
+        onchange: "window.location.href = this.value" do
+        render_version_group("Documented", built)
+        render_version_group("Not built yet", unbuilt)
+      end
+    end
+  end
+
+  # `group_label` rather than `label`: Lucky's HTML builder defines `label` as
+  # a tag method on this class, and a parameter of that name shadows it.
+  private def render_version_group(group_label : String, entries : Array(CrystalDocs::VersionCatalogue::Entry))
+    return if entries.empty?
+
+    tag "optgroup", label: group_label do
+      entries.each do |entry|
+        href = CrystalDocs::PackagePaths.version_path(doc.package_name, entry.version)
+
+        if entry.version == doc_version.version
+          tag("option", value: href, selected: "selected") { text entry.version }
+        else
+          tag("option", value: href) { text entry.version }
         end
       end
     end
