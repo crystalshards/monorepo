@@ -380,7 +380,13 @@ module CrystalBits
       SQL
 
     private def self.query_day(identity : Identity, property : String, day : Time) : Response
-      url = "#{API_ORIGIN}/v1/sites/#{URI.encode_www_form(property)}/searchanalytics/query"
+      # webmasters/v3, not v1. Search Analytics has never been served under
+      # the v1 path: v1 on this host carries URL Inspection only, and asking
+      # it for a site answers Google's generic HTML 404, which is a 404 for
+      # the path and not for the property. Verified against the live API:
+      # this path answers JSON, /v1/sites/... answers an HTML error page.
+      # The method segment is camelCase for the same reason.
+      url = "#{API_ORIGIN}/webmasters/v3/sites/#{URI.encode_www_form(property)}/searchAnalytics/query"
       body = {
         # dataState "all" includes the days Google is still finalizing.
         # Without it a recent day answers as empty, which is the
@@ -462,8 +468,14 @@ module CrystalBits
       @@transport || ->(request : Request) { default_transport(request) }
     end
 
+    # The scope Search Console checks. Cloud Run's default token is
+    # cloud-platform, which this API rejects with a 403 that reads exactly
+    # like a missing property grant, so the token is minted for this scope
+    # explicitly rather than taking whatever the runtime hands out.
+    SCOPE = "https://www.googleapis.com/auth/webmasters.readonly"
+
     private def self.fetch_identity : Identity
-      provider = @@identity || -> { Identity.new(GoogleMetadata.access_token, GoogleMetadata.service_account_email) }
+      provider = @@identity || -> { Identity.new(GoogleMetadata.access_token(SCOPE), GoogleMetadata.service_account_email) }
       provider.call
     end
 
