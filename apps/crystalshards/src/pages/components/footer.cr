@@ -19,6 +19,9 @@ class Footer < Lucky::BaseComponent
           a "GitHub", href: "https://github.com/crystalshards", target: "_blank", rel: "noopener"
           render_site_links
           a "Crystal Language", href: "https://crystal-lang.org", target: "_blank", rel: "noopener"
+          # Internal, so no target=_blank: the one link in this row that stays
+          # on the site, because paying for it is part of the site.
+          a "Sponsor", href: "/sponsor"
         end
         render_bushido_line
       end

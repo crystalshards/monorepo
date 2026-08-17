@@ -1617,6 +1617,28 @@ a.docs-external {
 .about-steps h3 { font-size: var(--step-1); margin: 0.2rem 0 0.35em; }
 .about-steps p { margin: 0; color: var(--ink-muted); }
 
+/* ============================================================================
+   Sponsor page
+   ========================================================================= */
+
+/* Running prose at the same measure as .about-copy. The cost drivers are a
+   list of named things, each led by its name, not a table of figures we have
+   not been handed. */
+.sponsor-copy { max-width: 62ch; }
+.sponsor-copy p { line-height: 1.75; }
+
+.sponsor-costs {
+  list-style: none;
+  margin: 0; padding: 0;
+  max-width: 62ch;
+}
+.sponsor-costs > li {
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--edge);
+}
+.sponsor-costs > li:last-child { border-bottom: 0; }
+.sponsor-costs strong { color: var(--ink); }
+
 
 /* ============================================================================
    Build state page (docs requested but not yet built)
