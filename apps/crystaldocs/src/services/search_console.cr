@@ -255,9 +255,18 @@ module CrystalDocs
       ENV["SEARCH_CONSOLE_PROPERTY"]?.presence
     end
 
+    # Test seam, the same shape as Stats.lazy_rollup. The stats page calls
+    # this on render, and a page spec that plants its own claim state must
+    # not have a real pass overwrite it or reach for the metadata server.
+    # Left on by default so production and this service's own specs, which
+    # call refresh directly with a stubbed transport, are unchanged.
+    class_property lazy_refresh : Bool = true
+
     # Fetch and store whatever is owed. Safe to call on every stats page
     # render: the claim decides whether a pass actually runs.
     def self.refresh : Result
+      return Result.new(Outcome::Skipped) unless @@lazy_refresh
+
       property = self.property
       return Result.new(Outcome::Disabled) unless property
 

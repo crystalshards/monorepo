@@ -19,6 +19,13 @@ class Stats::Index < BrowserAction
     # recording yet" forever while raw rows pile up behind it.
     CrystalBits::Stats.ensure_fresh
 
+    # Pulls whatever Search Console owes us into search_console_daily before
+    # the page reads it, claimed and bounded the same way. This call is the
+    # only thing that ever invokes the fetcher: without it the service is
+    # fully built, configured and granted, and never runs, and the section
+    # sits on "waiting on the first fetch" forever while looking healthy.
+    CrystalBits::SearchConsole.refresh
+
     # This site publishes writing, so the most read posts are the number a
     # writer actually wants and they lead the page.
     #

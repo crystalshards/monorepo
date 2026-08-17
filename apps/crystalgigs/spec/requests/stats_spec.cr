@@ -21,10 +21,46 @@ describe "Stats::Index" do
 
   around_each do |example|
     CrystalGigs::Stats.lazy_rollup = false
+    # The action also refreshes Search Console on render. Left on, an
+    # example that sets a property would reach the metadata server and a
+    # real Google endpoint, and overwrite the claim row it just planted.
+    CrystalGigs::SearchConsole.lazy_refresh = false
     begin
       example.run
     ensure
       CrystalGigs::Stats.lazy_rollup = true
+      CrystalGigs::SearchConsole.lazy_refresh = true
+    end
+  end
+
+  # The whole Search Console integration shipped, was configured, was granted
+  # access, and never ran, because nothing called the fetcher. This is the
+  # example that fails if that call is ever dropped again.
+  describe "the fetcher the page is supposed to drive" do
+    it "runs a Search Console pass when the page is rendered" do
+      requested = [] of String
+
+      with_search_console_property do
+        CrystalGigs::SearchConsole.lazy_refresh = true
+        CrystalGigs::SearchConsole.identity = -> {
+          CrystalGigs::SearchConsole::Identity.new("test-token", "app@example.iam.gserviceaccount.com")
+        }
+        CrystalGigs::SearchConsole.transport = ->(request : CrystalGigs::SearchConsole::Request) {
+          requested << request.url
+          CrystalGigs::SearchConsole::Response.new(200, %({"rows": []}))
+        }
+
+        begin
+          BrowserClient.exec(Stats::Index).status_code.should eq(200)
+        ensure
+          CrystalGigs::SearchConsole.transport = nil
+          CrystalGigs::SearchConsole.identity = nil
+          CrystalGigs::SearchConsole.lazy_refresh = false
+        end
+      end
+
+      requested.should_not be_empty
+      requested.first.should contain(URI.encode_www_form("sc-domain:crystalgigs.com"))
     end
   end
 
