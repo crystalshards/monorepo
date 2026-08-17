@@ -417,6 +417,27 @@ variable "app_domains" {
   type        = map(string)
 }
 
+variable "search_console_properties" {
+  description = <<-DESC
+    Map of app slug to the Search Console property that site is registered as,
+    published to the service as SEARCH_CONSOLE_PROPERTY.
+
+    A property is a domain property ("sc-domain:example.org") or a URL prefix
+    ("https://example.org/"). Which one a site is depends on how a human
+    registered it, so it is passed in rather than derived from the origin: the
+    two are different strings for the same site and the API rejects the wrong
+    one.
+
+    An app absent from this map, or mapped to "", is not wired to Search
+    Console. That is a supported state, not a failure: the service reads the
+    variable as optional and the stats page says the section is not
+    configured. Fetching also needs this service's own account added as a user
+    on the property, which no terraform in this repo can do.
+  DESC
+  type        = map(string)
+  default     = {}
+}
+
 variable "docs_launcher_app_domain" {
   description = <<-DESC
     APP_DOMAIN for docs-launcher. It serves no public origin of its own and the
