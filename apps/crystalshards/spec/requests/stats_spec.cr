@@ -3,7 +3,23 @@ require "../spec_helper"
 # The public /stats page. The tables it reads are planted row by row: the
 # collector, the rollup service and the Search Console client own the writes,
 # and these specs only depend on the shared schema's shapes.
+#
+# The action rolls up lazily on read, which is right in production and wrong
+# here: a real pass would find nothing pending in an empty page_views, mark
+# the claim covered through yesterday, and clear the very last_error one of
+# these examples plants to prove the page states a lag. The rollup's own
+# specs exercise that path; these exercise what the page does with a given
+# state, so the pass is off for the whole file and restored after it.
 describe "Stats::Index" do
+  around_each do |example|
+    Stats.lazy_rollup = false
+    begin
+      example.run
+    ensure
+      Stats.lazy_rollup = true
+    end
+  end
+
   describe "with no data at all" do
     it "says so instead of rendering zeros" do
       response = BrowserClient.exec(Stats::Index)
@@ -131,7 +147,10 @@ describe "Stats::Index" do
 
         response = BrowserClient.exec(Stats::Index)
 
-        response.body.should contain("Google's own numbers")
+        # The attribution names Google as the source. Asserted without the
+        # apostrophe of "Google's": the renderer escapes it to &#39; and a
+        # raw one could never match a rendered page.
+        response.body.should contain("From Google Search Console")
         response.body.should contain("crystal web framework")
         response.body.should contain("crystal shards")
         # Clicks summed across days: 42 + 8.

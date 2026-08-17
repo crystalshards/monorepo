@@ -60,7 +60,6 @@ describe Api::Shards::Versions::Show do
     3.times do
       DownloadFactory.create &.shard_version_id(version.id)
         .shard_id(shard.id)
-        .ip_address("192.168.1.1")
         .user_agent("Test")
         .downloaded_at(Time.utc)
     end

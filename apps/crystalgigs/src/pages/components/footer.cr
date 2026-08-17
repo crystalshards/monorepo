@@ -30,6 +30,14 @@ class Footer < Lucky::BaseComponent
                 text "Remote Jobs"
               end
             end
+            # Audience numbers only, which is why this sits with the job
+            # seekers rather than the employers: it reports who reads the
+            # board, never how any employer's posting performed.
+            li do
+              a href: "/stats" do
+                text "Stats"
+              end
+            end
           end
         end
 

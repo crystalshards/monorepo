@@ -259,6 +259,15 @@ module Stats
     LIMIT $3
     SQL
 
+  # Test seam, the same shape as PageViews.async_writes. A page spec plants
+  # the exact rollup state it wants to see rendered, and a real pass mid
+  # request would overwrite it: the pass would find nothing pending in an
+  # empty page_views, mark the claim covered through yesterday, and clear the
+  # very last_error the spec planted to prove the page states a lag. Left on
+  # by default so production and the rollup's own specs are unchanged; a page
+  # spec turns it off and restores it in an ensure.
+  class_property lazy_rollup : Bool = true
+
   # Claims and runs the rollup if any ended day is not yet rolled. Safe to
   # call on every page render: an already-fresh rollup claims nothing and
   # does nothing, a claim lost to a concurrent reader does not wait, and any
@@ -266,6 +275,8 @@ module Stats
   # daily_stats now covers every day through yesterday; false means the
   # page should render what is already rolled and say so.
   def self.ensure_fresh : Bool
+    return true unless @@lazy_rollup
+
     now = Time.utc
     # Already covering through yesterday: nothing to claim. Work pending but
     # the claim refused (a concurrent winner, or a failure inside the retry

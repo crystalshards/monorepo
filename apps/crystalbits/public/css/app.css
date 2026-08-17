@@ -1195,3 +1195,198 @@ a.tag:hover { border-color: var(--accent); }
   .content-card { padding: 1rem 1.1rem 1.15rem; }
   .moderation-item-head { flex-direction: column; align-items: flex-start; gap: 0.4rem; }
 }
+/* ============================================================================
+   Site statistics (/stats)
+
+   The page about honesty, drawn in the same language as everything else:
+   hairline edges, mono for data, the specimen accent for the one series a
+   reader should follow. No panel tint behind the chart: the numbers are the
+   content, and a framed dashboard card would dress them as a product.
+   ========================================================================= */
+
+.stats-lede {
+  color: var(--ink-muted); font-size: var(--step-1);
+  max-width: 44rem;
+}
+
+/* The coverage note: when counting began and how current the figures are.
+   Mono and quiet, because it is provenance, not a headline. */
+.stats-coverage {
+  font: 400 0.8rem/1.5 var(--mono);
+  color: var(--ink-muted);
+  margin: 0.9rem 0 0;
+}
+
+/* The period selector is a row of links, not a control that needs a script.
+   The current period is a span dressed as the pressed state: it is not a
+   link to the page you are already on. */
+.period-picker {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  margin: 1.4rem 0 0;
+}
+.period-picker-label {
+  font: 500 0.72rem/1 var(--mono);
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-right: 0.25rem;
+}
+.period-option {
+  display: inline-flex; align-items: center; min-height: var(--tap);
+  padding: 0.35rem 0.85rem;
+  border: 1px solid var(--edge-strong);
+  color: var(--ink); font-size: 0.9rem;
+  text-decoration: none;
+}
+a.period-option:hover { border-color: var(--accent); color: var(--accent); }
+.period-current {
+  background: var(--accent); border-color: var(--accent); color: var(--on-accent);
+}
+
+.stats-section { padding-top: clamp(2.5rem, 5vw, 3.5rem); }
+.stats-section:first-of-type { padding-top: clamp(1.5rem, 3vw, 2rem); }
+
+/* The period totals: the home page's intro-stats treatment, kept as its own
+   class so the two can drift apart without surprising each other. */
+.stats-summary { display: flex; flex-wrap: wrap; gap: 2.5rem; margin: 0 0 1.6rem; }
+.stats-summary-item { display: flex; flex-direction: column-reverse; }
+.stats-summary dt {
+  font: 400 0.7rem/1.4 var(--mono);
+  letter-spacing: 0.13em; text-transform: uppercase; color: var(--ink-muted);
+}
+.stats-summary dd {
+  margin: 0; font: 700 var(--step-3)/1 var(--cond); color: var(--ink);
+}
+.stats-summary-note {
+  font: 400 0.45em/1 var(--sans); color: var(--ink-muted);
+  letter-spacing: 0; text-transform: none;
+}
+
+/* The chart itself. The SVG is fluid; only the ground and the hairline are
+   drawn in CSS, everything inside the SVG is geometry from the page. */
+.stats-chart {
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  padding: 1rem 1.25rem 1.1rem;
+}
+.stats-chart svg { display: block; width: 100%; height: auto; }
+
+.chart-grid { stroke: var(--edge); stroke-width: 1; }
+.chart-axis { stroke: var(--edge-strong); stroke-width: 1; }
+.chart-tick {
+  fill: var(--ink-muted);
+  font: 400 11px var(--mono);
+}
+.chart-bar { fill: var(--accent); }
+/* The visitor line takes the metadata tint rather than a second green: two
+   greens would read as one series drawn twice. */
+.chart-line {
+  fill: none; stroke: var(--ore); stroke-width: 2;
+  stroke-linejoin: round; stroke-linecap: round;
+}
+
+.chart-legend {
+  display: flex; gap: 1.4rem; margin: 0.8rem 0 0;
+  font: 400 0.78rem/1.5 var(--mono); color: var(--ink-muted);
+}
+.chart-swatch { display: inline-flex; align-items: center; gap: 0.45rem; }
+.chart-swatch::before { content: ""; display: inline-block; }
+.chart-swatch-bar::before {
+  width: 0.7rem; height: 0.7rem; background: var(--accent);
+}
+.chart-swatch-line::before {
+  width: 1rem; height: 2px; background: var(--ore);
+}
+
+/* The text equivalent. The summary is styled as the quiet toggle it is; the
+   table inside is the same hairline treatment as the ranked lists. */
+.chart-data { margin-top: 0.9rem; }
+.chart-data summary {
+  display: inline-flex; align-items: center; min-height: var(--tap);
+  font: 500 0.8rem/1.4 var(--mono); color: var(--ink-muted);
+  cursor: pointer;
+}
+.chart-data summary:hover { color: var(--accent); }
+.chart-data table { margin-top: 0.7rem; }
+
+/* Ranked figures: hairline rows, mono right-aligned numbers. No zebra
+   striping; the row rules already separate, and tint would rank rows the
+   numbers did not. */
+.stats-table, .chart-data table {
+  width: 100%; border-collapse: collapse;
+  font-size: 0.95rem;
+}
+.stats-table th, .chart-data th {
+  font: 500 0.7rem/1.4 var(--mono);
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--ink-muted); text-align: left;
+  padding: 0.45rem 0.75rem 0.45rem 0;
+  border-bottom: 1px solid var(--edge-strong);
+}
+.stats-table td, .chart-data td {
+  padding: 0.55rem 0.75rem 0.55rem 0;
+  border-bottom: 1px solid var(--edge);
+}
+.stats-table tr:last-child td, .chart-data tr:last-child td { border-bottom: 0; }
+.stats-table .num, .chart-data .num {
+  text-align: right;
+  font-family: var(--mono); font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+.stats-table th.num { text-align: right; }
+.stats-table td.mono { font-family: var(--mono); font-size: 0.88rem; }
+
+/* The honest absence: what is wrong or missing, said in place of the
+   figures, never as a zero. The same rule-down-the-left treatment as the
+   shard notices: a quiet note, not an error panel. */
+.stats-empty {
+  padding: 0.85rem 1rem;
+  background: var(--surface-sunk);
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--edge-strong);
+  font-size: 0.92rem; color: var(--ink-muted);
+}
+.stats-empty p { margin: 0; }
+
+.stats-direct { color: var(--ink-muted); margin: 0 0 1rem; }
+
+/* "Google's own numbers", said at the section, so the table never has to
+   carry the disclaimer row by row. */
+.stats-attribution {
+  font: 400 0.8rem/1.5 var(--mono);
+  color: var(--ink-muted);
+  margin: 0 0 1rem;
+}
+
+.stats-footnote {
+  font-size: 0.85rem; color: var(--ink-faint);
+  max-width: 44rem;
+  margin: 0.8rem 0 0;
+}
+
+/* The country breakdown, small: a wrap of code/figure pairs rather than
+   another table, because eight rows of two columns is a list, not a grid. */
+.country-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 0;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+}
+.country-list li {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.5rem 0.9rem 0.5rem 0;
+  border-bottom: 1px solid var(--edge);
+}
+.country-code { font-size: 0.88rem; }
+.country-views {
+  font-family: var(--mono); font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-muted);
+}
+
+.stats-methodology {
+  margin-top: clamp(2.5rem, 5vw, 3.5rem);
+  padding-top: 1.2rem;
+  border-top: 1px solid var(--edge);
+  font-size: 0.85rem; color: var(--ink-faint);
+  max-width: 46rem;
+}

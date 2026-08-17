@@ -33,6 +33,14 @@ private def get_page(path : String, headers : Hash(String, String) = browser_hea
   PageViewClient.new.raw_headers(headers).get(path)
 end
 
+# The API refuses text/html with a 406, and the collector refuses anything
+# that is not a 2xx or 3xx, so asking for an API route the way a browser asks
+# for a page would prove nothing about classification: the row would be absent
+# because the request failed, not because the classifier said so.
+private def get_json(path : String, headers : Hash(String, String) = browser_headers) : HTTP::Client::Response
+  PageViewClient.new.raw_headers(headers.merge({"Accept" => "application/json"})).get(path)
+end
+
 describe "page view collection" do
   it "records exactly one row for a normal request, with the path kind" do
     response = get_page("/")
@@ -53,7 +61,7 @@ describe "page view collection" do
     get_page("/shards")
     get_page("/shards?query=kemal")
     get_page("/shards/#{shard.host}/#{shard.owner}/#{shard.repo}")
-    get_page("/api/shards")
+    get_json("/api/shards")
 
     kinds = PageViewQuery.new.to_a.map { |row| {row.path, row.path_kind} }
     kinds.should contain({"/shards", "browse"})
@@ -104,8 +112,17 @@ describe "page view collection" do
     PageViewQuery.new.select_count.should eq(0)
   end
 
+  # The Content-Type is set as well as the Accept: this client's `headers`
+  # call replaces the base client's defaults, one of which is the JSON
+  # content type that `exec` relies on to have its body parsed. Without it
+  # the action answers 400 for missing params, and a POST that never
+  # succeeded would not prove the collector ignores POSTs that do.
   it "records nothing for a POST, even one that succeeds" do
-    response = PageViewClient.new.raw_headers(browser_headers)
+    response = PageViewClient.new
+      .raw_headers(browser_headers.merge({
+        "Accept"       => "application/json",
+        "Content-Type" => "application/json",
+      }))
       .exec(Api::SignUps::Create, user: {
         email:                 "a-reader@example.com",
         password:              "correct horse battery staple",
@@ -134,9 +151,9 @@ describe "page view collection" do
   it "turns the hash over when the salt's date does" do
     original = PageViews.date_today
     begin
-      PageViews.date_today = ->{ Time.utc.date }
+      PageViews.date_today = -> { Time.utc.date }
       get_page("/")
-      PageViews.date_today = ->{ (Time.utc + 1.day).date }
+      PageViews.date_today = -> { (Time.utc + 1.day).date }
       get_page("/")
 
       rows = PageViewQuery.new.to_a
