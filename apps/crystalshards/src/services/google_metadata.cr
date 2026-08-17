@@ -34,12 +34,21 @@ module CrystalShards
 
     # A short-lived OAuth token for calling Google APIs as this revision.
     #
+    # `scopes` narrows the token to the APIs that need something other than
+    # the runtime default. Cloud Run mints a cloud-platform token when none
+    # is asked for, and cloud-platform does not cover every Google API:
+    # Search Console rejects it with "Request had insufficient authentication
+    # scopes", which is a 403 that looks exactly like a missing grant and is
+    # not one. Callers that need a specific scope name it.
+    #
     # Deliberately not cached. The metadata server caches and refreshes
     # underneath, and holding the string here would mean keeping an expiring
     # credential in memory past its validity, which surfaces as a 401 on a path
     # that only runs while someone is waiting for a build.
-    def self.access_token : String
-      body = get("/computeMetadata/v1/instance/service-accounts/default/token")
+    def self.access_token(scopes : String? = nil) : String
+      path = "/computeMetadata/v1/instance/service-accounts/default/token"
+      path += "?scopes=#{URI.encode_www_form(scopes)}" if scopes
+      body = get(path)
 
       JSON.parse(body)["access_token"].as_s
     rescue ex : JSON::Error | KeyError
