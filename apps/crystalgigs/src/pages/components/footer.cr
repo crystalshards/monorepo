@@ -101,10 +101,13 @@ class Footer < Lucky::BaseComponent
         rel: "noopener", "aria-label": "Forged by The Bushido Collective" do
         span class: "tbc-seal", "aria-hidden": "true"
       end
-      text " The Bushido Collective builds and maintains this site."
-      text " · Licensed under the "
-      a "Apache License 2.0", href: "https://github.com/crystalshards/monorepo/blob/main/LICENSE",
-        target: "_blank", rel: "noopener"
+      span class: "tbc-seal-copy" do
+        text "The Bushido Collective builds and maintains this site."
+        br
+        text "Licensed under the "
+        a "Apache License 2.0", href: "https://github.com/crystalshards/monorepo/blob/main/LICENSE",
+          target: "_blank", rel: "noopener"
+      end
     end
   end
 end
