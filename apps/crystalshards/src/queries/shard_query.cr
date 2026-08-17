@@ -37,6 +37,37 @@ class ShardQuery < Shard::BaseQuery
     matches.size == 1 ? matches.first : nil
   end
 
+  # Resolves the provider-token address the registry used before a shard was
+  # addressed by the host it lives on: "github/kemalcr/kemal" for what is now
+  # "github.com/kemalcr/kemal".
+  #
+  # Crawlers still hold thousands of these. Every one of them is a 404 today
+  # for a page that exists at the canonical address, which is a 404 reported
+  # to Google for a live page rather than a redirect to it.
+  #
+  # The token is expanded against the hosts already in the table rather than a
+  # list of providers written here. A host's first label is exactly the token
+  # the old URLs carried, so github resolves github.com and codeberg resolves
+  # codeberg.org without this file having to know which hosts exist or being
+  # able to drift from them.
+  #
+  # Only a single match answers, for the same reason `resolve` refuses an
+  # ambiguous bare name: two shards with one owner and repo on two hosts
+  # beginning with the same label have no correct answer, and redirecting to
+  # either would send a reader, and Google, to the wrong repository.
+  #
+  # A host that already carries a dot never reaches here: it was a canonical
+  # address that simply does not exist.
+  def resolve_legacy_provider(token : String, owner : String, repo : String) : Shard?
+    return nil if token.empty? || token.includes?('.')
+
+    matches = clone.owner(owner).repo(repo).limit(5).to_a.select do |shard|
+      shard.host.try(&.split('.').first?) == token
+    end
+
+    matches.size == 1 ? matches.first : nil
+  end
+
   # True when a bare name names more than one shard, which is what the legacy
   # single-segment URLs have to disambiguate.
   def ambiguous_name?(value : String) : Bool
