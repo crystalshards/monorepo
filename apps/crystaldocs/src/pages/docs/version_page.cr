@@ -229,12 +229,20 @@ class Docs::VersionPage < MainLayout
 
   private def render_queued
     para class: "build-state-copy" do
-      text "Nobody had asked for this version before, so its documentation is "
-      text "being built now. Documentation is built the first time a version "
-      text "is requested rather than ahead of time for every version ever "
-      text "published."
+      text "This version's documentation is being built now. Documentation is "
+      text "built on request rather than ahead of time for every version ever "
+      text "published, and the most depended-upon shards are built on a "
+      text "schedule so their first reader does not have to wait."
     end
 
+    # The steps are shown here too, with none of them done.
+    #
+    # A queued build is the longest a reader waits with the least to look at:
+    # nothing has been claimed, so there is no progress to report, and the
+    # previous copy left them a paragraph and a spinner-less page. Listing what
+    # is about to happen is honest, costs nothing, and means the list does not
+    # appear from nowhere the moment a worker picks the build up.
+    render_build_steps
     render_refresh_note
   end
 
