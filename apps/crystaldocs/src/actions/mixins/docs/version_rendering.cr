@@ -19,8 +19,10 @@ module Docs::VersionRendering
     result = CrystalDocs::DocsLoader.build.load(doc.package_name, doc_version.version)
 
     if document = result.document
-      increment_views(doc)
-
+      # docs.total_views is no longer incremented here. Counting on render
+      # counted every bot and kept no time dimension; the column is now
+      # written by CrystalDocs::Stats from rolled page view data, which is
+      # where real, bot-filtered, per-day numbers live.
       html Docs::VersionPage,
         doc: doc,
         doc_version: doc_version,
@@ -50,10 +52,5 @@ module Docs::VersionRendering
         document: nil,
         build_request: nil
     end
-  end
-
-  private def increment_views(doc : Doc)
-    SaveDoc.update!(doc, total_views: doc.total_views + 1)
-  rescue
   end
 end
