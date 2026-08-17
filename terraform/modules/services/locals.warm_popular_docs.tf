@@ -8,9 +8,13 @@ locals {
   # tasks identity here would be one edit away from a build that enqueues
   # successfully and is then refused with a 403 nobody sees.
   warm_popular_docs_config = {
-    env = merge(local.enqueuer_env, {
-      LUCKY_ENV = "production"
-
+    # common_env carries GOOGLE_CLOUD_PROJECT, which `CloudTasksConfig` needs
+    # to build the queue path. Merging only enqueuer_env produced a Job that
+    # scanned the ranking, printed a list of what it was commissioning, raised
+    # CloudTasksConfig::Missing on every single enqueue and exited 0. Every
+    # value in enqueuer_env was present and correct; the one that was missing
+    # was not in that table.
+    env = merge(local.common_env, local.enqueuer_env, {
       # Both bounds are published for the same reason the discovery bounds are:
       # the scan is cheap and the enqueue is not, and tuning one without seeing
       # the other is how a warm run starves the builds readers are waiting on.

@@ -60,15 +60,26 @@ module CrystalShards
 
     record Candidate, package_name : String, version : String
 
+    record Failure, candidate : Candidate, reason : String
+
     record Report,
       scanned : Int32,
       already_documented : Int32,
       in_flight : Int32,
       no_version : Int32,
       enqueued : Array(Candidate),
+      failures : Array(Failure),
       options : Options do
+      # An enqueue that raised fails the run.
+      #
+      # The first live execution of this Job printed nineteen packages under
+      # "Commissioned:", raised CloudTasksConfig::Missing on every one of them,
+      # and exited 0. A misconfigured warmer that reports success is worse than
+      # one that does nothing: nothing is at least visible in the docs that
+      # never appear, while a green Job with a confident list is a thing an
+      # operator stops looking at.
       def exit_code : Int32
-        0
+        failures.empty? ? 0 : 1
       end
     end
 
@@ -125,6 +136,7 @@ module CrystalShards
       already_documented = 0
       in_flight = 0
       enqueued = [] of Candidate
+      failures = [] of Failure
 
       candidates.each do |candidate|
         key = {candidate.package_name, candidate.version}
@@ -141,8 +153,23 @@ module CrystalShards
 
         break if enqueued.size >= options.enqueue
 
-        BuildDocsWorker.enqueue(candidate.package_name, candidate.version)
-        enqueued << candidate
+        # Counted as commissioned only once the queue has actually taken it.
+        # A raise here is a misconfigured Job, not a bad shard: the same call
+        # is about to fail for every remaining candidate. It is recorded per
+        # candidate rather than aborting so the summary states the true scale
+        # of the failure instead of the first instance of it.
+        begin
+          BuildDocsWorker.enqueue(candidate.package_name, candidate.version)
+          enqueued << candidate
+        rescue ex : Exception
+          reason = ex.message.presence || ex.class.name
+
+          Log.error(exception: ex) do
+            "DocsWarming: could not commission #{candidate.package_name}@#{candidate.version}"
+          end
+
+          failures << Failure.new(candidate, reason)
+        end
       end
 
       Report.new(
@@ -151,6 +178,7 @@ module CrystalShards
         in_flight: in_flight,
         no_version: no_version,
         enqueued: enqueued,
+        failures: failures,
         options: options
       )
     end
@@ -189,20 +217,37 @@ module CrystalShards
         report.enqueued.each { |candidate| io.puts "  #{candidate.package_name} #{candidate.version}" }
       end
 
+      unless report.failures.empty?
+        io.puts
+        io.puts "Refused by the queue:"
+        report.failures.each do |failure|
+          io.puts "  #{failure.candidate.package_name} #{failure.candidate.version}: #{failure.reason}"
+        end
+      end
+
       io.puts
       io.puts "Looked at #{report.scanned} shards: " \
               "#{report.already_documented} already documented, " \
               "#{report.in_flight} already building, " \
               "#{report.no_version} with no published version, " \
-              "#{report.enqueued.size} commissioned."
+              "#{report.enqueued.size} commissioned, " \
+              "#{report.failures.size} refused."
 
       # Said plainly, because "commissioned nothing" is the steady state once
       # the head is warm and reads exactly like a broken job otherwise.
-      if report.enqueued.empty? && report.already_documented > 0
+      if report.enqueued.empty? && report.failures.empty? && report.already_documented > 0
         io.puts "Nothing to do is the expected result here: the head of the ranking is already built."
       end
 
-      io.puts "Exit 0."
+      if report.failures.empty?
+        io.puts "Exit 0."
+      else
+        # Named as configuration rather than left as a count, because every
+        # candidate failing the same way is what a missing environment variable
+        # looks like from here, and that is not something a retry fixes.
+        io.puts "Exit #{report.exit_code}. Nothing was commissioned for the refused entries; " \
+                "an identical reason on every one of them is a misconfigured Job, not a bad shard."
+      end
     end
   end
 end
