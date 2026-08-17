@@ -1,15 +1,19 @@
 require "http/client"
 require "json"
 
-module CrystalShards
+module CrystalGigs
   # The ambient Cloud Run identity, read from the instance metadata server.
   #
   # Nothing here is a credential in source. The metadata server is only
   # reachable from inside a Google-managed instance and answers with the
   # identity the deployment already assigned to this revision, so there is no
-  # key to leak, rotate or accidentally commit.
+  # key to leak, rotate or accidentally commit. That is the whole reason the
+  # Search Console fetch does not take a service account key: there is not
+  # one to take.
   #
-  # Not reachable in development or test, and never called there.
+  # Not reachable in development or test, and never called there: specs stub
+  # the identity seam on SearchConsole, and development leaves the feature
+  # unconfigured.
   module GoogleMetadata
     HOST = "metadata.google.internal"
 
@@ -23,21 +27,21 @@ module CrystalShards
       end
     end
 
-    # Explicitly typed: an unannotated `@@ivar ||=` cannot be inferred, and
-    # the first call site to hit that was SearchConsole, which is also the
-    # first caller of service_account_email at all.
+    # Explicitly typed: an unannotated `@@ivar ||=` cannot be inferred.
     @@service_account_email : String?
 
+    # The email of the service account this revision runs as. A Search
+    # Console 403 names this account, because it is the address a human has
+    # to add to the property before any data exists.
     def self.service_account_email : String
       @@service_account_email ||= get("/computeMetadata/v1/instance/service-accounts/default/email")
     end
 
     # A short-lived OAuth token for calling Google APIs as this revision.
     #
-    # Deliberately not cached. The metadata server caches and refreshes
-    # underneath, and holding the string here would mean keeping an expiring
-    # credential in memory past its validity, which surfaces as a 401 on a path
-    # that only runs while someone is waiting for a build.
+    # Deliberately not cached. The metadata server already caches and
+    # refreshes underneath, and caching the string here would mean holding an
+    # expiring credential in process memory for longer than it is valid.
     def self.access_token : String
       body = get("/computeMetadata/v1/instance/service-accounts/default/token")
 
