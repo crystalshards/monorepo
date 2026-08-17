@@ -11,7 +11,7 @@
 #   crystaldocs (web)  package_name, version, status -> pending, requested_at,
 #                      attempts, job_id
 #   crystalshards      status -> building | succeeded | failed, started_at,
-#   (BuildDocsWorker)  finished_at, failed_at, last_error
+#   (BuildDocsWorker)  finished_at, failed_at, last_error, step
 #
 # The builder half is written over a second connection, mirroring how this app
 # already reads the registry. Neither side writes the other's columns.
@@ -34,6 +34,12 @@ class DocBuildRequest < BaseModel
     column finished_at : Time?
     column failed_at : Time?
     column last_error : String?
+    # Where a running build has got to. Written by crystalshards around each
+    # step and cleared by whichever outcome follows, so it is only ever
+    # meaningful while `status` is BUILDING. `CrystalDocs::BuildSteps` knows
+    # the vocabulary and what to call each one for a reader.
+    column step : String?
+
     column attempts : Int32
     column job_id : String?
   end

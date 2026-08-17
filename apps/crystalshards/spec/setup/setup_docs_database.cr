@@ -74,6 +74,10 @@ module DocsTestDatabase
       finished_at timestamptz,
       failed_at timestamptz,
       last_error text,
+      -- Where a running build has got to, written by DocsBuildStatus#step and
+      -- cleared by whichever outcome follows. A progress hint with no durable
+      -- meaning, which is why it is nullable and never backfilled.
+      step text,
       attempts integer NOT NULL DEFAULT 0,
       job_id text,
       created_at timestamptz NOT NULL,
@@ -88,6 +92,9 @@ module DocsTestDatabase
     # here from now on gets its own idempotent ALTER for that reason.
     <<-SQL,
     ALTER TABLE doc_versions ADD COLUMN IF NOT EXISTS source_commit_sha text
+    SQL
+    <<-SQL,
+    ALTER TABLE doc_build_requests ADD COLUMN IF NOT EXISTS step text
     SQL
   ]
 

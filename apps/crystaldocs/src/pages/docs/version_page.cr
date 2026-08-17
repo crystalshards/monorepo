@@ -245,7 +245,42 @@ class Docs::VersionPage < MainLayout
       text "take longer."
     end
 
+    render_build_steps
     render_refresh_note
+  end
+
+  # The steps, with the one in progress marked.
+  #
+  # Every step is listed from the start rather than appearing as it is reached,
+  # so the reader can see how much is left instead of watching an unbounded
+  # list grow. A build that has reported no step yet marks none of them done;
+  # nothing here guesses at progress it was not told about.
+  private def render_build_steps
+    current = CrystalDocs::BuildSteps.index_of(build_request.try(&.step))
+
+    ol class: "build-steps", "aria-label": "Build progress" do
+      CrystalDocs::BuildSteps::ALL.each_with_index do |step, index|
+        li class: "build-step #{build_step_state(index, current)}" do
+          span class: "build-step-label" do
+            text step.label
+          end
+
+          span class: "build-step-detail" do
+            text step.description
+          end
+        end
+      end
+    end
+  end
+
+  private def build_step_state(index : Int32, current : Int32?) : String
+    return "is-waiting" if current.nil?
+
+    case
+    when index < current  then "is-done"
+    when index == current then "is-current"
+    else                       "is-waiting"
+    end
   end
 
   # The reader is told the reload button will not help, because otherwise they

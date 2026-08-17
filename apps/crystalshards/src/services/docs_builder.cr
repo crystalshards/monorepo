@@ -36,6 +36,18 @@ module CrystalShards
     def initialize(@sandbox : DocsSandbox? = nil)
     end
 
+    # Reports which step the build has reached, for the page a reader is
+    # watching while it runs.
+    #
+    # A no-op by default, deliberately. A builder in a spec, and the core
+    # documentation path that has no request row to update, both want the
+    # steps to go nowhere, and neither should have to say so. The worker that
+    # does have a row wires this to `DocsBuildStatus#step`.
+    #
+    # Names come from `DocsBuildStatus::Step` rather than being spelled here,
+    # because crystaldocs renders them and one list has to be authoritative.
+    property on_step : Proc(String, Nil) = ->(_step : String) { }
+
     # What the last failed build said, for the worker to record.
     #
     # crystaldocs shows this text to whoever asked for the page, so it is the
@@ -78,10 +90,16 @@ module CrystalShards
 
       Dir.mkdir_p(source_dir)
 
+      on_step.call(DocsBuildStatus::Step::CLONING)
       clone_repository(repository_url, source_dir)
+
+      on_step.call(DocsBuildStatus::Step::RESOLVING)
       checkout_version(source_dir, version, commit_sha)
+
+      on_step.call(DocsBuildStatus::Step::DEPENDENCIES)
       install_dependencies(source_dir, compiler)
 
+      on_step.call(DocsBuildStatus::Step::DOCUMENTING)
       build_docs(active, source_dir, docs_dir)
     end
 

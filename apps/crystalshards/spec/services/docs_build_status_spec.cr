@@ -210,4 +210,56 @@ describe CrystalShards::DocsBuildStatus do
       DocsRows.version_status("github.com/user/recovered", "1.0.0").should eq("success")
     end
   end
+
+  describe "#step" do
+    it "reports where a running build has got to" do
+      DocsRows.register("github.com/user/stepped", "1.0.0")
+      DocsRows.request("github.com/user/stepped", "1.0.0")
+      status = CrystalShards::DocsBuildStatus.new("github.com/user/stepped", "1.0.0")
+
+      status.building
+      DocsRows.request_step("github.com/user/stepped", "1.0.0").should be_nil
+
+      status.step(CrystalShards::DocsBuildStatus::Step::DEPENDENCIES)
+
+      DocsRows.request_step("github.com/user/stepped", "1.0.0").should eq("dependencies")
+    end
+
+    it "refuses to put a finished build back into progress" do
+      # The sandboxed compile and this process are not ordered against each
+      # other, so a step can arrive after the outcome. Without the guard a
+      # succeeded build would show a reader a progress list again.
+      DocsRows.register("github.com/user/late", "1.0.0")
+      DocsRows.request("github.com/user/late", "1.0.0")
+      status = CrystalShards::DocsBuildStatus.new("github.com/user/late", "1.0.0")
+
+      status.building
+      status.succeeded
+      status.step(CrystalShards::DocsBuildStatus::Step::UPLOADING)
+
+      DocsRows.request_step("github.com/user/late", "1.0.0").should be_nil
+      DocsRows.request_status("github.com/user/late", "1.0.0").should eq("succeeded")
+    end
+
+    it "clears the step when the build fails, so no progress outlives it" do
+      DocsRows.register("github.com/user/broke", "1.0.0")
+      DocsRows.request("github.com/user/broke", "1.0.0")
+      status = CrystalShards::DocsBuildStatus.new("github.com/user/broke", "1.0.0")
+
+      status.building
+      status.step(CrystalShards::DocsBuildStatus::Step::DOCUMENTING)
+      status.failed("undefined constant Foo")
+
+      DocsRows.request_step("github.com/user/broke", "1.0.0").should be_nil
+    end
+
+    it "never fails a build over a lost progress hint" do
+      # A step is a hint with no durable meaning. Losing one must not abandon a
+      # build that is about to succeed, so this writes against no row at all
+      # and is expected to return quietly.
+      status = CrystalShards::DocsBuildStatus.new("github.com/user/absent", "9.9.9")
+
+      status.step(CrystalShards::DocsBuildStatus::Step::CLONING)
+    end
+  end
 end

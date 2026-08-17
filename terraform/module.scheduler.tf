@@ -28,5 +28,8 @@ module "scheduler" {
   discovery_job_name     = module.services.discover_shards_job
   discovery_job_location = module.services.region
 
+  warming_job_name     = module.services.warm_popular_docs_job
+  warming_job_location = module.services.region
+
   depends_on = [module.project_services]
 }

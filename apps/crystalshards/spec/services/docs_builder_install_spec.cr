@@ -137,4 +137,51 @@ describe CrystalShards::DocsBuilder do
       end
     end
   end
+
+  describe "reporting progress" do
+    it "announces each step before performing it, in the order it performs them" do
+      # The reader's whole view of a build that takes minutes. Announced
+      # BEFORE the step runs, not after: a step reported on completion means
+      # the page names whatever just finished while the slow thing it is
+      # actually waiting on goes unnamed.
+      sandbox = RecordingSandbox.new
+      repo = repository_with_tag
+      work_dir = File.tempname("step_spec_work")
+      Dir.mkdir_p(work_dir)
+      steps = [] of String
+
+      begin
+        with_shards_shim(0) do
+          builder = CrystalShards::DocsBuilder.new(sandbox)
+          builder.on_step = ->(step : String) { steps << step; nil }
+          builder.generate_docs(repo, "1.0.0", nil, work_dir)
+        end
+
+        # Uploading is absent on purpose: it belongs to BuildDocsWorker, which
+        # owns the artifact, not to the builder.
+        steps.should eq(["cloning", "resolving", "dependencies", "documenting"])
+      ensure
+        FileUtils.rm_rf(repo) if Dir.exists?(repo)
+        FileUtils.rm_rf(work_dir) if Dir.exists?(work_dir)
+      end
+    end
+
+    it "builds without a reporter, for the paths that have no request row" do
+      # The standard library build has no doc_build_requests row to update.
+      # A builder nobody wired must not require wiring.
+      sandbox = RecordingSandbox.new
+      repo = repository_with_tag
+      work_dir = File.tempname("step_spec_bare")
+      Dir.mkdir_p(work_dir)
+
+      begin
+        with_shards_shim(0) do
+          CrystalShards::DocsBuilder.new(sandbox).generate_docs(repo, "1.0.0", nil, work_dir)
+        end
+      ensure
+        FileUtils.rm_rf(repo) if Dir.exists?(repo)
+        FileUtils.rm_rf(work_dir) if Dir.exists?(work_dir)
+      end
+    end
+  end
 end

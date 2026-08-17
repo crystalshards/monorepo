@@ -71,3 +71,19 @@ variable "attempt_deadline" {
   type        = string
   default     = "320s"
 }
+
+variable "warming_job_name" {
+  description = "Name of the documentation warming Cloud Run Job, read from the services module so a schedule cannot point at a job that does not exist"
+  type        = string
+}
+
+variable "warming_job_location" {
+  description = "Region of the documentation warming Job"
+  type        = string
+}
+
+variable "warming_schedule" {
+  description = "How often the head of the popularity ranking is warmed. Hourly by default: each run commissions a small bounded batch, so the cadence rather than the batch size is what keeps the head built without crowding out the builds readers are waiting on"
+  type        = string
+  default     = "0 * * * *"
+}

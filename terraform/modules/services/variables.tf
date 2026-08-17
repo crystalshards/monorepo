@@ -472,3 +472,15 @@ variable "container_port" {
   default     = 8080
 }
 
+
+variable "warm_scan_shards" {
+  description = "How far down the popularity ranking one warming run looks. The scan is cheap: one query plus one batched lookup against the docs database, and no host traffic at all"
+  type        = number
+  default     = 200
+}
+
+variable "warm_max_builds" {
+  description = "How many documentation builds one warming run commissions. This is the expensive bound: the build fleet is shared with the requests readers are waiting on, so throughput comes from the schedule rather than from the batch size"
+  type        = number
+  default     = 25
+}
