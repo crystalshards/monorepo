@@ -43,6 +43,23 @@ describe "Stats::Index" do
       response.body.should contain("Nothing read in this period")
     end
 
+    it "distinguishes its own first day from having recorded nothing" do
+      # The row for the request that renders the page is exactly the case:
+      # nothing has rolled, so every rolled number is genuinely absent, but
+      # "no visits recorded" would be a false statement about this very
+      # reader.
+      plant_page_view("/", "home", Time.utc, visitor: "a")
+
+      response = BrowserClient.exec(Stats::Index)
+
+      response.body.should contain("Counting began")
+      response.body.should contain("appear here tomorrow")
+      response.body.should_not contain("has not recorded any visits yet")
+      # The rolled sections are still empty, and still say so.
+      response.body.should contain("No visits recorded in this period")
+      response.body.should_not contain(%(<svg))
+    end
+
     it "still offers the period selector" do
       response = BrowserClient.exec(Stats::Index)
 
