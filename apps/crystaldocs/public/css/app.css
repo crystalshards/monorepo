@@ -1716,6 +1716,43 @@ a.docs-external {
   color: var(--ink-muted);
 }
 
+/* The build's steps, with the one in progress marked.
+
+   Every step is present from the first render, so the list does not reflow as
+   the build advances: the page reloads itself every few seconds while a build
+   runs, and a list that grew would move under the reader each time.
+
+   The marker is a left border rather than an icon. There is no scripting on
+   this page, so a spinner would be a lie the moment the build ended, and the
+   reload is what actually advances the state. */
+.build-steps {
+  list-style: none;
+  margin: 1.2rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.build-step {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.55rem 0 0.55rem 0.85rem;
+  border-left: 2px solid var(--edge);
+}
+
+.build-step-label { font: 500 var(--step-0)/1.3 var(--mono); color: var(--ink-faint); }
+.build-step-detail { font-size: var(--step--1); color: var(--ink-faint); }
+
+/* Done and current are distinguished by weight and border, never by colour
+   alone: this list is the whole progress report and it has to survive a
+   monochrome or high-contrast rendering. */
+.build-step.is-done { border-left-color: var(--edge-strong); }
+.build-step.is-done .build-step-label { color: var(--ink-muted); }
+
+.build-step.is-current { border-left-color: var(--accent); }
+.build-step.is-current .build-step-label { color: var(--ink); font-weight: 700; }
+.build-step.is-current .build-step-detail { color: var(--ink-muted); }
+
 .build-state-meta { margin: 0.85rem 0 0; color: var(--ink-faint); }
 
 .build-state-error { margin: 1.4rem 0 0; }

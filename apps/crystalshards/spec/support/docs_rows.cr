@@ -78,6 +78,18 @@ module DocsRows
     failed_at : Time?,
     last_error : String?
 
+  # The progress hint a reader watching a build is shown. Nullable by design:
+  # nothing has been reported yet at the start of a build, and every outcome
+  # clears it.
+  def self.request_step(package_name : String, version : String) : String?
+    DocsDatabase.query_one?(
+      "SELECT step FROM doc_build_requests WHERE package_name = $1 AND version = $2",
+      package_name,
+      version,
+      as: String?
+    )
+  end
+
   def self.request_outcome(package_name : String, version : String) : RequestOutcome
     status, started_at, finished_at, failed_at, last_error = DocsDatabase.query_one(
       <<-SQL,

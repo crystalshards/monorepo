@@ -81,6 +81,13 @@ struct BuildDocsWorker < BaseJob
     end
 
     builder = CrystalShards::DocsBuilder.build
+
+    # Progress for the page a reader is watching. This runs in the launcher,
+    # which already holds the docs database connection, so no credential
+    # crosses the sandbox boundary to make it work.
+    status = docs_status
+    builder.on_step = ->(step : String) { status.step(step) }
+
     key = build_and_upload_docs(builder, shard, shard_version)
 
     if key
@@ -168,6 +175,12 @@ struct BuildDocsWorker < BaseJob
         temp_dir
       )
       return nil unless docs_json
+
+      # The last step, and the only one outside the builder: uploading a large
+      # docs.json to object storage is its own wait, and a reader watching a
+      # page should see that the compile finished rather than a screen that
+      # still says "documenting" while bytes move.
+      builder.on_step.call(CrystalShards::DocsBuildStatus::Step::UPLOADING)
 
       upload_to_storage(shard, shard_version, docs_json)
     ensure

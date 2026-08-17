@@ -34,9 +34,23 @@ module CrystalShards
     # start, so it is capped rather than stored whole.
     MAX_ERROR_LENGTH = 4000
 
+    # The ordered steps a build moves through, written one at a time while it
+    # runs. crystaldocs renders these; the two lists have to agree, and its
+    # copy is in `CrystalDocs::BuildSteps`. A name it does not recognise is
+    # shown verbatim rather than dropped, so adding one here is safe on its
+    # own and only costs the nicer label until the other side learns it.
+    module Step
+      CLONING      = "cloning"
+      RESOLVING    = "resolving"
+      DEPENDENCIES = "dependencies"
+      DOCUMENTING  = "documenting"
+      UPLOADING    = "uploading"
+    end
+
     BUILDING_SQL = <<-SQL
       UPDATE doc_build_requests
       SET status = 'building',
+          step = NULL,
           started_at = $3,
           finished_at = NULL,
           failed_at = NULL,
@@ -45,9 +59,19 @@ module CrystalShards
       WHERE package_name = $1 AND version = $2
       SQL
 
+    # Scoped to a row that is still building, so a step arriving late, after
+    # the outcome has landed, cannot put a finished build back into progress.
+    # Ordering between the sandboxed step and this process is not guaranteed.
+    STEP_SQL = <<-SQL
+      UPDATE doc_build_requests
+      SET step = $3, updated_at = $4
+      WHERE package_name = $1 AND version = $2 AND status = 'building'
+      SQL
+
     SUCCEEDED_SQL = <<-SQL
       UPDATE doc_build_requests
       SET status = 'succeeded',
+          step = NULL,
           finished_at = $3,
           failed_at = NULL,
           last_error = NULL,
@@ -61,6 +85,7 @@ module CrystalShards
     FAILED_SQL = <<-SQL
       UPDATE doc_build_requests
       SET status = 'failed',
+          step = NULL,
           finished_at = $3,
           failed_at = $3,
           last_error = $4,
@@ -125,6 +150,26 @@ module CrystalShards
     def building : Nil
       record("building", BUILDING_SQL, VERSION_BUILDING_SQL)
     rescue Unrecorded
+    end
+
+    # Where the build has got to, for the page a reader is watching.
+    #
+    # Never raises and never fails a build. A step is a progress hint with no
+    # durable meaning: it is cleared by whichever outcome follows, and a build
+    # whose steps were all lost still records its result correctly and still
+    # shows the reader a working page. Abandoning a build that was about to
+    # succeed in order to report that it had reached step three would be a
+    # strictly worse trade than the reader seeing "building" a while longer.
+    #
+    # Logged at warn rather than swallowed, so a docs database refusing writes
+    # is visible here as well as from the outcome path.
+    def step(name : String) : Nil
+      DocsDatabase.exec(STEP_SQL, @package_name, @version, name, Time.utc)
+    rescue ex : Exception
+      Log.warn(exception: ex) do
+        "DocsBuildStatus: could not record step #{name} for #{@package_name}@#{@version}; " \
+        "the build is unaffected and the reader keeps seeing the previous step"
+      end
     end
 
     def succeeded : Nil

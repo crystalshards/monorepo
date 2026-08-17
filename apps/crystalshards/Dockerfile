@@ -23,7 +23,8 @@ COPY . .
 #
 # The extra four are separate binaries and none is optional: the crystalshards-migrate
 # Cloud Run Job runs `./migrate`, the discover-shards Job runs `./discover-shards`, a
-# one-off Job execution runs `./reconcile-docs-status`, another runs
+# one-off Job execution runs `./reconcile-docs-status`, the warm-popular-docs Job
+# runs `./warm-popular-docs`, another runs
 # `./publish-core-docs`, and this runtime stage carries no Crystal toolchain and no
 # lucky CLI. src/migrate.cr
 # requires db/migrations/** at compile time, so the migrations are linked into the
@@ -49,7 +50,8 @@ RUN crystal build src/crystalshards.cr --no-debug -o crystalshards && \
     crystal build src/migrate.cr --no-debug -o migrate && \
     crystal build src/discover_shards.cr --no-debug -o discover-shards && \
     crystal build src/reconcile_docs_status.cr --no-debug -o reconcile-docs-status && \
-    crystal build src/publish_core_docs.cr --no-debug -o publish-core-docs
+    crystal build src/publish_core_docs.cr --no-debug -o publish-core-docs && \
+    crystal build src/warm_popular_docs.cr --no-debug -o warm-popular-docs
 
 # Prove each artifact is an executable file before it is ever copied into the runtime
 # stage.
@@ -59,7 +61,7 @@ RUN crystal build src/crystalshards.cr --no-debug -o crystalshards && \
 # `exec: is a directory` at start time. That is not hypothetical here: it is what
 # `-o tasks` did against the app's tasks/ directory. Checking in the builder means a
 # name that collides with a directory fails the build rather than the deploy.
-RUN for binary in crystalshards migrate discover-shards reconcile-docs-status publish-core-docs; do \
+RUN for binary in crystalshards migrate discover-shards reconcile-docs-status publish-core-docs warm-popular-docs; do \
       test -f "$binary" || { echo "$binary is not a file"; exit 1; }; \
       test ! -d "$binary" || { echo "$binary is a directory, not a binary"; exit 1; }; \
       test -x "$binary" || { echo "$binary is not executable"; exit 1; }; \
@@ -130,6 +132,7 @@ COPY --from=builder --chown=1000:1000 /app/migrate ./migrate
 COPY --from=builder --chown=1000:1000 /app/discover-shards ./discover-shards
 COPY --from=builder --chown=1000:1000 /app/reconcile-docs-status ./reconcile-docs-status
 COPY --from=builder --chown=1000:1000 /app/publish-core-docs ./publish-core-docs
+COPY --from=builder --chown=1000:1000 /app/warm-popular-docs ./warm-popular-docs
 
 # Static assets. Lucky serves these from the relative path ./public at runtime
 # (see Lucky::StaticFileHandler in src/app_server.cr), so omitting them makes every
@@ -141,8 +144,8 @@ COPY --from=builder --chown=1000:1000 /app/public ./public
 # stayed invisible until the container tried to exec it, so this is asserted on both
 # sides: in the builder where the artifact is produced, and here where a COPY of a
 # directory would otherwise arrive silently and only fail at `docker run`.
-RUN chmod +x ./crystalshards ./migrate ./discover-shards ./reconcile-docs-status ./publish-core-docs && \
-    for binary in ./crystalshards ./migrate ./discover-shards ./reconcile-docs-status ./publish-core-docs; do \
+RUN chmod +x ./crystalshards ./migrate ./discover-shards ./reconcile-docs-status ./publish-core-docs ./warm-popular-docs && \
+    for binary in ./crystalshards ./migrate ./discover-shards ./reconcile-docs-status ./publish-core-docs ./warm-popular-docs; do \
       test -f "$binary" || { echo "$binary is not a file"; exit 1; }; \
       test ! -d "$binary" || { echo "$binary is a directory, not a binary"; exit 1; }; \
       test -x "$binary" || { echo "$binary is not executable"; exit 1; }; \

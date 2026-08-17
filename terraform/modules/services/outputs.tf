@@ -92,3 +92,8 @@ output "docs_build_service_account_email" {
   description = "The untrusted build identity. Holds no IAM bindings anywhere, by design"
   value       = google_service_account.docs_build.email
 }
+
+output "warm_popular_docs_job" {
+  description = "Name of the documentation warming Job. The scheduler module builds its Cloud Run Jobs :run target from this rather than restating the name"
+  value       = google_cloud_run_v2_job.warm_popular_docs.name
+}

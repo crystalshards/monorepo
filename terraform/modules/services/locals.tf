@@ -605,6 +605,7 @@ locals {
     local.migration_secret_accessors,
     local.discovery_secret_accessors,
     local.docs_status_reconcile_secret_accessors,
+    local.warm_popular_docs_secret_accessors,
   )
 
   # Every identity permitted to open a connection to the Cloud SQL instance.
@@ -617,14 +618,24 @@ locals {
     { "docs-launcher" = google_service_account.docs_launcher.email },
     { "discover-shards" = google_service_account.discover_shards.email },
     { "docs-status-reconcile" = google_service_account.docs_status_reconcile.email },
+    { "warm-popular-docs" = google_service_account.warm_popular_docs.email },
   )
 
-  # The two services that put work on the docs-builds queue. crystaldocs is the
+  # Everything that puts work on the docs-builds queue. crystaldocs is the
   # primary producer, commissioning a build when a reader opens a page with no
-  # artifact; crystalshards chains one after indexing a new version.
+  # artifact; crystalshards chains one after indexing a new version; the
+  # warming Job commissions the head of the popularity ranking on a schedule so
+  # its first reader is not the one who waits for it.
+  #
+  # Membership here buys two grants, and both are required: cloudtasks.enqueuer
+  # on the queue, and serviceAccountUser on docs-tasks so the caller may mint a
+  # token as the one identity docs-launcher will accept. An enqueuer with only
+  # the first gets its tasks accepted and then refused at delivery with a 403,
+  # which surfaces as documentation that never appears.
   enqueuers = {
-    crystalshards = google_service_account.apps["crystalshards"].email
-    crystaldocs   = google_service_account.apps["crystaldocs"].email
+    crystalshards     = google_service_account.apps["crystalshards"].email
+    crystaldocs       = google_service_account.apps["crystaldocs"].email
+    warm_popular_docs = google_service_account.warm_popular_docs.email
   }
 
   # Storage grants, in one table so the whole object access matrix is legible.
