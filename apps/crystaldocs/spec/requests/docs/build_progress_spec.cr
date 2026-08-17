@@ -72,4 +72,31 @@ describe "build progress" do
       ["cloning", "resolving", "dependencies", "documenting", "uploading"]
     )
   end
+
+  it "lists what is about to happen while the build is still queued" do
+    # The longest a reader waits with the least to look at: nothing has been
+    # claimed, so there is no progress to report. Observed in production, where
+    # a warm-commissioned build sat in pending showing a paragraph and nothing
+    # else until a worker picked it up.
+    DocFactory.create &.package_name("queued-pkg")
+    DocVersionFactory.create &.doc_id(DocQuery.new.package_name("queued-pkg").first.id)
+      .version("1.0.0")
+      .build_status("pending")
+
+    DocBuildRequestFactory.create &.package_name("queued-pkg")
+      .version("1.0.0")
+      .status(DocBuildRequest::PENDING)
+
+    StubDocsStorage.empty.install
+    RecordingBuildQueue.install
+
+    response = get("/docs/queued-pkg/1.0.0")
+
+    response.status_code.should eq(200)
+    CrystalDocs::BuildSteps::ALL.each { |step| response.body.should contain(step.label) }
+
+    # Nothing claimed yet, so nothing is claimed to be done.
+    response.body.should_not contain("is-done")
+    response.body.should_not contain("is-current")
+  end
 end
