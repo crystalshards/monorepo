@@ -304,6 +304,17 @@ locals {
     BITS_SITE_ORIGIN   = var.app_domains["crystalbits"]
   }
 
+  # SEARCH_CONSOLE_PROPERTY per app, and only for an app that has one. An app
+  # missing from the map contributes no key at all rather than an empty one:
+  # the service treats the variable as absent-or-set, and an empty string is a
+  # third state that would read as "configured with nothing".
+  search_console_env = {
+    for slug in local.apps :
+    slug => try(var.search_console_properties[slug], "") != "" ? {
+      SEARCH_CONSOLE_PROPERTY = var.search_console_properties[slug]
+    } : {}
+  }
+
   # Per service shape and wiring. Everything that differs between the four apps
   # is visible in this one table, so the resource below stays uniform and the
   # differences cannot drift apart across four near identical blocks.
@@ -317,7 +328,7 @@ locals {
       max_instances = 5
       cpu           = "1"
       memory        = "512Mi"
-      env = merge(local.common_env, local.enqueuer_env, local.site_links_env, {
+      env = merge(local.common_env, local.enqueuer_env, local.site_links_env, local.search_console_env["crystalshards"], {
         APP_DOMAIN      = var.app_domains["crystalshards"]
         JOB_ADS_URL     = var.job_ads_url
         DOCS_BUCKET     = var.docs_bucket_name
@@ -378,7 +389,7 @@ locals {
       max_instances = 5
       cpu           = "1"
       memory        = "512Mi"
-      env = merge(local.common_env, local.enqueuer_env, local.site_links_env, {
+      env = merge(local.common_env, local.enqueuer_env, local.site_links_env, local.search_console_env["crystaldocs"], {
         APP_DOMAIN  = var.app_domains["crystaldocs"]
         JOB_ADS_URL = var.job_ads_url
         DOCS_BUCKET = var.docs_bucket_name
@@ -395,7 +406,7 @@ locals {
       max_instances = 5
       cpu           = "1"
       memory        = "512Mi"
-      env = merge(local.common_env, local.site_links_env, {
+      env = merge(local.common_env, local.site_links_env, local.search_console_env["crystalgigs"], {
         APP_DOMAIN = var.app_domains["crystalgigs"]
       })
       secret_env = merge({
@@ -412,7 +423,7 @@ locals {
       max_instances = 5
       cpu           = "1"
       memory        = "512Mi"
-      env = merge(local.common_env, local.site_links_env, {
+      env = merge(local.common_env, local.site_links_env, local.search_console_env["crystalbits"], {
         APP_DOMAIN  = var.app_domains["crystalbits"]
         JOB_ADS_URL = var.job_ads_url
       })

@@ -38,5 +38,21 @@ module "services" {
   job_ads_url              = "https://${local.sites["crystalgigs"].apex}/api/ads"
   docs_launcher_app_domain = "https://${local.sites["crystalshards"].apex}"
 
+  # All four sites are registered in Search Console as domain properties, so
+  # the property name is the apex under the sc-domain scheme. Derived from the
+  # same local.sites the origins above come from, so a site cannot be told to
+  # ask Google about a hostname it does not serve.
+  #
+  # A property here is only half the wiring. The other half is this repo's
+  # service account for that app being a user on that property, which lives in
+  # Search Console and not in any state file:
+  #   crystalshards@<project>.iam.gserviceaccount.com -> sc-domain:crystalshards.org
+  #   crystaldocs@<project>.iam.gserviceaccount.com   -> sc-domain:crystaldocs.org
+  #   crystalgigs@<project>.iam.gserviceaccount.com   -> sc-domain:crystalgigs.com
+  #   crystalbits@<project>.iam.gserviceaccount.com   -> sc-domain:crystalbits.org
+  # all added as Restricted users. Revoke there and the fetch 403s naming the
+  # account, which is the state the stats page reports rather than hides.
+  search_console_properties = { for slug, site in local.sites : slug => "sc-domain:${site.apex}" }
+
   depends_on = [module.project_services]
 }
