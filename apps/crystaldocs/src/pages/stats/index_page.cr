@@ -70,6 +70,13 @@ class Stats::IndexPage < MainLayout
         if @report.counting_error
           text " Counting is temporarily behind; the newest days are not settled yet."
         end
+      elsif started = @report.recording_since
+        # Rows are arriving and none has been rolled yet, which is every
+        # site's first day. Saying "no visits recorded" here would be a
+        # claim about the reader's own visit that this page just counted.
+        text "Counting began #{format_date(started)}. A day's numbers are " \
+             "rolled up once the day has ended, so the first of them appear " \
+             "here tomorrow."
       else
         text "This site has not recorded any visits yet. When it does, they " \
              "will appear here, and this note will say when counting began."
