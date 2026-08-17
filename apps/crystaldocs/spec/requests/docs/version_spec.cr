@@ -149,4 +149,30 @@ describe Docs::Version do
       "doc/assets/crystal-born-and-raised.svg"
     )
   end
+
+  # The switcher is how a reader moves between versions, and it used to list
+  # only what this site had already built. A package with sixty tags and two
+  # visits offered a choice of two, and the rest were reachable only by
+  # guessing the URL.
+  it "offers versions the registry published that have never been built here" do
+    RegistrySchema.reset
+    shard = RegistrySchema.shard("test-package", "test-package")
+    RegistrySchema.version(shard, "2.0.0")
+    RegistrySchema.version(shard, "1.0.0")
+
+    doc = DocFactory.create &.package_name("test-package")
+    DocVersionFactory.create &.doc_id(doc.id).version("1.0.0").build_status("success")
+
+    response = BrowserClient.exec(Docs::Version.with(package_name: "test-package", version: "1.0.0"))
+
+    response.status_code.should eq(200)
+
+    # Grouped, because "documented" and "we will build this if you ask" are
+    # different offers and a flat list makes them read the same.
+    response.body.should contain(%(<optgroup label="Documented">))
+    response.body.should contain(%(<optgroup label="Not built yet">))
+
+    # 2.0.0 has no doc_versions row at all and is still reachable.
+    response.body.should contain("/docs/test-package/2.0.0")
+  end
 end
