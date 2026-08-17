@@ -97,6 +97,14 @@ module StatsReport
     getter first_counted_day : Time?
     getter counted_through : Time?
 
+    # When the collector's own table holds rows that no rollup has reached,
+    # the moment the earliest of them arrived; nil once a day has rolled, and
+    # nil when nothing has ever been recorded. This is what separates a site
+    # on its first day from a site that is not counting: without it the page
+    # would tell a reader it recorded no visits while holding the row for
+    # the very request that rendered the sentence.
+    getter recording_since : Time?
+
     # True when the counting pipeline's own claim row carries a failure. The
     # page renders this as "counting is behind", never as a dip toward zero.
     getter counting_error : Bool
@@ -104,7 +112,7 @@ module StatsReport
     def initialize(
       @days, @from, @to, @daily, @top_pages, @referrers, @direct_views,
       @countries, @search_console, @first_counted_day, @counted_through,
-      @counting_error,
+      @counting_error, @recording_since = nil,
     )
     end
 
@@ -138,6 +146,7 @@ module StatsReport
     from = to - (days - 1).days
 
     counting = rollup_state("daily_stats")
+    first = first_counted_day
 
     Report.new(
       days: days,
@@ -149,9 +158,13 @@ module StatsReport
       direct_views: direct_views(from, to),
       countries: top_countries(from, to, list_size),
       search_console: search_console(from, to, list_size),
-      first_counted_day: first_counted_day,
+      first_counted_day: first,
       counted_through: counting.try(&.[0]) || last_counted_day,
-      counting_error: !counting.nil? && !counting[1].nil?
+      counting_error: !counting.nil? && !counting[1].nil?,
+      # Only asked when the rollup has produced nothing: on every other
+      # render the answer is not used, and the collector's table is the
+      # largest one here.
+      recording_since: first.nil? ? recording_since : nil
     )
   end
 
@@ -303,6 +316,15 @@ module StatsReport
   # The first day this site ever counted, from the totals rows.
   def self.first_counted_day : Time?
     sql = "SELECT MIN(day) FROM daily_stats WHERE path_kind = 'site'"
+    AppDatabase.scalar(sql, queryable: "StatsReport").as(Time?)
+  end
+
+  # When the collector's own table first holds a row. Asked only when no day
+  # has rolled, which is the one state where the difference between "nothing
+  # recorded" and "nothing rolled yet" is visible to a reader. Indexed on
+  # occurred_at, and the table is pruned, so this is a bounded index scan.
+  def self.recording_since : Time?
+    sql = "SELECT MIN(occurred_at) FROM page_views"
     AppDatabase.scalar(sql, queryable: "StatsReport").as(Time?)
   end
 
