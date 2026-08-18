@@ -1577,6 +1577,61 @@ jobs:
 
           echo "${job}: ${configured}"
 
+      - name: Update the warm-popular-docs Job image
+        shell: bash
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          REGISTRY_URL: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}
+          SHA: ${{ needs.gate.outputs.sha }}
+        run: |
+          set -euo pipefail
+
+          # The second instance of the bug the discover-shards step above
+          # documents, introduced by the commit that added this Job. Terraform
+          # creates a Cloud Run Job and then ignores its image, so a Job with no
+          # step here runs whatever it was born with forever, and every deploy
+          # is green while the Job executes code from the day it was created.
+          #
+          # The symptom that found it: the warming Job printed the summary line
+          # from the release before the one that had just deployed.
+          #
+          # Every Job needs its own step here. There is no loop that would have
+          # picked this up, which is why adding a Job means editing this file.
+          job="warm-popular-docs"
+          image="${REGISTRY_URL}/crystalshards:${SHA}"
+
+          gcloud run jobs update "$job" --region "$REGION" --image "$image" --quiet
+
+          # Read it back. A successful update is not the same as the template
+          # holding the image the next execution will actually run.
+          job_json="$(gcloud run jobs describe "$job" --region "$REGION" --format=json)"
+          configured="$(jq -r '
+            (.spec.template.spec.template.spec.containers[0].image
+             // .spec.template.template.containers[0].image
+             // .template.template.containers[0].image
+             // ([.. | objects | select(has("containers")) | .containers[0].image?]
+                 | map(select(. != null)) | first)
+             // empty)' <<< "$job_json")"
+
+          if [ -z "$configured" ]; then
+            echo "Could not read the container image of Job ${job}." >&2
+            echo "Top level keys: $(jq -r 'keys | join(", ")' <<< "$job_json")" >&2
+            exit 1
+          fi
+
+          if [ "$configured" != "$image" ]; then
+            echo "Job ${job} is configured with '${configured}', expected '${image}'." >&2
+            exit 1
+          fi
+          case "$configured" in
+            *:latest)
+              echo "Job ${job} is pinned to 'latest'; images must be pinned to a commit SHA." >&2
+              exit 1
+              ;;
+          esac
+
+          echo "${job}: ${configured}"
+
       - name: Update the publish-core-docs Job image
         shell: bash
         env:
