@@ -105,6 +105,8 @@ class ShardIndexer
       return Result.new(Outcome::Unsupported, @shard, detail: detail)
     end
 
+    step(IndexSteps::READING)
+
     begin
       snapshot = api.fetch_snapshot
     rescue ex : RepositorySource::NotFound
@@ -115,13 +117,17 @@ class ShardIndexer
       return Result.new(Outcome::Failed, @shard, detail: detail)
     end
 
+    step(IndexSteps::MANIFEST)
     latest = VersionOrder.latest(snapshot.refs)
     content = latest ? fetch_content(api, latest, snapshot) : nil
 
     # Stored first, then resolved: the graph is written from a manifest that is
     # already committed, so a dependency failure cannot cost the shard the
     # content this pass just fetched.
+    step(IndexSteps::RECORDING)
     indexed_version = store(snapshot, latest, content)
+
+    step(IndexSteps::DEPENDENCIES)
     dependencies = resolve_dependencies(indexed_version, content)
 
     Result.new(
@@ -226,16 +232,69 @@ class ShardIndexer
     stamp(index_attempted_at: Time.utc)
   end
 
+  # The ordered steps an index pass moves through, written one at a time while
+  # it runs so a visitor watching an unindexed shard sees it advance rather
+  # than reading one sentence for the whole pass.
+  #
+  # Both the writer and the reader are in this app, unlike the documentation
+  # build's equivalent, so there is one list and no vocabulary to keep in sync.
+  module IndexSteps
+    record Step, name : String, label : String, description : String
+
+    READING      = "reading"
+    MANIFEST     = "manifest"
+    RECORDING    = "recording"
+    DEPENDENCIES = "dependencies"
+
+    # In the order `ShardIndexer#call` performs them.
+    ALL = [
+      Step.new(READING, "Reading the repository", "Fetching its tags and metadata."),
+      Step.new(MANIFEST, "Reading shard.yml", "And the README, at the newest tag."),
+      Step.new(RECORDING, "Recording versions", "Writing what the repository publishes."),
+      Step.new(DEPENDENCIES, "Resolving dependencies", "Matching what it depends on to the registry."),
+    ]
+
+    def self.index_of(name : String?) : Int32?
+      return nil if name.nil?
+
+      ALL.index { |step| step.name == name }
+    end
+  end
+
+  # Where this pass has got to, for the page that commissioned it.
+  #
+  # Never raises and never fails a pass. A step is a progress hint with no
+  # durable meaning: `finish` clears it either way, and a pass whose steps were
+  # all lost still records its outcome correctly. Losing an index pass in order
+  # to report that it reached step three would be a strictly worse trade.
+  private def step(name : String) : Nil
+    AppDatabase.exec(
+      "UPDATE shards SET index_step = $1, updated_at = NOW() WHERE id = $2",
+      name,
+      @shard.id
+    )
+  rescue ex : Exception
+    Log.warn(exception: ex) do
+      "ShardIndexer: could not record step #{name} for shard #{@shard.id}; " \
+      "the pass is unaffected"
+    end
+  end
+
   # Same reasoning as claim: recording why a shard could not be indexed must not
   # require the shard to be well-formed enough to save.
   private def stamp(
     index_attempted_at : Time? = nil,
     index_error : String? = nil,
   ) : Nil
+    # index_step is cleared here rather than set. Every path that stamps an
+    # outcome is the end of the pass, so no progress may outlive it: a shard
+    # left reading "Resolving dependencies" after the pass failed would show a
+    # visitor a step that is not happening.
     AppDatabase.exec(<<-SQL, index_attempted_at, index_error, @shard.id)
       UPDATE shards
       SET index_attempted_at = COALESCE($1, index_attempted_at),
           index_error = $2,
+          index_step = NULL,
           updated_at = NOW()
       WHERE id = $3
       SQL
