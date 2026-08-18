@@ -34,8 +34,7 @@ class Footer < Lucky::BaseComponent
         end
 
         div class: "footer-bottom" do
-          para "© #{Time.utc.year} CrystalBits. Part of the Crystal ecosystem."
-          render_bushido_line
+          render_bushido_line("© #{Time.utc.year} CrystalBits. Part of the Crystal ecosystem.")
         end
       end
     end
@@ -62,13 +61,26 @@ class Footer < Lucky::BaseComponent
   # this repository's license, sized and placed as a maker's mark rather
   # than a banner: .tbc-seal in app.css carries the currentColor treatment
   # and the size floor, not this markup.
-  private def render_bushido_line
+  # `lead` is the site's own copyright line, folded into this block rather
+  # than left as a sibling paragraph above it.
+  #
+  # It used to sit on its own, flush with the container's left edge, while
+  # the seal hung underneath it. Measured on the live page: the copyright's
+  # centre line was 37px above the seal's, and it started 70px to the left of
+  # the text the seal is actually paired with. Everything in this block now
+  # sits in one column to the right of the mark, centred against it.
+  private def render_bushido_line(lead : String? = nil)
     para class: "tbc-seal-line" do
       a href: "https://thebushido.co", class: "tbc-seal-link", target: "_blank",
         rel: "noopener", "aria-label": "Forged by The Bushido Collective" do
         span class: "tbc-seal", "aria-hidden": "true"
       end
       span class: "tbc-seal-copy" do
+        if lead
+          text lead
+          br
+        end
+
         text "The Bushido Collective builds and maintains this site."
         br
         text "Licensed under the "
