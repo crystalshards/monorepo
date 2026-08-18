@@ -484,3 +484,9 @@ variable "warm_max_builds" {
   type        = number
   default     = 25
 }
+
+variable "warm_max_indexes" {
+  description = "How many unread popular shards one warming run reads from their host. Cheaper than a build, but it runs inline in the Job and spends the same per-host rate limit the discovery sweep draws on"
+  type        = number
+  default     = 10
+}

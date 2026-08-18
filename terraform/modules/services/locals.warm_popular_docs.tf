@@ -20,6 +20,11 @@ locals {
       # the other is how a warm run starves the builds readers are waiting on.
       WARM_SCAN_SHARDS = tostring(var.warm_scan_shards)
       WARM_MAX_BUILDS  = tostring(var.warm_max_builds)
+
+      # The indexing pass runs first: a shard nobody has read has no versions,
+      # so the documentation pass would count it as having none published and
+      # skip it on every run.
+      WARM_MAX_INDEXES = tostring(var.warm_max_indexes)
     })
 
     secret_env = {
