@@ -48,6 +48,11 @@ class Shard < BaseModel
     column index_attempted_at : Time?
     column index_error : String?
 
+    # Where a running index pass has got to. Written by `ShardIndexer` around
+    # each step and cleared when the pass finishes either way, so it is only
+    # ever meaningful while a pass is actually running.
+    column index_step : String?
+
     # The repository this shard is, as opposed to what it calls itself.
     # `name` is the display name from shard.yml and is not unique: two hosts
     # may each have a "router". `canonical_slug` is "host/owner/repo" and is

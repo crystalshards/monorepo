@@ -20,6 +20,7 @@ module CrystalShards
   module DocsWarming
     SCAN_VARIABLE    = "WARM_SCAN_SHARDS"
     ENQUEUE_VARIABLE = "WARM_MAX_BUILDS"
+    INDEX_VARIABLE   = "WARM_MAX_INDEXES"
 
     # How far down the popularity ranking one run looks. The scan is cheap: one
     # query plus one batched lookup against the docs database, no host traffic.
@@ -32,14 +33,27 @@ module CrystalShards
     # the schedule is what provides the throughput.
     DEFAULT_ENQUEUE = 25
 
+    # How many popular shards one run reads from their host.
+    #
+    # A shard nobody has indexed has no versions, so the documentation pass
+    # cannot commission anything for it: it would be counted as having no
+    # published version and skipped again on every run, forever. Reading the
+    # head of the ranking is what makes the rest of this Job reach it at all.
+    #
+    # Cheaper than a build, a handful of API calls rather than a compile, but
+    # it runs inline here and spends the same per-host rate limit the discovery
+    # sweep draws on, so it is bounded too.
+    DEFAULT_INDEX = 10
+
     class ConfigurationError < Exception
     end
 
-    record Options, scan : Int32, enqueue : Int32 do
+    record Options, scan : Int32, enqueue : Int32, index : Int32 do
       def self.from_env : Options
         new(
           scan: positive(ENV[SCAN_VARIABLE]?, SCAN_VARIABLE, DEFAULT_SCAN),
-          enqueue: positive(ENV[ENQUEUE_VARIABLE]?, ENQUEUE_VARIABLE, DEFAULT_ENQUEUE)
+          enqueue: positive(ENV[ENQUEUE_VARIABLE]?, ENQUEUE_VARIABLE, DEFAULT_ENQUEUE),
+          index: positive(ENV[INDEX_VARIABLE]?, INDEX_VARIABLE, DEFAULT_INDEX)
         )
       end
 
@@ -69,6 +83,8 @@ module CrystalShards
       no_version : Int32,
       enqueued : Array(Candidate),
       failures : Array(Failure),
+      indexed : Array(String),
+      index_failures : Array(String),
       options : Options do
       # An enqueue that raised fails the run.
       #
@@ -114,7 +130,20 @@ module CrystalShards
       candidates = [] of Candidate
       no_version = 0
 
-      shards = ShardQuery.new.by_popularity.preload_shard_versions.limit(options.scan).results
+      shards = popular(options.scan)
+
+      # Indexing first, and the order is load bearing.
+      #
+      # A shard nobody has read has no versions, so the documentation pass below
+      # would count it as having no published version and skip it. On every run.
+      # Reading the head of the ranking is what lets the rest of this Job reach
+      # a popular shard that discovery found and nothing has opened since.
+      indexed, index_failures = index_unread(shards, options.index)
+
+      # Re-read once, and only when something was indexed. The list in hand was
+      # loaded before those passes ran, so its versions are the empty ones the
+      # docs pass would skip on.
+      shards = popular(options.scan) unless indexed.empty?
 
       shards.each do |shard|
         latest = VersionOrder.latest_version(shard.shard_versions)
@@ -179,8 +208,49 @@ module CrystalShards
         no_version: no_version,
         enqueued: enqueued,
         failures: failures,
+        indexed: indexed,
+        index_failures: index_failures,
         options: options
       )
+    end
+
+    private def self.popular(limit : Int32) : Array(Shard)
+      ShardQuery.new.by_popularity.preload_shard_versions.limit(limit).results
+    end
+
+    # Reads the popular shards nobody has read yet.
+    #
+    # Only `indexed_at IS NULL`, never a staleness rule. Re-reading a shard the
+    # registry already knows is what `IndexSweep` exists for, and it walks the
+    # whole catalogue on a fairness cursor; duplicating that here with a second
+    # opinion about what counts as stale would have the two passes fighting over
+    # the same per-host rate limit.
+    #
+    # Goes through `IndexSweep.indexer`, the seam the sweep itself uses, so a
+    # spec can exercise this without reaching a git host.
+    private def self.index_unread(shards : Array(Shard), bound : Int32) : Tuple(Array(String), Array(String))
+      indexed = [] of String
+      failures = [] of String
+
+      shards.each do |shard|
+        break if indexed.size + failures.size >= bound
+        next unless shard.indexed_at.nil?
+
+        begin
+          result = IndexSweep.indexer.call(shard)
+
+          if result.indexed?
+            indexed << package_key(shard)
+          else
+            failures << "#{package_key(shard)}: #{result.detail || result.outcome}"
+          end
+        rescue ex : Exception
+          Log.error(exception: ex) { "DocsWarming: could not index #{package_key(shard)}" }
+          failures << "#{package_key(shard)}: #{ex.message.presence || ex.class.name}"
+        end
+      end
+
+      {indexed, failures}
     end
 
     # The key crystaldocs documents a package under, which is the canonical
@@ -207,8 +277,24 @@ module CrystalShards
     def self.render(report : Report, io : IO = STDOUT) : Nil
       io.puts "Documentation warming"
       io.puts "  Ranking: dependents first, then stars, the same order the listing sorts by."
-      io.puts "  Bounds: scanned the top #{report.options.scan}, commissioning at most #{report.options.enqueue} builds."
+      io.puts "  Bounds: scanned the top #{report.options.scan}, reading at most #{report.options.index} " \
+              "unread shards and commissioning at most #{report.options.enqueue} builds."
       io.puts
+
+      # The indexing pass is reported first because it runs first, and because
+      # a shard appearing here this run is why a build can appear below for it
+      # next run.
+      unless report.indexed.empty?
+        io.puts "Read for the first time:"
+        report.indexed.each { |slug| io.puts "  #{slug}" }
+        io.puts
+      end
+
+      unless report.index_failures.empty?
+        io.puts "Could not read:"
+        report.index_failures.each { |line| io.puts "  #{line}" }
+        io.puts
+      end
 
       if report.enqueued.empty?
         io.puts "Commissioned: nothing."
@@ -231,7 +317,8 @@ module CrystalShards
               "#{report.in_flight} already building, " \
               "#{report.no_version} with no published version, " \
               "#{report.enqueued.size} commissioned, " \
-              "#{report.failures.size} refused."
+              "#{report.failures.size} refused. " \
+              "Read #{report.indexed.size} for the first time, #{report.index_failures.size} could not be read."
 
       # Said plainly, because "commissioned nothing" is the steady state once
       # the head is warm and reads exactly like a broken job otherwise.

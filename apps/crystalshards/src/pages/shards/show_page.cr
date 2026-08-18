@@ -189,6 +189,8 @@ class Shards::ShowPage < MainLayout
           text "nothing is known yet, so everything below is unknown "
           text "rather than absent."
         end
+
+        render_index_progress
       end
     elsif version = @selected_version
       unless version.indexed?
@@ -207,6 +209,41 @@ class Shards::ShowPage < MainLayout
           text "it should not be picked for new work."
         end
       end
+    end
+  end
+
+  # The steps an index pass moves through, with the one in progress marked.
+  #
+  # Every step is listed from the start, so the list does not reflow as the
+  # pass advances, and a pass that has reported nothing yet marks none of them
+  # done rather than guessing. Same treatment the documentation build's page
+  # gives its own steps, for the same reason: "being indexed" for the whole of
+  # a multi-step pass reads exactly like nothing happening.
+  private def render_index_progress
+    current = ShardIndexer::IndexSteps.index_of(@shard.index_step)
+
+    ol class: "index-steps", "aria-label": "Indexing progress" do
+      ShardIndexer::IndexSteps::ALL.each_with_index do |step, index|
+        li class: "index-step #{index_step_state(index, current)}" do
+          span class: "index-step-label" do
+            text step.label
+          end
+
+          span class: "index-step-detail" do
+            text step.description
+          end
+        end
+      end
+    end
+  end
+
+  private def index_step_state(index : Int32, current : Int32?) : String
+    return "is-waiting" if current.nil?
+
+    case
+    when index < current  then "is-done"
+    when index == current then "is-current"
+    else                       "is-waiting"
     end
   end
 
