@@ -46,11 +46,42 @@ Note that the compiled binary itself runs in effectively no time, so nearly all 
 is compilation. A build-then-exec split is the obvious later optimization. Phase 1 does not
 do it.
 
-These are macOS figures. The container on Linux will differ and must be re-measured there
-rather than assumed.
+Those are workstation figures. The deployed numbers are worse, and this is the number that
+matters because it is the one a visitor experiences.
+
+Measured through the production console at `trycrystal.org/api/executions`, pinned to the
+load balancer, interpreter mode, warm:
+
+| | wall clock | runner duration_ms |
+|---|---|---|
+| first submission after deploy | 2.95 s | 2499 |
+| `1 + 1`, three consecutive runs | 1.74 to 1.87 s | 1584 / 1692 / 1619 |
+
+So production is roughly three times the 544 to 621 ms measured in the same image locally.
+The image and the execution mode are identical, so the difference is the platform: an M5 Max
+core against whatever CPU allocation the Cloud Run service holds. This is a real gap against
+the sub-second intent, not a rounding error, and the honest lever is the runner's CPU
+allocation rather than anything in the code. Raise it and re-measure here before claiming
+sub-second in production.
 
 Sandbox cold start remains the other latency risk, which is why the runner is warm
-(section 4) rather than a container or Job per request.
+(section 4) rather than a container or Job per request. The first-submission figure above is
+what a cold path costs even with a warm pool configured.
+
+### Proven against the deployed service
+
+Confinement was verified in production, not only locally, by submitting hostile code through
+the public console. Both attempts returned the seccomp filter's own errno rather than an
+ambiguous failure:
+
+- outbound TCP to `1.1.1.1:80`
+  -> `BLOCKED: Failed to create socket: Address family not supported by protocol`
+- the metadata server at `169.254.169.254`, which mints tokens
+  -> `BLOCKED: Failed to create socket: Address family not supported by protocol`
+
+Both returned `exit_code: 0` with real output, so the refusals are not execution breaking.
+The metadata case is the one worth naming: on Cloud Run that address is how a process asks
+for credentials, so it is the first thing hostile code should try.
 
 ## 3. Inline per-line values: deferred, with a known path
 
