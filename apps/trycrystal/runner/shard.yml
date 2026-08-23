@@ -1,0 +1,13 @@
+name: trycrystal_runner
+version: 0.1.0
+
+crystal: ">= 1.18.0"
+
+# Stdlib only, deliberately. The runner executes untrusted code on a hot path
+# with a process per submission; every dependency here would be another supply
+# chain surface inside the sandbox image for no gain.
+authors:
+  - Jason Waldrip <jason@waldrip.dev>
+targets:
+  trycrystal-runner:
+    main: src/main.cr

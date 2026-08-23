@@ -490,3 +490,96 @@ variable "warm_max_indexes" {
   type        = number
   default     = 10
 }
+
+variable "trycrystal_runner_min_instances" {
+  description = <<-DESC
+    Warm instances held for the runner. 1 is the product: the runner is a warm
+    pool by design (DESIGN.md sections 2 and 4), because a cold started instance
+    has to boot the toolchain before it can answer, and the tutorial is built
+    around sub-second answers. Setting this to 0 saves one idle instance and
+    reintroduces the cold start on the first submission of every quiet period.
+  DESC
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.trycrystal_runner_min_instances >= 0
+    error_message = "trycrystal_runner_min_instances cannot be negative."
+  }
+}
+
+variable "trycrystal_runner_max_instances" {
+  description = <<-DESC
+    Ceiling on runner instances. Throughput scales here rather than on
+    concurrency, because concurrency is pinned at 1 by the confinement
+    analysis: concurrent submissions on one instance share a uid and kill(2)
+    between siblings is not denied, so an instance runs one submission at a
+    time and the fleet scales out instead. 4 is the phase 1 shape.
+  DESC
+  type        = number
+  default     = 4
+
+  validation {
+    condition     = var.trycrystal_runner_max_instances >= var.trycrystal_runner_min_instances
+    error_message = "trycrystal_runner_max_instances must be at least trycrystal_runner_min_instances, or the fleet can never scale."
+  }
+}
+
+variable "trycrystal_runner_concurrency" {
+  description = <<-DESC
+    Requests per runner instance. 1 is not a placeholder, it is a confinement
+    decision: the runner serializes executions per instance and the sandbox
+    analysis (apps/trycrystal/sandbox/VERIFICATION.md) found that sibling
+    submissions on one instance can signal each other. Raising this without
+    per-execution uid isolation in the runner reopens that gap, so the default
+    and the analysis travel together.
+  DESC
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.trycrystal_runner_concurrency == 1
+    error_message = "trycrystal_runner_concurrency must stay 1 until the runner isolates concurrent submissions by uid; see apps/trycrystal/sandbox/VERIFICATION.md."
+  }
+}
+
+variable "trycrystal_runner_timeout_seconds" {
+  description = <<-DESC
+    Request timeout on the runner. Comfortably above the per-execution
+    timeout the runner enforces itself (5s in phase 1), so the platform
+    timeout is the backstop that catches a runner that has stopped
+    answering, never the deadline that kills a submission the runner would
+    have finished and reported.
+  DESC
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.trycrystal_runner_timeout_seconds >= 15 && var.trycrystal_runner_timeout_seconds <= 3600
+    error_message = "trycrystal_runner_timeout_seconds must be between 15 and 3600, Cloud Run's accepted request timeout range."
+  }
+}
+
+variable "trycrystal_runner_cpu" {
+  description = "vCPU per runner instance. Compilation is the cost of a submission (`crystal run` compiles then executes), so 2 is the floor for sub-two-second compiles on the measured image; see apps/trycrystal/REGISTRATION.md for the measured numbers behind the default"
+  type        = string
+  default     = "2"
+}
+
+variable "trycrystal_runner_memory" {
+  description = "Memory per runner instance. Sized to the peak of `crystal run` on a submission with stdlib requires, which is the heaviest thing phase 1 asks of it"
+  type        = string
+  default     = "4Gi"
+}
+
+variable "trycrystal_runner_port" {
+  description = "Port the runner listens on. The runner reads PORT, Cloud Run derives the injected PORT from this declared container port, and the local development contract (RUNNER_URL=http://localhost:9292) uses the same number so a spec against a local runner and a probe against the deployed one agree"
+  type        = number
+  default     = 9292
+}
+
+variable "trycrystal_runner_health_path" {
+  description = "Startup probe path for the runner. /health, not the apps' /api/health: the runner is not a Lucky app and mounts nothing at /api. The endpoint answers 200 only once the runner has verified its own confinement and refuses otherwise, so the probe is part of the fail-closed gate"
+  type        = string
+  default     = "/health"
+}

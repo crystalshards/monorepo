@@ -16,7 +16,22 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        app: [crystalshards, crystaldocs, crystalgigs, crystalbits]
+        # database drives the migration entrypoint build below: every database
+        # backed app MUST build src/migrate.cr or its deploy breaks, and a
+        # database: false app must not have one silently skipped out from
+        # under it. trycrystal is the false case: it has no database, no
+        # migrate binary, and no migration Job.
+        include:
+          - app: crystalshards
+            database: true
+          - app: crystaldocs
+            database: true
+          - app: crystalgigs
+            database: true
+          - app: crystalbits
+            database: true
+          - app: trycrystal
+            database: false
 
     services:
       postgres:
@@ -78,6 +93,8 @@ jobs:
 
       - name: Build ${{ matrix.app }}
         working-directory: ./apps/${{ matrix.app }}
+        env:
+          HAS_DATABASE: ${{ matrix.database }}
         run: |
           set -euo pipefail
           echo "Building ${{ matrix.app }}..."
@@ -86,8 +103,15 @@ jobs:
           # The migration entrypoint is a second binary that the ${{ matrix.app }}-migrate
           # Cloud Run Job runs, and nothing else compiles it. Without this, a broken
           # migrator ships green and is only discovered when a deploy tries to migrate.
-          echo "Building the migration entrypoint..."
-          crystal build --no-codegen src/migrate.cr
+          # Only database backed apps have one; the flag comes from the matrix so
+          # removing migrate.cr from a database app still fails this build rather
+          # than being skipped as if the app had never had a database.
+          if [ "$HAS_DATABASE" = "true" ]; then
+            echo "Building the migration entrypoint..."
+            crystal build --no-codegen src/migrate.cr
+          else
+            echo "${{ matrix.app }} has no database, so no migration entrypoint to build."
+          fi
 
           echo "Build successful!"
 
@@ -136,6 +160,154 @@ jobs:
 
           echo "Checking Crystal formatting for ${{ matrix.app }}: ${targets[*]}"
           crystal tool format --check "${targets[@]}"
+
+  # The trycrystal runner's confinement proof, run on Linux against the image
+  # CI itself builds.
+  #
+  # This job exists because the proof is worthless anywhere else. The runner
+  # executes strangers' Crystal, and every control it relies on (the seccomp
+  # egress filter, the uid drop, the environment scrub, the read-only system
+  # paths) is a Linux kernel behaviour. A developer's macOS docker runs those
+  # containers inside a VM whose uid and filesystem semantics can mask exactly
+  # the defects this spec is looking for, so a local pass is encouraging and
+  # not evidence.
+  #
+  # The spec ships a negative control: the same hostile fixture through the
+  # same HTTP path with ALLOW_UNSAFE=true, which MUST leak. That is what makes
+  # the confined leg's "blocked" a measurement instead of a coincidence, and
+  # it is why this job runs the whole file rather than a selected example.
+  # Cost, measured rather than assumed: a `docker build --no-cache` of
+  # Dockerfile.interpreter took 623s (10m23s) on an M5 Max, of which the
+  # from-source `make crystal interpreter=1 release=1` is about 335s. A
+  # GitHub-hosted runner has 4 vCPU, so expect materially longer here. This
+  # job also builds the docs-build substrate image inside the spec, and it
+  # deliberately uses no build cache, so the timeout is sized for the whole
+  # cold path rather than for the happy case.
+  #
+  # If this proves too slow to live on every commit, the fix is a separately
+  # tagged prebuilt toolchain base that this Dockerfile FROMs, not dropping
+  # the proof. Note that would move the compiler out of the per-commit proof
+  # path, which is a real if small loss.
+  runner-confinement:
+    name: trycrystal Runner Confinement Proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # The compiler that runs the SPEC on the host. The runner's shard.yml
+      # requires >= 1.18.0, so it does not build under the 1.17.1 the Lucky
+      # apps pin, and CRYSTAL_VERSION at the top of this file is deliberately
+      # not reused here.
+      #
+      # The Crystal the runner's IMAGE ships, which is the version a learner's
+      # submission actually runs against, is pinned separately by the
+      # CRYSTAL_VERSION build argument in the runner's Dockerfile. The two
+      # being independent is the point: the proof harness and the product do
+      # not have to move together.
+      RUNNER_CRYSTAL_VERSION: "1.18.2"
+      # The image under test, and it is the INTERPRETER image, because that is
+      # what deploys. Proving containment on an image we do not ship proves
+      # nothing about production: the interpreter's compile phase is a
+      # different code path from `crystal run`, macros still execute there,
+      # and the filter and rlimits have to bind on that path too.
+      #
+      # Handed to the spec through TRYC_RUNNER_IMAGE so the proof runs against
+      # the image built here rather than building one of its own.
+      RUNNER_IMAGE_TAG: trycrystal-runner:interpreter-ci
+      RUNNER_DOCKERFILE: Dockerfile.interpreter
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Crystal
+        uses: crystal-lang/install-crystal@v1
+        with:
+          crystal: ${{ env.RUNNER_CRYSTAL_VERSION }}
+
+      - name: Build the runner image
+        working-directory: ./apps/trycrystal/runner
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Dockerfile.interpreter's first stage builds Crystal from source with
+          # interpreter=1, which is the long pole in this job. It is not cached
+          # here on purpose: this job proves the boundary of the image as built
+          # from the tree, and a cache is one more thing that can serve a stale
+          # answer to a security proof.
+          start=$(date +%s)
+          docker build -t "$RUNNER_IMAGE_TAG" -f "$RUNNER_DOCKERFILE" .
+          echo "Image build took $(( $(date +%s) - start ))s"
+
+          docker image inspect "$RUNNER_IMAGE_TAG" > /dev/null
+
+          # The mode is baked into the image rather than passed at run time, so
+          # assert it here: an interpreter image that lost its default would
+          # run every submission through `crystal run` and still pass every
+          # containment assertion, four to six times slower, silently.
+          mode="$(docker image inspect "$RUNNER_IMAGE_TAG" \
+            --format '{{range .Config.Env}}{{println .}}{{end}}' | sed -nE 's/^RUNNER_EXEC_MODE=(.*)$/\1/p')"
+          if [ "$mode" != "i" ]; then
+            echo "RUNNER_EXEC_MODE in ${RUNNER_IMAGE_TAG} is '${mode:-<unset>}', expected 'i'." >&2
+            echo "The interpreter image must default to the interpreter; run mode is the escape hatch, not the default." >&2
+            exit 1
+          fi
+
+          echo "Built $RUNNER_IMAGE_TAG (RUNNER_EXEC_MODE=${mode})"
+
+      - name: Prove confinement, and prove the proof ran
+        working-directory: ./apps/trycrystal/runner
+        shell: bash
+        env:
+          TRYC_RUNNER_IMAGE: ${{ env.RUNNER_IMAGE_TAG }}
+        run: |
+          set -uo pipefail
+
+          log="${RUNNER_TEMP}/confinement.log"
+          crystal spec spec/confinement_spec.cr 2>&1 | tee "$log"
+          status=${PIPESTATUS[0]}
+
+          # Crystal's spec runner exits 0 when every example is PENDING, and
+          # this spec pends itself by design when docker or the image is
+          # unavailable, because a silent pass would be worse. Verified
+          # locally: a file with one passing and one pending example prints
+          # "2 examples, 0 failures, 0 errors, 1 pending" and exits 0.
+          #
+          # So the exit code alone cannot tell "the boundary held" from "the
+          # boundary was never tested". The summary line is read and every
+          # count is asserted. A proof that cannot fail the build is not a
+          # gate.
+          summary="$(sed -nE 's/^([0-9]+) examples, ([0-9]+) failures, ([0-9]+) errors, ([0-9]+) pending$/\1 \2 \3 \4/p' "$log" | tail -1)"
+          if [ -z "$summary" ]; then
+            echo "Could not find a spec summary line in the output. Refusing to read an unparsed run as a pass." >&2
+            exit 1
+          fi
+
+          read -r examples failures errors pending <<< "$summary"
+          echo "examples=${examples} failures=${failures} errors=${errors} pending=${pending} exit=${status}"
+
+          if [ "$status" -ne 0 ] || [ "$failures" -ne 0 ] || [ "$errors" -ne 0 ]; then
+            echo "The confinement proof FAILED. The runner does not confine what it must." >&2
+            exit 1
+          fi
+
+          if [ "$pending" -ne 0 ]; then
+            echo "${pending} example(s) were pending, so part of the proof did not run." >&2
+            echo "The spec pends when docker or the runner image is unavailable. Both are prerequisites here, not optional." >&2
+            exit 1
+          fi
+
+          # The floor is the shape of the proof, not a magic number: three
+          # mechanism examples (negative control, confined, missing-probe
+          # demonstration) plus two service examples (confined through the
+          # real HTTP path, and the ALLOW_UNSAFE negative control). Fewer
+          # than five means an example was removed or never collected, which
+          # is the same silence this job exists to break.
+          if [ "$examples" -lt 5 ]; then
+            echo "Only ${examples} example(s) ran; expected at least 5 (three mechanism, two service)." >&2
+            exit 1
+          fi
+
+          echo "Confinement proven: ${examples} examples, no failures, none pending, negative controls included."
 
   # Two things that reached main once each and that nothing else here would
   # have caught.

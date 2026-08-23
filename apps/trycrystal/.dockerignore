@@ -1,0 +1,20 @@
+# Build artifacts. lib/ is produced inside the image by `shards install --production`;
+# letting a host-built lib/ in through `COPY . .` would overwrite it with artifacts
+# compiled for the developer's platform.
+lib/
+bin/
+tmp/
+.shards/
+
+# The runner is its own deployable with its own Dockerfile and build context
+# needs; it never belongs in the web app image. The web app talks to it over
+# HTTP (RUNNER_URL) and holds none of its code.
+runner/
+
+# Neither the server (src/trycrystal.cr) nor anything it requires reaches these.
+spec/
+.git/
+.gitignore
+docker/
+Dockerfile
+.dockerignore

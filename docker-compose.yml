@@ -186,6 +186,93 @@ services:
       - ./apps/crystalbits:/app
     command: ["lucky", "dev"]
 
+  # trycrystal Tutorial Console
+  #
+  # No DATABASE_URL and no depends_on postgres: this app has no database at
+  # all, and progress lives in the visitor's browser.
+  #
+  # Unlike the four services above, this one does not override the image's
+  # command with `lucky dev` and does not mount its source. The app images in
+  # this repo are production images whose runtime stage carries neither the
+  # Crystal toolchain nor the lucky CLI, so it runs the binary the image
+  # builds. For a source-reloading loop, run the app outside compose with
+  # `crystal run src/trycrystal.cr` (see apps/trycrystal/README.md) or use
+  # `make dev`, which starts every app and the runner together.
+  trycrystal:
+    build:
+      context: ./apps/trycrystal
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      LUCKY_ENV: development
+      SECRET_KEY_BASE: development_secret_key_base_change_in_production
+      PORT: 3004
+      # Where submissions are executed. Inside compose this is the runner
+      # service by name; outside it, the app's own default is
+      # http://localhost:9292. In production there is no default and the
+      # revision refuses to boot without it, because an app pointed at a
+      # localhost that does not exist looks healthy and answers every
+      # submission with a sandbox that is not there.
+      RUNNER_URL: http://trycrystal-runner:9292
+      JOB_ADS_URL: http://crystalgigs:3002/api/ads
+      # The other sites' origins, for the footer's cross links. See
+      # crystalshards' block above for why these have no default.
+      SHARDS_SITE_ORIGIN: http://localhost:3000
+      DOCS_SITE_ORIGIN: http://localhost:3001
+      GIGS_SITE_ORIGIN: http://localhost:3002
+      BITS_SITE_ORIGIN: http://localhost:3003
+    depends_on:
+      trycrystal-runner:
+        condition: service_healthy
+
+  # The trycrystal sandbox runner: the process that compiles and executes a
+  # visitor's Crystal. A separate deployable with its own Dockerfiles, and the
+  # only container here that runs untrusted code on purpose.
+  #
+  # ALLOW_UNSAFE=true is the documented local-development waiver and the exact
+  # string the gate accepts; nothing else is truthy to it. It runs the sandbox
+  # LOOSE, which is acceptable on a developer's machine and is never set in
+  # production, where TRYC_SANDBOX=cloudrun is what the deployed revision
+  # carries. A runner handed neither refuses to start rather than serving
+  # unconfined.
+  #
+  # THIS IS THE RUN-MODE IMAGE, AND PRODUCTION IS NOT.
+  #
+  # What deploys is Dockerfile.interpreter, whose first stage builds Crystal
+  # from source with interpreter=1 (measured at about 335 seconds of compile
+  # on an M5 Max) and which answers four to six times faster per submission.
+  # Paying that build on `docker compose up` is not a trade a developer should
+  # be forced into, so compose builds the fast run-mode image and says so
+  # rather than pretending to be production. RUNNER_EXEC_MODE=run is set
+  # explicitly for the same reason: this image carries no crystal-i, so the
+  # mode is stated here instead of depending on whatever the binary's default
+  # becomes.
+  #
+  # To run the deploy shape locally:
+  #   docker build -f apps/trycrystal/runner/Dockerfile.interpreter \
+  #     -t trycrystal-runner:interpreter apps/trycrystal/runner
+  # then set `image: trycrystal-runner:interpreter` here in place of `build`.
+  # CI's confinement proof runs against that image, never this one.
+  trycrystal-runner:
+    build:
+      context: ./apps/trycrystal/runner
+      dockerfile: Dockerfile
+    ports:
+      - "9292:9292"
+    environment:
+      PORT: 9292
+      ALLOW_UNSAFE: "true"
+      RUNNER_EXEC_MODE: run
+    healthcheck:
+      # The console depends on this being healthy, so the check has to be the
+      # runner's own readiness rather than a port being open: /health answers
+      # only once the runner has established its confinement.
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:9292/health >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
 volumes:
   postgres_data:
   minio_data:

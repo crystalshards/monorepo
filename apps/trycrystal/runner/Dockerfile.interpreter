@@ -1,0 +1,78 @@
+# Separate tag: trycrystal-runner:interpreter
+# Builds Crystal 1.21.0 from source with interpreter=true, then the same
+# runner binary on top. The working crystal-run image (Dockerfile) is
+# untouched. If this build or `crystal i` through the service fails, we
+# keep crystal run plus the seeded cache.
+ARG CRYSTAL_VERSION=1.21.0
+
+FROM crystallang/crystal:${CRYSTAL_VERSION}-alpine AS crystal-src
+ARG CRYSTAL_VERSION
+
+RUN apk add --no-cache \
+      git make g++ llvm20-dev llvm20-static llvm20-libs \
+      libffi-dev libxml2-dev yaml-dev pcre2-dev gc-dev \
+      linux-headers
+
+WORKDIR /src
+# Shallow clone of the same version the run-mode image uses.
+RUN git clone --depth 1 --branch ${CRYSTAL_VERSION} https://github.com/crystal-lang/crystal.git crystal \
+    && cd crystal \
+    && make crystal interpreter=1 release=1 progress=1 \
+    && printf '%s\n' 'puts "interpreter-ok"' > /tmp/iok.cr \
+    && CRYSTAL_PATH=/src/crystal/src ./.build/crystal i /tmp/iok.cr
+
+FROM crystallang/crystal:${CRYSTAL_VERSION}-alpine AS build
+
+RUN apk add --no-cache linux-headers llvm20-libs
+
+WORKDIR /src
+COPY shard.yml ./
+COPY src ./src
+COPY sandbox/no-egress.c ./sandbox/no-egress.c
+COPY sandbox/warmup.cr ./sandbox/warmup.cr
+
+# The runner binary is compiled with the official (no-interpreter) crystal.
+# Overwriting /usr/bin/crystal with the from-source binary fails at runtime
+# because that binary relocates LLVM symbols the official image's loader
+# does not provide at /usr/bin/crystal's usual path. The interpreter lives
+# at /usr/local/bin/crystal-i and is only used to execute submissions.
+RUN mkdir -p /out && \
+    cc -static -O2 -Wall -Wextra -Werror -o /out/no-egress sandbox/no-egress.c && \
+    crystal build --release --no-debug -o /out/trycrystal-runner src/main.cr
+
+COPY --from=crystal-src /src/crystal/.build/crystal /usr/local/bin/crystal-i
+COPY --from=crystal-src /src/crystal/src /usr/local/share/crystal/src
+ENV CRYSTAL_PATH=/usr/local/share/crystal/src
+ENV CRYSTAL_CACHE_DIR=/opt/crystal-cache
+RUN mkdir -p /opt/crystal-cache && \
+    /usr/local/bin/crystal-i i sandbox/warmup.cr && \
+    chmod -R a+rX /opt/crystal-cache
+
+FROM crystallang/crystal:${CRYSTAL_VERSION}-alpine
+
+RUN apk add --no-cache llvm20-libs
+
+COPY --from=crystal-src /src/crystal/.build/crystal /usr/local/bin/crystal-i
+COPY --from=crystal-src /src/crystal/src /usr/local/share/crystal/src
+
+RUN adduser -D -u 10001 runner
+RUN mkdir -p /scratch && chown runner:runner /scratch && chmod 0700 /scratch
+VOLUME ["/scratch"]
+
+COPY --from=build /out/trycrystal-runner /usr/local/bin/trycrystal-runner
+COPY --from=build /out/no-egress /usr/local/bin/no-egress
+COPY --from=build /opt/crystal-cache /opt/crystal-cache
+RUN chmod 0755 /usr/local/bin/trycrystal-runner /usr/local/bin/no-egress /usr/local/bin/crystal-i && \
+    chmod -R a+rX /opt/crystal-cache && chmod -R a-w /opt/crystal-cache
+
+ENV RUNNER_SCRATCH_ROOT=/scratch \
+    PORT=9292 \
+    RUNNER_NO_EGRESS=/usr/local/bin/no-egress \
+    RUNNER_CACHE_SEED=/opt/crystal-cache \
+    RUNNER_CRYSTAL_BIN=/usr/local/bin/crystal-i \
+    RUNNER_EXEC_MODE=i \
+    CRYSTAL_PATH=/usr/local/share/crystal/src
+
+USER 10001
+EXPOSE 9292
+ENTRYPOINT ["/usr/local/bin/trycrystal-runner"]

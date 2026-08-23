@@ -91,7 +91,34 @@ jobs:
     
     strategy:
       matrix:
-        app: [crystalshards, crystaldocs, crystalgigs, crystalbits]
+        # context and dockerfile are both carried, because not every image
+        # lives at apps/<name>/Dockerfile. The trycrystal runner is a second
+        # deployable inside the trycrystal app's tree, and it builds from
+        # Dockerfile.interpreter: that is the image that deploys, and it is the
+        # most interesting surface in the repo. It carries Crystal built from
+        # source with the interpreter enabled plus Alpine's LLVM 20 runtime
+        # libraries, and it is the one container here that executes hostile
+        # input on purpose. Scanning the run-mode image instead would scan
+        # something production does not run.
+        include:
+          - app: crystalshards
+            context: apps/crystalshards
+            dockerfile: Dockerfile
+          - app: crystaldocs
+            context: apps/crystaldocs
+            dockerfile: Dockerfile
+          - app: crystalgigs
+            context: apps/crystalgigs
+            dockerfile: Dockerfile
+          - app: crystalbits
+            context: apps/crystalbits
+            dockerfile: Dockerfile
+          - app: trycrystal
+            context: apps/trycrystal
+            dockerfile: Dockerfile
+          - app: trycrystal-runner
+            context: apps/trycrystal/runner
+            dockerfile: Dockerfile.interpreter
 
     steps:
     - name: Checkout code
@@ -99,11 +126,11 @@ jobs:
 
     - name: Build Docker image for scanning
       run: |
-        if [ -d "apps/${{ matrix.app }}" ] && [ -f "apps/${{ matrix.app }}/Dockerfile" ]; then
-          cd apps/${{ matrix.app }}
-          docker build -t security-scan/${{ matrix.app }}:latest .
+        if [ -d "${{ matrix.context }}" ] && [ -f "${{ matrix.context }}/${{ matrix.dockerfile }}" ]; then
+          cd ${{ matrix.context }}
+          docker build -f ${{ matrix.dockerfile }} -t security-scan/${{ matrix.app }}:latest .
         else
-          echo "Directory apps/${{ matrix.app }} or Dockerfile not found"
+          echo "Directory ${{ matrix.context }} or ${{ matrix.context }}/${{ matrix.dockerfile }} not found"
           exit 1
         fi
 

@@ -207,23 +207,49 @@ jobs:
     name: Build ${{ matrix.image }}
     needs: [gate, bootstrap-registry]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # 45 was sized for images that only compile this repo's own Crystal. The
+    # runner's interpreter image builds the Crystal COMPILER from source with
+    # interpreter=1 in its first stage: measured at 623s cold on an M5 Max
+    # (about 335s of that the compile itself), and a GitHub-hosted runner has
+    # 4 vCPU, so a cache miss here is materially longer than anything else in
+    # this matrix. The gha cache below is scoped per context and that first
+    # stage depends only on the base image and the pinned Crystal tag, so it
+    # should hit on nearly every run (a warm rebuild was 68s); this ceiling is
+    # for the runs where it does not.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
+        # dockerfile is explicit on every entry rather than defaulted, because
+        # one image in this matrix is NOT built from <context>/Dockerfile: the
+        # runner ships the interpreter build. A defaulted path would have
+        # silently built the run-mode image and pushed it under the runner's
+        # tag, which is the same class of failure as not building it at all,
+        # except harder to see: the service would be Ready, four to six times
+        # slower per submission, and nothing would say why.
         include:
           - image: crystalshards
             context: apps/crystalshards
+            dockerfile: apps/crystalshards/Dockerfile
           - image: crystaldocs
             context: apps/crystaldocs
+            dockerfile: apps/crystaldocs/Dockerfile
           - image: crystalgigs
             context: apps/crystalgigs
+            dockerfile: apps/crystalgigs/Dockerfile
           - image: crystalbits
             context: apps/crystalbits
+            dockerfile: apps/crystalbits/Dockerfile
+          # The tutorial console, the fifth public site. No database, no
+          # migrate entrypoint, no secrets beyond SECRET_KEY_BASE.
+          - image: trycrystal
+            context: apps/trycrystal
+            dockerfile: apps/trycrystal/Dockerfile
           # Runs `crystal docs` over untrusted third party shards, so unlike the app
           # images its runtime stage keeps the Crystal toolchain.
           - image: docs-build
             context: apps/docs-build
+            dockerfile: apps/docs-build/Dockerfile
           # Same Dockerfile and context as docs-build, a distinct image only
           # because EXTRA_PACKAGES bakes llvm-dev and llvm-static in at build
           # time. That ARG is what CrystalShards::CoreDocs needs and nothing
@@ -234,8 +260,27 @@ jobs:
           # to what building this Dockerfile has always produced.
           - image: docs-build-core
             context: apps/docs-build
+            dockerfile: apps/docs-build/Dockerfile
             build_args: |
               EXTRA_PACKAGES=llvm-dev llvm-static
+          # The untrusted Crystal execution runner. A distinct image from the
+          # console because it is a distinct trust domain: the console serves
+          # pages, the runner executes strangers' code, and neither image
+          # contains the other's anything. Its absence from this matrix is the
+          # crash loop the REGISTRATION note warns about, because terraform
+          # creates the service referencing this tag exactly once and never
+          # rolls it again.
+          #
+          # Dockerfile.interpreter, not Dockerfile. Measured by the Runner
+          # slice, all confined and in-container: the interpreter answers a
+          # trivial submission in 396ms and one requiring json and http in
+          # 538ms, against 1830ms and 2892ms for run mode with a seeded cache
+          # and 6334ms cold. The run-mode Dockerfile stays in the tree as the
+          # fallback the RUNNER_EXEC_MODE=run escape hatch uses, and it is
+          # deliberately not what deploys.
+          - image: trycrystal-runner
+            context: apps/trycrystal/runner
+            dockerfile: apps/trycrystal/runner/Dockerfile.interpreter
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -246,11 +291,21 @@ jobs:
         shell: bash
         env:
           CONTEXT: ${{ matrix.context }}
+          DOCKERFILE: ${{ matrix.dockerfile }}
         run: |
           set -euo pipefail
-          if [ ! -f "${CONTEXT}/Dockerfile" ]; then
-            echo "No Dockerfile at ${CONTEXT}/Dockerfile." >&2
+          if [ ! -d "${CONTEXT}" ]; then
+            echo "No build context directory at ${CONTEXT}." >&2
             echo "This image is part of the deploy contract, so a missing build context fails the deploy rather than being skipped." >&2
+            exit 1
+          fi
+          # The Dockerfile is asserted by its declared path, not by assuming
+          # <context>/Dockerfile: the runner builds from Dockerfile.interpreter
+          # in the same context, and an assertion that checked the wrong file
+          # would pass while the build used something else.
+          if [ ! -f "${DOCKERFILE}" ]; then
+            echo "No Dockerfile at ${DOCKERFILE}." >&2
+            echo "This image is part of the deploy contract, so a missing Dockerfile fails the deploy rather than being skipped." >&2
             exit 1
           fi
 
@@ -298,6 +353,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          # Declared per matrix entry, never defaulted to <context>/Dockerfile:
+          # the runner builds from Dockerfile.interpreter in a context that also
+          # holds the run-mode Dockerfile, and defaulting would push the wrong
+          # image under the right tag.
+          file: ${{ matrix.dockerfile }}
           # Cloud Run runs linux/amd64. Say so rather than inheriting the runner's arch.
           platforms: linux/amd64
           push: true
@@ -311,6 +371,12 @@ jobs:
           # docs-build-core share a Dockerfile and a context, so scoping the
           # cache to the image name would build the untrusted image's layers
           # twice over instead of reusing them for the ARG-only difference.
+          #
+          # The runner's context is the one that most needs this cache to hit:
+          # its first stage builds Crystal from source with interpreter=1, which
+          # is by far the longest build in this matrix. Scoping by context gives
+          # it a scope of its own, so a change to src/ reuses the toolchain
+          # layer instead of rebuilding the compiler.
           cache-from: type=gha,scope=${{ matrix.context }}
           cache-to: type=gha,mode=max,scope=${{ matrix.context }}
 
@@ -761,6 +827,8 @@ jobs:
       load_balancer_ip: ${{ steps.outputs.outputs.load_balancer_ip }}
       managed_certificates: ${{ steps.outputs.outputs.managed_certificates }}
       public_hostnames: ${{ steps.outputs.outputs.public_hostnames }}
+      trycrystal_runner_service: ${{ steps.outputs.outputs.trycrystal_runner_service }}
+      database_backed_hostnames: ${{ steps.outputs.outputs.database_backed_hostnames }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -877,6 +945,8 @@ jobs:
           emit_raw publish_core_docs_job
           emit_raw docs_launcher_service
           emit_raw load_balancer_ip
+          emit_raw trycrystal_runner_service
+          emit_json database_backed_hostnames
 
   # ---------------------------------------------------------------------------
   # Migrations run in Cloud Run Jobs, on the app's own image and over the Cloud SQL
@@ -1029,6 +1099,14 @@ jobs:
           adopt_service_account "module.services.google_service_account.docs_launcher" "docs-launcher"
           adopt_service_account "module.services.google_service_account.docs_tasks" "docs-tasks"
 
+          # trycrystal has a service identity and no migration identity, because
+          # it is the app with no database, so it is adopted here on its own
+          # rather than joining the loop above. The runner identity is adopted
+          # for the same recovery reason as every other account, and its zero
+          # permissions are a property of the account, not of its absence here.
+          adopt_service_account "module.services.google_service_account.apps[\"trycrystal\"]" "trycrystal"
+          adopt_service_account "module.services.google_service_account.trycrystal_runner" "trycrystal-runner"
+
           # Same adoption, for Cloud Run services and Jobs. A partial apply that
           # dies mid-create leaves the resource in GCP and not in state, and the
           # next run collides with `Error 409: Resource 'docs-launcher' already
@@ -1065,6 +1143,12 @@ jobs:
           done
           adopt_run_resource services "module.services.google_cloud_run_v2_service.docs_launcher" "docs-launcher"
           adopt_run_resource jobs "module.services.google_cloud_run_v2_job.docs_build" "docs-build"
+
+          # The two trycrystal services, adopted like the rest: a partial first
+          # apply that creates one without recording it in state leaves the
+          # next deploy dying on Error 409 with a service it cannot recreate.
+          adopt_run_resource services "module.services.google_cloud_run_v2_service.apps[\"trycrystal\"]" "trycrystal"
+          adopt_run_resource services "module.services.google_cloud_run_v2_service.trycrystal_runner" "trycrystal-runner"
 
           # module.database is targeted explicitly, not left to be pulled in as a
           # dependency. The migration Jobs reference each database-url secret by
@@ -1232,6 +1316,7 @@ jobs:
           SHA: ${{ needs.gate.outputs.sha }}
           SERVICES_B64: ${{ needs.infra.outputs.services }}
           DOCS_LAUNCHER_SERVICE: ${{ needs.infra.outputs.docs_launcher_service }}
+          TRYCRYSTAL_RUNNER_SERVICE: ${{ needs.infra.outputs.trycrystal_runner_service }}
         run: |
           set -uo pipefail
 
@@ -1412,7 +1497,7 @@ jobs:
             echo "::endgroup::"
           }
 
-          for app in crystalshards crystaldocs crystalgigs crystalbits; do
+          for app in crystalshards crystaldocs crystalgigs crystalbits trycrystal; do
             if ! service="$(jq -er --arg a "$app" '.[$a]' <<< "$SERVICES")"; then
               echo "No Cloud Run service declared for '${app}' in the cloud_run_services output." >&2
               failures=$((failures + 1)); continue
@@ -1422,6 +1507,16 @@ jobs:
 
           # docs-launcher runs the crystalshards image under a second service name.
           roll "$DOCS_LAUNCHER_SERVICE" "${REGISTRY_URL}/crystalshards:${SHA}"
+
+          # The runner is its own image and its own trust domain, and it is NOT
+          # in the SERVICES map: that map feeds the load balancer's backends and
+          # the runner must never sit behind the load balancer. Missing this
+          # roll is the silent trap: terraform sets the image once at creation
+          # and then ignores it, so an unrolled runner deploys green forever on
+          # the image it happened to be created with. assert_serving covers it
+          # like any other service, including the startup probe on /health that
+          # the runner answers only once its own confinement checks pass.
+          roll "$TRYCRYSTAL_RUNNER_SERVICE" "${REGISTRY_URL}/trycrystal-runner:${SHA}"
 
           if [ "$failures" -ne 0 ]; then
             echo "${failures} service(s) did not reach the expected revision." >&2
@@ -2024,6 +2119,12 @@ jobs:
           LB_IP: ${{ needs.infra.outputs.load_balancer_ip }}
           PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           HOSTNAMES_B64: ${{ needs.infra.outputs.public_hostnames }}
+          # Only the apex hostnames whose services hold a database. The health
+          # assertion below demands services.database == healthy for exactly
+          # these hosts: trycrystal.org is a public site with no database by
+          # design, and demanding a healthy database of it would fail every
+          # deploy of a site that is working as designed.
+          DATABASE_HOSTNAMES_B64: ${{ needs.infra.outputs.database_backed_hostnames }}
         run: |
           set -uo pipefail
 
@@ -2060,6 +2161,10 @@ jobs:
             echo "Could not decode the public_hostnames output." >&2
             exit 1
           fi
+          if ! DATABASE_HOSTNAMES="$(printf '%s' "$DATABASE_HOSTNAMES_B64" | base64 -d)" || [ -z "$DATABASE_HOSTNAMES" ]; then
+            echo "Could not decode the database_backed_hostnames output." >&2
+            exit 1
+          fi
 
           failures=0
           deferred=0
@@ -2089,12 +2194,22 @@ jobs:
               echo "  ${host}: health status is not \"ok\": ${body}" >&2
               return 1
             fi
-            if ! jq -e '.services.database == "healthy"' >/dev/null 2>&1 <<< "$body"; then
-              echo "  ${host}: services.database is not \"healthy\": ${body}" >&2
-              return 1
+            # Only a database backed host is asked for a healthy database. The
+            # list comes from terraform (the database_apps local at root), not
+            # from a second handwritten list here, so a sixth site added later
+            # is asserted correctly or not at all by the same change that adds
+            # it to the stack. A database host missing from the list has its
+            # database silently unasserted, which is why the count check below
+            # requires the list to be non-empty and to intersect the hostnames.
+            if jq -e --arg h "$host" 'index($h) != null' >/dev/null 2>&1 <<< "$DATABASE_HOSTNAMES"; then
+              if ! jq -e '.services.database == "healthy"' >/dev/null 2>&1 <<< "$body"; then
+                echo "  ${host}: services.database is not \"healthy\": ${body}" >&2
+                return 1
+              fi
+              echo "  ${host}: 200, status=ok, database=healthy"
+            else
+              echo "  ${host}: 200, status=ok (no database by design)"
             fi
-
-            echo "  ${host}: 200, status=ok, database=healthy"
           }
 
           # www exists to redirect to the apex, so 200 would be the wrong answer.
@@ -2182,8 +2297,19 @@ jobs:
           fi
 
           host_count="$(jq -r 'length' <<< "$HOSTNAMES")"
-          if [ "$host_count" -lt 8 ]; then
-            echo "public_hostnames lists ${host_count} entries; expected the apex and www of all four domains." >&2
+          if [ "$host_count" -lt 10 ]; then
+            echo "public_hostnames lists ${host_count} entries; expected the apex and www of all five domains." >&2
+            exit 1
+          fi
+
+          # The database assertion above is only as good as this list. An empty
+          # or truncated database_backed_hostnames would silently drop the
+          # database half of the health check for every database backed site,
+          # so the count is asserted here rather than trusted: four database
+          # sites in the stack means four hostnames in the list.
+          database_host_count="$(jq -r 'length' <<< "$DATABASE_HOSTNAMES")"
+          if [ "$database_host_count" -lt 4 ]; then
+            echo "database_backed_hostnames lists ${database_host_count} entries; expected the four database backed sites." >&2
             exit 1
           fi
 

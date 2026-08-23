@@ -1,0 +1,423 @@
+/* ============================================================================
+   try crystal - the console's clothes.
+
+   THE ART DIRECTION LIVES IN THE TWO TOKEN BLOCKS AT THE TOP. Everything
+   below them is structure: what a transcript line is, where the entry row
+   sits, how focus is shown. Redirecting the look means changing the tokens
+   and leaving the rest alone.
+
+   The design is deliberately not a default AI look: no purple, no gradient,
+   no glass blur, no rounded-everything, no emoji. A console panel set on a
+   mineral paper ground, cut corners on one surface only, IBM Plex because
+   the sibling crystalshards.org sites are set in it. The console panel is
+   dark in BOTH color schemes because it is a terminal: terminals have a
+   ground color of their own, and the page around it carries the scheme.
+
+   Accessibility decisions that are load bearing, do not undo them casually:
+   - --focus is a 2px ring at >= 3:1 against every ground it appears on.
+     Never set outline: none without an equivalent replacement.
+   - --console-err is the ONLY signal for failed output and carries >= 4.5:1
+     on the console ground; color never carries meaning alone, the reaction
+     text says what happened.
+   - Interactive targets are >= 24px tall (WCAG 2.2).
+   ========================================================================= */
+
+:root {
+  /* ---- page ground and ink (scheme carries here) ---------------------- */
+  --paper:        #f4f6f6;
+  --ink:          #0e1416;
+  --ink-muted:    #55666b;
+  --edge:         #d8dfe0;
+
+  /* ---- accent: glacial teal, this site's own hue in the family --------- */
+  --accent:       #0c6f5e;   /* 5.6:1 on --paper */
+  --accent-deep:  #09544a;   /* 7.6:1 on --paper */
+
+  /* ---- focus ------------------------------------------------------------ */
+  --focus:        #0c6f5e;
+  --focus-ring:   0 0 0 2px var(--paper), 0 0 0 4px var(--focus);
+
+  /* ---- type ------------------------------------------------------------ */
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cond: "IBM Plex Sans Condensed", var(--sans);
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --step--1: 0.8125rem;
+  --step-0:  0.9375rem;
+  --step-1:  1.0625rem;
+  --step-2:  clamp(1.3rem, 1.1rem + 0.8vw, 1.7rem);
+
+  /* ---- space and geometry ---------------------------------------------- */
+  --gap:   1.125rem;
+  --pad:   1.375rem;
+  --shell: 58rem;
+  --facet: 10px;   /* the one cut corner, on the console panel */
+  --tap:   24px;   /* WCAG 2.2 target minimum */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:        #070a0b;
+    --ink:          #e9f1f0;
+    --ink-muted:    #9fb2b3;
+    --edge:         #222e30;
+
+    --accent:       #4fd8c0;   /* 9.6:1 on --paper */
+    --accent-deep:  #35a893;
+  }
+}
+
+/* ---- the console panel has its own ground in both schemes -------------- */
+:root {
+  --console-ground:  #0c1210;
+  --console-raised:  #101a17;
+  --console-edge:    #223731;
+  --console-ink:     #d7e4df;  /* 13.9:1 on --console-ground */
+  --console-ink-dim: #8fa8a0;  /* 6.9:1 on --console-ground */
+  --console-echo:    #f2f7f5;
+  --console-accent:  #4fd8c0;  /* 9.9:1 on --console-ground */
+  --console-err:     #ff9c88;  /* 7.4:1 on --console-ground */
+  --console-meta:    #6d857e;  /* 4.0:1, decorative timing only */
+  --console-focus:   #4fd8c0;
+}
+
+/* ==========================================================================
+   base
+   ========================================================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent-deep);
+  text-underline-offset: 0.2em;
+}
+
+.skip-link {
+  position: absolute;
+  left: -999px;
+  top: 0;
+  background: var(--paper);
+  color: var(--ink);
+  padding: 0.5rem 1rem;
+  z-index: 10;
+}
+
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+:focus-visible {
+  outline: 2px solid var(--console-focus);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ==========================================================================
+   shell and masthead
+   ========================================================================= */
+
+.shell {
+  max-width: var(--shell);
+  margin: 0 auto;
+  padding: var(--pad) var(--pad) calc(var(--pad) * 2);
+}
+
+.masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap);
+  margin-bottom: var(--gap);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mark {
+  color: var(--accent);
+  transform: translateY(2px);
+}
+
+.wordmark {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: var(--step-2);
+  letter-spacing: 0.01em;
+}
+
+.tagline {
+  margin: 0;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: var(--step--1);
+}
+
+.progress {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.progress-label {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.steps {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.step {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--ink-muted);
+  transform: rotate(45deg);   /* small facets, echoing the mark */
+}
+
+.step--current {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.step--done {
+  background: var(--ink-muted);
+  border-color: var(--ink-muted);
+}
+
+/* ==========================================================================
+   the console
+   ========================================================================= */
+
+.console {
+  background: var(--console-ground);
+  color: var(--console-ink);
+  border: 1px solid var(--console-edge);
+  border-radius: var(--facet) 0 var(--facet) 0;   /* one cut facet */
+  min-height: 24rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 1px 0 var(--console-edge);
+}
+
+.transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--pad);
+  font-family: var(--mono);
+  font-size: var(--step-0);
+  line-height: 1.55;
+  overscroll-behavior: contain;
+}
+
+/* Every line is textContent only; the kinds differ by weight, size and
+   color, never by markup. white-space preserves the copy's own line breaks,
+   including the code sample on its own line. */
+.line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0 0 0.55rem;
+}
+
+.line--system {
+  color: var(--console-ink);
+  max-width: 46rem;
+}
+
+.line--lesson {
+  color: var(--console-ink);
+  font-weight: 500;
+  max-width: 46rem;
+  border-left: 2px solid var(--console-accent);
+  padding-left: 0.75rem;
+  margin-top: 1.1rem;
+}
+
+.line--echo {
+  color: var(--console-echo);
+  font-weight: 500;
+  margin-top: 1.1rem;
+}
+
+.line--echo::before,
+.line--out::before,
+.line--err::before,
+.line--value::before {
+  content: "";
+  display: block;
+  height: 0.25rem;
+}
+
+.line--out {
+  color: var(--console-ink);
+}
+
+.line--err {
+  color: var(--console-err);
+}
+
+.line--value {
+  color: var(--console-accent);
+  font-weight: 600;
+}
+
+.line--reaction {
+  color: var(--console-ink-dim);
+  font-style: italic;
+  max-width: 46rem;
+  margin-top: 0.4rem;
+}
+
+.line--meta {
+  color: var(--console-meta);
+  font-size: var(--step--1);
+  text-align: right;
+}
+
+.line--final {
+  color: var(--console-accent);
+  font-weight: 500;
+  max-width: 46rem;
+}
+
+/* ---- the entry row ------------------------------------------------------ */
+
+.entry {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.5rem var(--pad) 0.75rem;
+  border-top: 1px solid var(--console-edge);
+  background: var(--console-raised);
+}
+
+.counter {
+  font-family: var(--mono);
+  font-size: var(--step-0);
+  color: var(--console-accent);
+  padding-bottom: 0.35rem;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.input {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: var(--step-0);
+  line-height: 1.55;
+  color: var(--console-echo);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--console-edge);
+  padding: 0.25rem 0 0.35rem;
+  resize: none;
+  min-height: var(--tap);
+  max-height: 12rem;
+  overflow-y: auto;
+}
+
+.input:focus {
+  outline: none;
+  border-bottom-color: var(--console-focus);
+  box-shadow: 0 1px 0 var(--console-focus);
+}
+
+.input::placeholder {
+  color: var(--console-meta);
+}
+
+.run {
+  font-family: var(--mono);
+  font-size: var(--step-0);
+  color: var(--console-ground);
+  background: var(--console-accent);
+  border: 0;
+  border-radius: 4px;
+  min-height: var(--tap);
+  padding: 0.2rem 1rem;
+  cursor: pointer;
+  margin-bottom: 0.15rem;
+}
+
+.run:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.entry[data-pending] .counter {
+  animation: breathe 1.2s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+noscript {
+  display: block;
+  padding: 0.75rem var(--pad);
+  border-top: 1px solid var(--console-edge);
+  color: var(--console-ink-dim);
+  font-family: var(--sans);
+  font-size: var(--step--1);
+}
+
+/* ==========================================================================
+   colophon
+   ========================================================================= */
+
+.colophon {
+  margin-top: var(--gap);
+  color: var(--ink-muted);
+  font-size: var(--step--1);
+}
+
+@media (max-width: 40rem) {
+  .masthead {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .progress {
+    margin-left: 0;
+  }
+}

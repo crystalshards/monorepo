@@ -1,4 +1,4 @@
-# The four public applications.
+# The five public applications, one per app_config entry.
 #
 # Ingress is INTERNAL_AND_CLOUD_LOAD_BALANCING, so the only route in is the
 # global external load balancer in the edge module. The run.app URL is not a
@@ -16,7 +16,10 @@
 # startup, because a revision with a broken DATABASE_URL or a missing Cloud SQL
 # socket then refuses to be promoted instead of serving errors under a green
 # deploy. As a liveness probe the same endpoint would restart every instance
-# during a database blip, converting a brief degradation into an outage.
+# during a database blip, converting a brief degradation into an outage. For
+# trycrystal, which has no database, the same probe on the same path is what
+# proves the web app booted at all; the runner it calls is probed separately on
+# its own service.
 resource "google_cloud_run_v2_service" "apps" {
   for_each = local.app_config
 
@@ -35,10 +38,18 @@ resource "google_cloud_run_v2_service" "apps" {
       max_instance_count = each.value.max_instances
     }
 
-    volumes {
-      name = "cloudsql"
-      cloud_sql_instance {
-        instances = [var.cloud_sql_connection_name]
+    # The Cloud SQL socket, only for the apps whose app_config entry says they
+    # have a database. trycrystal is the exception and the reason this is
+    # conditional: mounting a database socket into a service designed to hold
+    # no database wires a capability nothing in the app uses, and the volume is
+    # how the connection name travels.
+    dynamic "volumes" {
+      for_each = each.value.database ? [1] : []
+      content {
+        name = "cloudsql"
+        cloud_sql_instance {
+          instances = [var.cloud_sql_connection_name]
+        }
       }
     }
 
@@ -59,9 +70,12 @@ resource "google_cloud_run_v2_service" "apps" {
         startup_cpu_boost = true
       }
 
-      volume_mounts {
-        name       = "cloudsql"
-        mount_path = "/cloudsql"
+      dynamic "volume_mounts" {
+        for_each = each.value.database ? [1] : []
+        content {
+          name       = "cloudsql"
+          mount_path = "/cloudsql"
+        }
       }
 
       dynamic "env" {

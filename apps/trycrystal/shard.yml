@@ -1,0 +1,16 @@
+---
+name: trycrystal
+version: 0.1.0
+targets:
+  trycrystal:
+    main: src/trycrystal.cr
+crystal: '>= 1.17.1'
+
+dependencies:
+  lucky:
+    github: luckyframework/lucky
+    version: ~> 1.4.0
+  lucky_env:
+    github: luckyframework/lucky_env
+    version: ~> 0.3.0
+development_dependencies: {}
