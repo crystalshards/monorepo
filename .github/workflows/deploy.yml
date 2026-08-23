@@ -2169,6 +2169,19 @@ jobs:
           failures=0
           deferred=0
 
+          # Hostnames whose Cloud DNS zone exists but has not been delegated at
+          # the registrar yet, so nothing resolves for them anywhere. Space
+          # separated, and read only by the PROVISIONING branch below, which
+          # tolerates them ONLY while they return no address at all.
+          #
+          # trycrystal.org is new: its zone is created by this stack and its
+          # nameservers have to be pointed at by hand. Until that happens the
+          # certificate cannot validate, which is expected rather than broken.
+          #
+          # Empty this list as zones are delegated. Every entry costs the DNS
+          # assertion for that hostname, so it is not free.
+          AWAITING_DELEGATION="trycrystal.org www.trycrystal.org"
+
           # --resolve pins the connection to the load balancer, so this tests the
           # deploy rather than DNS propagation to this particular runner, while still
           # sending the real hostname for SNI and Host.
@@ -2345,6 +2358,34 @@ jobs:
 
               PROVISIONING|PROVISIONING_FAILED)
                 echo "  ${host}: certificate ${cert} is ${status}; HTTPS cannot succeed yet."
+
+                # A hostname whose zone has never been delegated at the
+                # registrar cannot satisfy the conditions below, because
+                # nothing resolves for it at all. That is a pending manual
+                # step, not a broken deploy, and failing it here red-fails
+                # every production deploy of the whole repo until a human
+                # acts.
+                #
+                # The tolerance is deliberately narrow and self-clearing.
+                # It applies only to names listed in AWAITING_DELEGATION, and
+                # only when the name returns NO address at all. A name that
+                # resolves to the wrong address is still fatal, which is the
+                # case that would otherwise hide a real misconfiguration.
+                # Once delegation lands, dig returns the load balancer and
+                # the normal assertions below apply again with no edit here,
+                # so this cannot rot into a permanent exemption.
+                #
+                # Remove a name from AWAITING_DELEGATION once its zone is
+                # delegated. Leaving it costs the DNS assertion for that one
+                # host, so it is not free.
+                if printf '%s\n' $AWAITING_DELEGATION | grep -qxF "$host" \
+                   && [ -z "$(dig +short A "$host" @8.8.8.8 | grep -E '^[0-9]+(\.[0-9]+){3}$' || true)" ]; then
+                  echo "  ${host}: no public A record yet, and it is listed as awaiting registrar delegation."
+                  echo "  Deferring. Delegate the zone's nameservers, then this becomes an ordinary check."
+                  deferred=$((deferred + 1))
+                  echo "::endgroup::"; continue
+                fi
+
                 echo "  Asserting the conditions the certificate needs in order to issue."
                 host_failed=0
                 check_dns "$host" || host_failed=1
