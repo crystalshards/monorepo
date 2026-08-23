@@ -40,7 +40,19 @@
 # tool, a broken probe and a working sandbox look identical from the outside
 # unless the probe says which one it is.
 {% `echo "PROBE macro-env: $(if command -v printenv >/dev/null 2>&1; then if printenv TRYC_CANARY >/dev/null 2>&1; then echo LEAKED; else echo scrubbed; fi; else echo NO-TOOL-printenv; fi)" 1>&2` %}
-{% `echo "PROBE macro-net: $(if command -v wget >/dev/null 2>&1; then if wget -q -T 3 -O /dev/null https://example.com; then echo REACHABLE; else echo REFUSED; fi; else echo NO-TOOL-wget; fi)" 1>&2` %}
+# macro-net deliberately targets a literal IP over plain HTTP with a generous
+# timeout. An earlier version fetched https://example.com with a 3 second
+# limit and flaked: it reported REFUSED in an UNCONFINED run while the same
+# command succeeded when run by hand, because a 3 second DNS-plus-TLS
+# handshake is contended while the spec is building images and starting
+# containers. A flaky negative control is worse than a missing one, because
+# the tempting repair is to loosen the assertion until it stops complaining.
+# DNS and TLS are not the boundary under test; reaching the network is. DNS
+# is measured separately by runtime-dns. The seccomp filter refuses socket
+# creation regardless of destination, so a literal IP is still refused when
+# confined, and the failing exit code is carried into the result so a future
+# ambiguity is diagnosable instead of a guess.
+{% `echo "PROBE macro-net: $(if command -v wget >/dev/null 2>&1; then if wget -q -T 10 -O /dev/null http://1.1.1.1; then echo REACHABLE; else echo "REFUSED (wget rc=$?)"; fi; else echo NO-TOOL-wget; fi)" 1>&2` %}
 {% `echo "PROBE macro-proc1: $(if command -v head >/dev/null 2>&1; then if head -c 1 /proc/1/environ >/dev/null 2>&1; then echo READABLE; else echo REFUSED; fi; else echo NO-TOOL-head; fi)" 1>&2` %}
 
 require "socket"

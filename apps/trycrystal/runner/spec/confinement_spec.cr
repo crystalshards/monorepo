@@ -208,7 +208,7 @@ describe "confinement mechanism on the docs-build substrate" do
     # errno: "address family not supported" is what socket(2) returns when
     # the seccomp filter denies the family. Any other error would mean the
     # socket was created and something else failed.
-    probe_result(output, "macro-net").should eq("REFUSED")
+    probe_result(output, "macro-net").should start_with("REFUSED")
     probe_result(output, "runtime-net").downcase.should contain("address family")
     probe_result(output, "runtime-metadata").downcase.should contain("address family")
     probe_result(output, "runtime-dns").should start_with("REFUSED")
@@ -454,7 +454,7 @@ describe "runner service confinement through the real HTTP path" do
       probe_result(combined, "runtime-proc1env").should_not contain("CANARY-FOUND")
 
       # No egress at either boundary, filter's errno, not a stray failure.
-      probe_result(combined, "macro-net").should eq("REFUSED")
+      probe_result(combined, "macro-net").should start_with("REFUSED")
       probe_result(combined, "runtime-net").downcase.should contain("address family")
       probe_result(combined, "runtime-metadata").downcase.should contain("address family")
       probe_result(combined, "runtime-dns").should start_with("REFUSED")
