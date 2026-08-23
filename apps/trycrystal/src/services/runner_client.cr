@@ -15,6 +15,19 @@ require "http/client"
 class RunnerClient
   Habitat.create do
     setting url : String
+    # The OIDC audience to mint an identity token for, when the runner is IAM
+    # locked. Nil locally, where the runner is unauthenticated and the
+    # metadata server does not exist.
+    #
+    # This exists because the runner's terraform states the contract plainly:
+    # the service is locked to this app's identity, "so the URL alone reaches
+    # nothing", and the app "mints its ID token for" the audience it declares
+    # in custom_audiences. That half was documented in infrastructure and
+    # missing from this client, so production answered every submission with
+    # "the sandbox is not answering" while the app itself was healthy and the
+    # deploy was green. Nothing local could catch it: there is no IAM in front
+    # of a runner on localhost.
+    setting audience : String? = nil
     # Sized to the measured distribution, not to the worst case anyone can
     # imagine. Interpreter mode, measured through this client: 369ms to
     # 1105ms across the three lessons and stdlib requires. Run mode is the
@@ -55,14 +68,27 @@ class RunnerClient
 
     response = client.post(
       "/execute",
-      headers: HTTP::Headers{"Content-Type" => "application/json"},
+      headers: request_headers,
       body: request_body
     )
 
     unless response.status.success?
+      # 401 and 403 are named, because they are not the runner failing: they
+      # are Cloud Run refusing the caller before the runner ever sees the
+      # request, and they read identically to a broken sandbox from outside.
+      hint = case response.status.code
+             when 401, 403
+               ". Cloud Run rejected this app's identity, so the request never " \
+               "reached the runner. Check that the audience the app mints for " \
+               "matches the runner's custom_audiences, and that this app's " \
+               "service account holds run.invoker on it"
+             else
+               ""
+             end
+
       raise BadResponse.new(
         "runner at #{settings.url} answered #{response.status.code}, " \
-        "expected 200 with the execution contract"
+        "expected 200 with the execution contract#{hint}"
       )
     end
 
@@ -76,5 +102,29 @@ class RunnerClient
     raise Unreachable.new(
       "sandbox at #{settings.url} could not be reached: #{ex.class} #{ex.message}"
     )
+  end
+
+  # Content type always; an identity token only when an audience is
+  # configured, which is production. Locally the runner is unauthenticated and
+  # there is no metadata server to ask.
+  #
+  # A failure to mint the token is Unreachable rather than BadResponse: the
+  # request was never sent, so nothing ran, which is exactly what Unreachable
+  # means to the caller.
+  private def request_headers : HTTP::Headers
+    headers = HTTP::Headers{"Content-Type" => "application/json"}
+
+    if audience = settings.audience
+      begin
+        headers["Authorization"] = "Bearer #{TryCrystal::GoogleMetadata.identity_token(audience)}"
+      rescue ex : TryCrystal::GoogleMetadata::Unavailable
+        raise Unreachable.new(
+          "could not mint an identity token for #{audience}, so the sandbox was " \
+          "never called: #{ex.message}"
+        )
+      end
+    end
+
+    headers
   end
 end

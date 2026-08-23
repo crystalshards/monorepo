@@ -9,9 +9,26 @@
 RunnerClient.configure do |settings|
   if LuckyEnv.production?
     settings.url = runner_url_from_env
+    settings.audience = runner_audience_from_env
   else
     settings.url = ENV.fetch("RUNNER_URL", "http://localhost:9292")
+    # Nil locally: the development runner is unauthenticated, and there is no
+    # metadata server to mint a token from.
+    settings.audience = ENV["RUNNER_AUDIENCE"]?
   end
+end
+
+private def runner_audience_from_env
+  ENV["RUNNER_AUDIENCE"]? || raise_missing_runner_audience
+end
+
+private def raise_missing_runner_audience
+  puts "Please set the RUNNER_AUDIENCE environment variable to the audience the " \
+       "runner declares in custom_audiences. The runner is IAM locked to this " \
+       "app's identity, so without a token every submission fails with " \
+       "\"the sandbox is not answering\" while the app itself looks healthy. " \
+       "There is no default in production.".colorize.red
+  exit(1)
 end
 
 private def runner_url_from_env
