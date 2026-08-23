@@ -5,14 +5,32 @@
 #   crystaldocs    http://localhost:3001   documentation hosting
 #   crystalgigs    http://localhost:3002   job board
 #   crystalbits    http://localhost:3003   blog and newsletter
+#   trycrystal     http://localhost:3004   interactive tutorial console
+#
+# The tutorial console is two processes. The sandbox runner it submits code to
+# listens on http://localhost:9292 and is started by `make dev` alongside the
+# apps, because the console can serve pages without it and cannot run a single
+# lesson. Locally the runner is asked to run loose, by name, with
+# ALLOW_UNSAFE=true; it refuses to start with neither that nor a configured
+# sandbox, which is the whole point of the gate.
 #
 # Local development needs no Google Cloud credentials. Object storage is the
 # container docker compose runs; production is Google Cloud Storage, selected
 # by LUCKY_ENV=production and never reachable from here.
 
-.PHONY: help setup install-deps build start stop services migrate seed reset test lint format dev clean logs db-console docs.real docs.core
+.PHONY: help setup install-deps build start stop services migrate seed reset test lint format dev clean logs db-console docs.real docs.core runner.build runner.test
 
-APPS       := crystalshards crystaldocs crystalgigs crystalbits
+# Every Lucky application. trycrystal is here and deliberately NOT in DB_APPS
+# below: it has no database, so it takes part in install, build, test, lint,
+# format and dev, and must never appear in a target that creates, migrates,
+# seeds or drops one.
+APPS       := crystalshards crystaldocs crystalgigs crystalbits trycrystal
+
+# The applications backed by Postgres. Everything that exists because a
+# database exists iterates this instead: database creation in `services`,
+# `migrate`, `seed` and `reset`. This split mirrors local.public_apps and
+# local.database_apps in terraform/locals.tf, for the same reason.
+DB_APPS    := crystalshards crystaldocs crystalgigs crystalbits
 DB_USER    ?= postgres
 DB_PASSWORD ?= password
 DB_HOST    ?= localhost
@@ -80,6 +98,29 @@ JOB_ADS_URL ?= http://localhost:3002/api/ads
 
 JOB_ADS_ENV = JOB_ADS_URL=$(JOB_ADS_URL)
 
+# The trycrystal sandbox runner. The console POSTs every submission here, and
+# the URL is the same one the deployed app receives as RUNNER_URL, so a lesson
+# that works locally is exercising the same client path production does.
+RUNNER_PORT ?= 9292
+RUNNER_URL  ?= http://localhost:$(RUNNER_PORT)
+
+# Local development runs the sandbox loose. ALLOW_UNSAFE=true is the exact
+# string the runner's gate accepts and nothing else is truthy to it: the runner
+# refuses to start when confinement is neither configured nor explicitly
+# waived, so there is no way to run it unconfined by accident.
+#
+# RUNNER_EXEC_MODE=run is here because this target runs a NATIVE binary built
+# by the workstation's own Crystal, and no official Crystal distribution ships
+# interpreter support: `crystal i` on this machine answers "Crystal was
+# compiled without interpreter support" and exits 1. Production is the
+# opposite and deliberately so, the interpreter image builds Crystal from
+# source with interpreter=1 and defaults to it, so local development is
+# exercising the documented escape hatch rather than the deploy shape. What
+# stays identical in both is the confinement gate and the HTTP contract.
+# RUNNER_CRYSTAL_BIN is deliberately unset here so run mode uses the crystal
+# on PATH.
+RUNNER_DEV_ENV = PORT=$(RUNNER_PORT) ALLOW_UNSAFE=true RUNNER_EXEC_MODE=run
+
 
 help: ## Show this help message
 	@echo "CrystalShards Development Commands:"
@@ -87,7 +128,7 @@ help: ## Show this help message
 
 setup: services install-deps migrate seed ## Full local setup: services, deps, migrations, sample data
 	@echo ""
-	@echo "Setup complete. Run 'make dev' to start all four apps."
+	@echo "Setup complete. Run 'make dev' to start every app and the sandbox runner."
 
 services: ## Start object storage and mail capture in Docker, and verify Postgres is reachable
 	@echo "Starting supporting services..."
@@ -95,7 +136,7 @@ services: ## Start object storage and mail capture in Docker, and verify Postgre
 	@echo "Checking Postgres at $(DB_HOST):$(DB_PORT)..."
 	@pg_isready -h $(DB_HOST) -p $(DB_PORT) >/dev/null 2>&1 || \
 		(echo "Postgres is not reachable at $(DB_HOST):$(DB_PORT). Start it, then re-run." && exit 1)
-	@for app in $(APPS); do \
+	@for app in $(DB_APPS); do \
 		psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d postgres -tAc \
 			"SELECT 1 FROM pg_database WHERE datname='$${app}_development'" | grep -q 1 || \
 		psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d postgres -q -c \
@@ -122,21 +163,33 @@ install-deps: ## Install Crystal dependencies for all apps
 		(cd apps/$$app && shards install) || exit 1; \
 	done
 
-build: ## Build all four applications
+build: ## Build every application
 	@for app in $(APPS); do \
 		echo "Building $$app..."; \
 		(cd apps/$$app && crystal build src/$$app.cr -o bin/$$app) || exit 1; \
 	done
 
+runner.build: ## Build the trycrystal sandbox runner
+	@echo "Building the trycrystal runner..."
+	@(cd apps/trycrystal/runner && crystal build src/main.cr -o bin/trycrystal-runner)
+
+runner.test: ## Prove the trycrystal runner's confinement (needs Docker)
+	@echo "Proving runner confinement. This builds container images and takes a while."
+	@(cd apps/trycrystal/runner && crystal spec spec/confinement_spec.cr)
+	@echo ""
+	@echo "A local pass here is encouraging and is not the gate: uid and filesystem"
+	@echo "semantics differ inside macOS Docker's VM. CI runs this same spec on Linux"
+	@echo "against the image it builds, and fails the build when any example pends."
+
 migrate: ## Run database migrations for all apps
-	@for app in $(APPS); do \
+	@for app in $(DB_APPS); do \
 		echo "Migrating $$app..."; \
 		(cd apps/$$app && DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_development" \
 			crystal run tasks.cr -- db.migrate) || exit 1; \
 	done
 
 seed: ## Load sample development data for all apps
-	@for app in $(APPS); do \
+	@for app in $(DB_APPS); do \
 		echo "Seeding $$app..."; \
 		(cd apps/$$app && DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_development" \
 			$(STORAGE_ENV) \
@@ -152,7 +205,7 @@ docs.core: ## Build and publish the Crystal standard library's own documentation
 	@./scripts/build_core_docs.sh
 
 reset: ## Drop, recreate, migrate and seed every development database
-	@for app in $(APPS); do \
+	@for app in $(DB_APPS); do \
 		psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d postgres -q -c \
 			"DROP DATABASE IF EXISTS $${app}_development"; \
 	done
@@ -177,20 +230,30 @@ format: ## Format all Crystal source
 		crystal tool format apps/$$app/src apps/$$app/spec; \
 	done
 
-dev: ## Run all four apps (Ctrl-C stops everything)
+dev: ## Run every app plus the trycrystal sandbox runner (Ctrl-C stops everything)
 	@for app in $(APPS); do \
 		[ -x apps/$$app/bin/$$app ] || { $(MAKE) build; break; }; \
 	done
+	@[ -x apps/trycrystal/runner/bin/trycrystal-runner ] || $(MAKE) runner.build
 	@echo "crystalshards  http://localhost:3000"
 	@echo "crystaldocs    http://localhost:3001"
 	@echo "crystalgigs    http://localhost:3002"
 	@echo "crystalbits    http://localhost:3003"
+	@echo "trycrystal     http://localhost:3004"
+	@echo "runner         $(RUNNER_URL)  (unconfined, local only)"
 	@echo ""
 	@trap 'kill 0' EXIT INT TERM; \
+	(cd apps/trycrystal/runner && $(RUNNER_DEV_ENV) \
+		./bin/trycrystal-runner 2>&1 | sed "s/^/[runner] /") & \
 	port=3000; \
 	for app in $(APPS); do \
-		(cd apps/$$app && DEV_PORT=$$port \
-			DATABASE_URL="postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_development" \
+		case $$app in \
+			trycrystal) db_env=""; app_env="RUNNER_URL=$(RUNNER_URL)" ;; \
+			*) db_env="DATABASE_URL=postgresql://$(DB_USER):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$${app}_development"; app_env="" ;; \
+		esac; \
+		(cd apps/$$app && env DEV_PORT=$$port \
+			$$db_env \
+			$$app_env \
 			$(STORAGE_ENV) \
 			$(SANDBOX_ENV) \
 			$(JOB_ADS_ENV) \

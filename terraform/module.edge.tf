@@ -1,4 +1,4 @@
-# Edge: one global external Application Load Balancer serving all eight public
+# Edge: one global external Application Load Balancer serving all ten public
 # hostnames, with a serverless NEG per Cloud Run service and Google managed
 # certificates.
 module "edge" {

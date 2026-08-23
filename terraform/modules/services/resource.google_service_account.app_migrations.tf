@@ -7,7 +7,7 @@
 # an identity that can do exactly that: roles/cloudsql.client, an accessor
 # binding on its own connection string secret, and no third grant.
 resource "google_service_account" "app_migrations" {
-  for_each = local.apps
+  for_each = local.database_apps
 
   project      = var.project_id
   account_id   = "${each.key}-migrate"

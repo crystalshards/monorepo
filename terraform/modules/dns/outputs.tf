@@ -18,6 +18,6 @@ output "name_servers" {
 }
 
 output "a_records" {
-  description = "Hostname to the address it resolves to, for confirming all eight names were written and none kept the old value."
+  description = "Hostname to the address it resolves to, for confirming all ten names were written and none kept the old value."
   value       = { for host, record in google_dns_record_set.a : host => one(record.rrdatas) }
 }

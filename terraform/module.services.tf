@@ -1,7 +1,8 @@
 # Services Module
-# The four public Cloud Run services, the private docs-launcher, the untrusted
-# docs-build Job, the four schema migration Jobs, the shard discovery sweep Job,
-# and all of their identities and IAM.
+# The five public Cloud Run services (four database backed, plus trycrystal),
+# the untrusted trycrystal runner, the private docs-launcher, the untrusted
+# docs-build Job, the four schema migration Jobs, the shard discovery sweep
+# Job, and all of their identities and IAM.
 module "services" {
   source = "./modules/services"
 
@@ -38,10 +39,10 @@ module "services" {
   job_ads_url              = "https://${local.sites["crystalgigs"].apex}/api/ads"
   docs_launcher_app_domain = "https://${local.sites["crystalshards"].apex}"
 
-  # All four sites are registered in Search Console as domain properties, so
-  # the property name is the apex under the sc-domain scheme. Derived from the
-  # same local.sites the origins above come from, so a site cannot be told to
-  # ask Google about a hostname it does not serve.
+  # All four database backed sites are registered in Search Console as domain
+  # properties, so the property name is the apex under the sc-domain scheme.
+  # Derived from the same local.sites the origins above come from, so a site
+  # cannot be told to ask Google about a hostname it does not serve.
   #
   # A property here is only half the wiring. The other half is this repo's
   # service account for that app being a user on that property, which lives in
@@ -52,7 +53,16 @@ module "services" {
   #   crystalbits@<project>.iam.gserviceaccount.com   -> sc-domain:crystalbits.org
   # all added as Restricted users. Revoke there and the fetch 403s naming the
   # account, which is the state the stats page reports rather than hides.
-  search_console_properties = { for slug, site in local.sites : slug => "sc-domain:${site.apex}" }
+  #
+  # trycrystal is deliberately absent. Nobody has registered
+  # sc-domain:trycrystal.org or added trycrystal@<project> as a user on it, and
+  # the property is only half the wiring: publishing the name to a service that
+  # cannot use it is exactly the state the paragraph above describes, a stats
+  # fetch that 403s on a property that was never set up. Add the map entry in
+  # the same change as the two human steps it depends on.
+  search_console_properties = {
+    for slug, site in local.sites : slug => "sc-domain:${site.apex}" if slug != "trycrystal"
+  }
 
   depends_on = [module.project_services]
 }

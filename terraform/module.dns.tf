@@ -1,4 +1,4 @@
-# Cloud DNS: the four managed zones, plus an A record for each of the eight
+# Cloud DNS: the five managed zones, plus an A record for each of the ten
 # public hostnames pointing at the load balancer in module.edge.
 module "dns" {
   source = "./modules/dns"

@@ -20,13 +20,15 @@ resource "google_dns_record_set" "a" {
   ttl          = var.record_ttl
   rrdatas      = [var.load_balancer_ip]
 
-  # The zones already exist and are unchanged, so this is ordering insurance
-  # rather than a live dependency: a zone added later cannot be raced by its own
-  # records.
+  # The four existing zones are unchanged, so for them this is ordering
+  # insurance rather than a live dependency. For trycrystal-org it is a real
+  # one: the zone and its two records are created by the same apply, and a
+  # record cannot be written into a zone that does not exist yet.
   depends_on = [
     google_dns_managed_zone.crystalshards_org,
     google_dns_managed_zone.crystaldocs_org,
     google_dns_managed_zone.crystalgigs_com,
     google_dns_managed_zone.crystalbits_org,
+    google_dns_managed_zone.trycrystal_org,
   ]
 }

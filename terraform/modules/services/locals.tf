@@ -1,12 +1,45 @@
 locals {
-  apps = toset(["crystalshards", "crystaldocs", "crystalgigs", "crystalbits"])
+  # The five serving apps, as a literal set rather than something derived from
+  # app_config. That is not timidity, it is what keeps the graph acyclic:
+  # app_config's entries reference resources (the secret_key_base secrets, the
+  # runner service's URI) whose own for_each iterates lucky_services, which is
+  # built from this list. Deriving this list from app_config closes that loop
+  # and terraform rejects the configuration with a cycle. The two must simply
+  # agree, and a slug present in app_config but missing here fails the plan at
+  # the first lookup of app_images or secret_key_base, loudly.
+  #
+  # trycrystal is in this list. It is the public site with no database.
+  serving_apps = toset([
+    "crystalshards",
+    "crystaldocs",
+    "crystalgigs",
+    "crystalbits",
+    "trycrystal",
+  ])
 
-  # Every service built from a Lucky codebase, which is the four apps plus
-  # docs-launcher. They all load config/** at boot and so all demand
+  # The serving apps backed by Cloud SQL, as a literal set for the same reason
+  # as above: migration_config and cloudsql_clients below iterate it, and
+  # deriving it from app_config would put resources on both sides of the same
+  # edge. It must agree with the database flag on each app_config entry, and
+  # with database_apps at the root, which feeds module.database; the plan fails
+  # on the first disagreement, at the missing key.
+  #
+  # trycrystal is deliberately absent. Everything that exists because a
+  # database exists iterates this list: the schema migration Jobs, their
+  # identities, and the cloudsql.client grants.
+  database_apps = toset([
+    "crystalshards",
+    "crystaldocs",
+    "crystalgigs",
+    "crystalbits",
+  ])
+
+  # Every service built from a Lucky codebase, which is the five serving apps
+  # plus docs-launcher. They all load config/** at boot and so all demand
   # SECRET_KEY_BASE, whether or not they serve a page or send a mail. A mail
   # credential is deliberately not on that list: only the two senders below ask
   # for one.
-  lucky_services = setunion(local.apps, toset(["docs-launcher"]))
+  lucky_services = setunion(local.serving_apps, toset(["docs-launcher"]))
 
   # The services that actually send mail, and therefore the only ones that get a
   # RESEND_API_KEY or a secret to hold it.
@@ -185,13 +218,15 @@ locals {
   # lifecycle.ignore_changes on the image, and CI rolls subsequent tags. There
   # is deliberately no "latest" anywhere, because a floating tag makes the
   # question "what is actually serving" unanswerable from the plan.
-  app_images = { for app in local.apps : app => "${var.image_repository}/${app}:${var.image_tag}" }
+  app_images = { for app in local.serving_apps : app => "${var.image_repository}/${app}:${var.image_tag}" }
 
   docs_launcher_image   = "${var.image_repository}/${var.docs_launcher_image_name}:${var.image_tag}"
   docs_build_image      = "${var.image_repository}/${var.docs_build_image_name}:${var.image_tag}"
   docs_build_core_image = "${var.image_repository}/${var.docs_build_core_image_name}:${var.image_tag}"
 
-  # Present on every application revision.
+  # Present on every application revision, database backed or not. The three
+  # values here are the ones an app with no database still needs to know about
+  # itself and its project.
   #
   # LUCKY_ENV is load bearing beyond the obvious. It is the single switch the
   # apps use to decide production behaviour: the object store picks GCS over
@@ -200,12 +235,21 @@ locals {
   # on it. A revision missing it runs as a development build that reaches for
   # localhost, which presents as a storage outage rather than as a config
   # mistake.
-  common_env = {
-    LUCKY_ENV                 = "production"
-    GOOGLE_CLOUD_PROJECT      = var.project_id
-    GOOGLE_CLOUD_REGION       = var.region
-    CLOUD_SQL_CONNECTION_NAME = var.cloud_sql_connection_name
+  platform_env = {
+    LUCKY_ENV            = "production"
+    GOOGLE_CLOUD_PROJECT = var.project_id
+    GOOGLE_CLOUD_REGION  = var.region
   }
+
+  # platform_env plus the Cloud SQL instance every database backed app mounts
+  # the socket of. Kept as one value because the four database apps are
+  # identical in this respect, and split from platform_env because trycrystal
+  # is a public site with no database (DESIGN.md section 1): telling it a
+  # connection name it must never use, and mounting it a socket it must never
+  # open, would be wiring a capability the app is designed not to have.
+  common_env = merge(local.platform_env, {
+    CLOUD_SQL_CONNECTION_NAME = var.cloud_sql_connection_name
+  })
 
   # The documentation build deadline, written once and read by everything that
   # has to agree with it.
@@ -309,23 +353,33 @@ locals {
   # the service treats the variable as absent-or-set, and an empty string is a
   # third state that would read as "configured with nothing".
   search_console_env = {
-    for slug in local.apps :
+    for slug in local.serving_apps :
     slug => try(var.search_console_properties[slug], "") != "" ? {
       SEARCH_CONSOLE_PROPERTY = var.search_console_properties[slug]
     } : {}
   }
 
-  # Per service shape and wiring. Everything that differs between the four apps
+  # Per service shape and wiring. Everything that differs between the five apps
   # is visible in this one table, so the resource below stays uniform and the
-  # differences cannot drift apart across four near identical blocks.
+  # differences cannot drift apart across five near identical blocks.
   #
-  # max_instances is not a guess. Each instance holds its own connection pool,
-  # and crystalshards and crystaldocs each hold two, so the product of these
-  # numbers and the pool size has to fit under the instance's max_connections.
-  # The arithmetic is written out on the Cloud SQL instance resource.
+  # database drives the Cloud SQL socket volume on the service below, and must
+  # agree with membership of local.database_apps above, which builds the
+  # migration Jobs and the cloudsql.client grants. The two are written apart
+  # because the lists cannot be derived from this table (see serving_apps), so
+  # the flag is the in-table half and the list is the out-of-table half of one
+  # fact. trycrystal is false on both counts by design.
+  #
+  # max_instances is not a guess. Each database backed instance holds its own
+  # connection pool, and crystalshards and crystaldocs each hold two, so the
+  # product of these numbers and the pool size has to fit under the instance's
+  # max_connections. The arithmetic is written out on the Cloud SQL instance
+  # resource. trycrystal's 2 is the phase 1 shape: a tutorial with no traffic
+  # history, scaling from zero.
   app_config = {
     crystalshards = {
       max_instances = 5
+      database      = true
       cpu           = "1"
       memory        = "512Mi"
       env = merge(local.common_env, local.enqueuer_env, local.site_links_env, local.search_console_env["crystalshards"], {
@@ -387,6 +441,7 @@ locals {
 
     crystaldocs = {
       max_instances = 5
+      database      = true
       cpu           = "1"
       memory        = "512Mi"
       env = merge(local.common_env, local.enqueuer_env, local.site_links_env, local.search_console_env["crystaldocs"], {
@@ -404,6 +459,7 @@ locals {
 
     crystalgigs = {
       max_instances = 5
+      database      = true
       cpu           = "1"
       memory        = "512Mi"
       env = merge(local.common_env, local.site_links_env, local.search_console_env["crystalgigs"], {
@@ -421,6 +477,7 @@ locals {
 
     crystalbits = {
       max_instances = 5
+      database      = true
       cpu           = "1"
       memory        = "512Mi"
       env = merge(local.common_env, local.site_links_env, local.search_console_env["crystalbits"], {
@@ -431,6 +488,37 @@ locals {
         DATABASE_URL    = var.database_url_secret_ids["crystalbits"]
         SECRET_KEY_BASE = google_secret_manager_secret.secret_key_base["crystalbits"].secret_id
       }, local.mail_secret_env["crystalbits"])
+    }
+
+    # The tutorial console. A public site like the other four, and deliberately
+    # without everything the other four have that exists because a database
+    # exists: no DATABASE_URL, no Cloud SQL socket volume, no migration Job, no
+    # cloudsql.client grant. Progress lives in the browser (DESIGN.md section 1),
+    # so the site's own state is its code and nothing else.
+    #
+    # What it does have that the others do not is the runner. RUNNER_URL points
+    # at the trycrystal-runner service below, and RUNNER_AUDIENCE is the literal
+    # that service declares in custom_audiences and the app mints its ID token
+    # for, so both sides read the same local and cannot drift. The runner is
+    # IAM locked to this app's identity, so the URL alone reaches nothing.
+    #
+    # JOB_ADS_URL and site_links_env are here for the same reason as on the
+    # other Lucky apps: config/** loads at boot and asks for them whether or
+    # not the tutorial renders an ad strip or a footer.
+    trycrystal = {
+      max_instances = 2
+      database      = false
+      cpu           = "1"
+      memory        = "512Mi"
+      env = merge(local.platform_env, local.site_links_env, local.search_console_env["trycrystal"], {
+        APP_DOMAIN      = var.app_domains["trycrystal"]
+        JOB_ADS_URL     = var.job_ads_url
+        RUNNER_URL      = google_cloud_run_v2_service.trycrystal_runner.uri
+        RUNNER_AUDIENCE = local.trycrystal_runner_audience
+      })
+      secret_env = {
+        SECRET_KEY_BASE = google_secret_manager_secret.secret_key_base["trycrystal"].secret_id
+      }
     }
   }
 
@@ -465,7 +553,7 @@ locals {
   # it the Job assembles a localhost connection from development defaults and
   # migrates nothing, successfully.
   migration_config = {
-    for app in local.apps : app => {
+    for app in local.database_apps : app => {
       env = {
         LUCKY_ENV = "production"
       }
@@ -473,6 +561,34 @@ locals {
         DATABASE_URL = var.database_url_secret_ids[app]
       }
     }
+  }
+
+  # The trycrystal runner: the service that executes untrusted Crystal in
+  # exchange for a lesson answer. Its identity, its audience and its image,
+  # written once so the service resource, the app's environment and CI all read
+  # the same strings.
+  #
+  # The audience is a declared literal, not the service's URL, for exactly the
+  # reason docs_launcher_audience is: both sides need the value (the runner to
+  # declare it in custom_audiences, the app to mint its ID token for it), and a
+  # resource cannot consume its own output. A literal both read from one local
+  # cannot drift.
+  trycrystal_runner_service_name = "trycrystal-runner"
+  trycrystal_runner_audience     = "https://trycrystal-runner.trycrystal.internal"
+  trycrystal_runner_image        = "${var.image_repository}/trycrystal-runner:${var.image_tag}"
+
+  # The runner's whole platform environment. One variable, and the smallness is
+  # the confinement contract: TRYC_SANDBOX names the sandbox implementation, and
+  # the runner refuses to start without it. There is no database URL, no bucket,
+  # no queue, no secret of any kind on this service, because a service that
+  # executes strangers' code is given nothing to steal.
+  #
+  # ALLOW_UNSAFE is deliberately absent, here and everywhere. The opt out is the
+  # exact string ALLOW_UNSAFE=true set by an operator at the console, never a
+  # value terraform ships, so no plan, apply or refactor can quietly turn the
+  # sandbox off.
+  trycrystal_runner_env = {
+    TRYC_SANDBOX = "cloudrun"
   }
 
   # docs-launcher's environment.
@@ -613,8 +729,8 @@ locals {
   # only, so this list is the whole answer to "what can reach the database".
   # docs-build is absent.
   cloudsql_clients = merge(
-    { for app in local.apps : app => google_service_account.apps[app].email },
-    { for app in local.apps : "${app}-migrate" => google_service_account.app_migrations[app].email },
+    { for app in local.database_apps : app => google_service_account.apps[app].email },
+    { for app in local.database_apps : "${app}-migrate" => google_service_account.app_migrations[app].email },
     { "docs-launcher" = google_service_account.docs_launcher.email },
     { "discover-shards" = google_service_account.discover_shards.email },
     { "docs-status-reconcile" = google_service_account.docs_status_reconcile.email },

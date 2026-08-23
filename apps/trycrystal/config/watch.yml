@@ -1,0 +1,5 @@
+# Ports follow the monorepo's app ladder: shards 3000, docs 3001, gigs 3002,
+# bits 3003, this app 3004.
+host: 127.0.0.1
+port: 3004
+reload_port: 3104

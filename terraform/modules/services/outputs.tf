@@ -9,8 +9,18 @@ output "service_ids" {
 }
 
 output "service_uris" {
-  description = "Map of app slug to the service's run.app URI. Not reachable from outside, because ingress on these four is INTERNAL_AND_CLOUD_LOAD_BALANCING; exposed for diagnostics rather than for routing"
+  description = "Map of app slug to the service's run.app URI. Not reachable from outside, because ingress on these is INTERNAL_AND_CLOUD_LOAD_BALANCING; exposed for diagnostics rather than for routing"
   value       = { for app, service in google_cloud_run_v2_service.apps : app => service.uri }
+}
+
+output "trycrystal_runner_service" {
+  description = "Name of the untrusted Crystal execution service. Distinct from service_names because it must never sit behind the load balancer: the release job rolls its image from this name"
+  value       = google_cloud_run_v2_service.trycrystal_runner.name
+}
+
+output "trycrystal_runner_uri" {
+  description = "trycrystal-runner's run.app URI. This is what RUNNER_URL gives the trycrystal app, and it is reachable only with an ID token from the trycrystal app's identity; the IAM binding is the lock and ingress ALL is only how the app's own request is allowed to arrive"
+  value       = google_cloud_run_v2_service.trycrystal_runner.uri
 }
 
 output "service_account_emails" {
@@ -97,3 +107,4 @@ output "warm_popular_docs_job" {
   description = "Name of the documentation warming Job. The scheduler module builds its Cloud Run Jobs :run target from this rather than restating the name"
   value       = google_cloud_run_v2_job.warm_popular_docs.name
 }
+
