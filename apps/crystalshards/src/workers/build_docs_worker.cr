@@ -19,6 +19,37 @@ struct BuildDocsWorker < BaseJob
     CrystalShards::JobQueue.current.build_docs(shard_name, version)
   end
 
+  # A forced rebuild that could not land, refused before it spends a compile.
+  #
+  # `force` exists to make this worker clone and compile a version it already
+  # has an artifact for, and in production it cannot finish while that artifact
+  # is still there: overwriting an object in Cloud Storage requires
+  # storage.objects.delete, and no identity in this pipeline holds it on
+  # purpose, because docs-build compiles arbitrary third-party code. See the
+  # invariant stated in terraform/modules/services/locals.tf. Without this
+  # refusal a forced run would clone, install dependencies, wait out a
+  # sandboxed compile, take a 403 from the upload, and record a version that IS
+  # documented as failed on the way out.
+  #
+  # So `force`'s real work is this refusal. Without the flag an operator asking
+  # for a rebuild would silently get "already published, marked success" and
+  # never learn why nothing was rebuilt; with it they get the precondition,
+  # named, before anything is spent.
+  #
+  # This can never become a retry loop: `force` is not on the wire and nothing
+  # outside this codebase can set it.
+  class ForcedRebuildBlocked < Exception
+    def initialize(shard_name : String, version : String, key : String)
+      super(
+        "refusing to force a rebuild of #{shard_name}@#{version}: #{key} already exists, and " \
+        "publishing over it needs storage.objects.delete, which nothing in this pipeline holds " \
+        "because the build step compiles arbitrary third-party code. Remove the object with an " \
+        "identity that may, then build again: the ordinary path rebuilds a version whose artifact " \
+        "is absent and needs no force at all."
+      )
+    end
+  end
+
   # @shard_name is the wire field name crystaldocs already produces, so it
   # stays. What it CARRIES is now the canonical slug
   # ("github.com/kemalcr/kemal") for anything crystalshards enqueues, because
@@ -26,7 +57,17 @@ struct BuildDocsWorker < BaseJob
   # ShardQuery#resolve accepts either, and refuses an ambiguous bare name
   # rather than building the wrong repository. crystaldocs still sends bare
   # names and keeps working until the day a name collides.
-  def initialize(@shard_name : String, @version : String)
+  #
+  # `force` is not on the wire and must never get there. It overrides the
+  # artifact check in `perform`, and every request reaching this worker from
+  # outside builds it without one: Cloud Tasks, the discovery crawler and
+  # crystaldocs' lazy build all construct `new(shard_name:, version:)`. That is
+  # the rule CrystalShards::CoreDocs.build_and_publish already states for its
+  # own `force`, for the same reason, that an automatic build a reader's page
+  # view commissioned must never spend a clone and a compile on bytes this site
+  # already holds. Only a deliberate operator action may set it, and see
+  # `ForcedRebuildBlocked` above for what it can and cannot achieve today.
+  def initialize(@shard_name : String, @version : String, @force : Bool = false)
     @queue = "docs"
   end
 
@@ -55,6 +96,28 @@ struct BuildDocsWorker < BaseJob
     # entirely rather than threading a special case through ShardQuery and
     # DocsBuilder below, both of which assume a registry entry exists.
     return perform_core_build if CrystalShards::CoreDocs.package?(@shard_name)
+
+    # Nothing is built for a version that already has an artifact, and the
+    # check has to happen here, before the clone, rather than after the
+    # compile.
+    #
+    # A published shard version is immutable: same repository, same tag, same
+    # commit_sha, so its docs.json cannot legitimately change, and the storage
+    # design leans on exactly that. docs-build compiles arbitrary third-party
+    # Crystal code, so no identity in this pipeline holds
+    # storage.objects.delete, and Cloud Storage requires that permission to
+    # overwrite an existing object. A rebuild of an already-documented version
+    # therefore could not end any other way than it did: the compile ran, the
+    # upload came back 403, the outcome was recorded as a failure, and Cloud
+    # Tasks brought the same request back to fail identically. That loop ran
+    # continuously and published nothing.
+    #
+    # The outcome recorded is success, not a skip. The artifact exists, so the
+    # version IS documented, and a reader watching a pending page needs the row
+    # to catch up with the bucket. This is the shard-side mirror of what
+    # CoreDocs.build_and_publish already does for the standard library, and of
+    # what src/reconcile_docs_status.cr does in bulk.
+    return if reuse_published_artifact?
 
     docs_status.building
 
@@ -118,6 +181,35 @@ struct BuildDocsWorker < BaseJob
     # repairs a lost outcome, which is why this is raised rather than
     # absorbed.
     raise ex
+  rescue ex : ForcedRebuildBlocked
+    # Refused before anything was built, and deliberately recorded as nothing.
+    # The version is documented, the row already says so, and writing 'failed'
+    # over a working version to report that an operator's request was blocked
+    # would be a lie a reader pays for: it is also what starts crystaldocs' one
+    # hour retry floor. The operator gets the exception; the catalogue is left
+    # exactly as it was.
+    log_error ex.message.to_s
+    raise ex
+  rescue ex : CrystalShards::DocsBuilder::SourceUnusable
+    # A finished build, not a failed delivery, so this records the outcome and
+    # returns instead of raising.
+    #
+    # Raising is what asks Cloud Tasks to redeliver, and a redelivery is only
+    # worth its clone, its `shards install` and its sandboxed compile if the
+    # next attempt could come out differently. These cannot: a revision the
+    # repository does not have and a dependency set that does not resolve are
+    # facts about bytes someone already published, identical on every attempt.
+    # Measured against the live queue, that difference was 35,918 attempts
+    # against 5,379 tasks created in a week.
+    #
+    # Note what is NOT absorbed here. `docs_status.failed` raising Unrecorded
+    # leaves this method, because a lost outcome is still repaired only by a
+    # redelivery. That is why this is not wrapped the way the transient path
+    # below is: there the build's own exception is the one worth raising, and
+    # here there is nothing worth raising unless recording the outcome is
+    # itself what failed.
+    log_error "#{@shard_name}@#{@version} cannot be built from its own source", ex
+    docs_status.failed(ex.message)
   rescue ex : Exception
     log_error "Failed to build docs for #{@shard_name}@#{@version}", ex
 
@@ -142,8 +234,14 @@ struct BuildDocsWorker < BaseJob
   # nothing here duplicates those writes. This only logs the outcome and
   # re-raises on failure, matching `perform`'s own contract: raising is what
   # puts a redelivered request back through Cloud Tasks.
+  #
+  # `force` is forwarded rather than dropped. It means the same thing on both
+  # sides, and silently ignoring an explicitly set flag for one package is
+  # worse than either honouring it or refusing it. Nothing on the wire can set
+  # it, so the lazy-build path still never passes it, which is the property
+  # CoreDocs' own comment relies on.
   private def perform_core_build
-    published = CrystalShards::CoreDocs.build_and_publish(@version)
+    published = CrystalShards::CoreDocs.build_and_publish(@version, force: @force)
     if published.reused_existing
       log_info "The standard library #{@shard_name}@#{@version} was already present at #{published.key}; " \
                "marked success from the artifact and skipped rebuilding"
@@ -154,6 +252,36 @@ struct BuildDocsWorker < BaseJob
   rescue ex : Exception
     log_error "Failed to publish the standard library #{@shard_name}@#{@version}", ex
     raise ex
+  end
+
+  # True when this run has nothing to build, having recorded the outcome from
+  # the artifact already in the bucket.
+  #
+  # The store is asked before `force` is considered, rather than after, so a
+  # forced run that cannot land is refused here instead of discovering it from
+  # a 403 at the end of a compile.
+  #
+  # This asks whether the object is THERE, not whether it parses. That bound is
+  # deliberate. This pipeline cannot leave a partial artifact at a published
+  # key: the sandbox validates docs.json parses before the launcher uploads,
+  # build scratch lives under its own prefix, and the publish is a single write
+  # of a whole body, so a failed build leaves the complete object or none. What
+  # this cannot detect is an object written by some earlier code path, or
+  # damaged out of band, which would now be marked succeeded rather than
+  # rebuilt. CoreDocs' reuse path carries the same limitation, and the repair
+  # for both is src/reconcile_docs_status.cr. Closing it by fetching and
+  # parsing every artifact would spend a full download per queued request,
+  # which is the cost this check exists to remove.
+  private def reuse_published_artifact? : Bool
+    key = CrystalStorage::Keys.docs_json(@shard_name, @version)
+    return false unless CrystalShards::StorageService.build.docs_json_exists?(@shard_name, @version)
+
+    raise ForcedRebuildBlocked.new(@shard_name, @version, key) if @force
+
+    docs_status.succeeded
+    log_info "#{@shard_name}@#{@version} was already present at #{key}; marked success from the " \
+             "artifact and skipped rebuilding"
+    true
   end
 
   # Named docs_status, not status, so it cannot be confused with the build

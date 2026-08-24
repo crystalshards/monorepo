@@ -493,14 +493,33 @@ variable "warm_max_indexes" {
 
 variable "trycrystal_runner_min_instances" {
   description = <<-DESC
-    Warm instances held for the runner. 1 is the product: the runner is a warm
-    pool by design (DESIGN.md sections 2 and 4), because a cold started instance
-    has to boot the toolchain before it can answer, and the tutorial is built
-    around sub-second answers. Setting this to 0 saves one idle instance and
-    reintroduces the cold start on the first submission of every quiet period.
+    Warm instances held for the runner. This was 1, because the runner is a warm
+    pool by design (DESIGN.md sections 2 and 4): a cold started instance has to
+    boot the toolchain before it can answer, and the tutorial is built around
+    sub-second answers.
+
+    It is 0 because the design was priced against traffic that has not arrived.
+    One warm instance at trycrystal_runner_cpu and trycrystal_runner_memory with
+    cpu_idle false is billed continuously and measured at $115.63 a month,
+    against 10 lifetime requests to the runner. That is not a latency budget, it
+    is a subscription to an empty room, and it was the second largest line on
+    the bill.
+
+    What this costs: the first submission after a quiet period pays a cold start
+    while the toolchain boots, so the tutorial's opening interaction is slow for
+    that one visitor. At ten lifetime requests essentially every submission is
+    that visitor, which sounds like an argument for pinning it warm and is the
+    opposite: there is nobody here to keep warm for.
+
+    What would justify going back to 1: sustained runner traffic where the gap
+    between submissions is routinely shorter than Cloud Run's idle window, so a
+    warm instance is serving rather than waiting. Concretely, enough requests
+    per day that the instance would be up anyway, which makes min_instance_count
+    a latency guarantee instead of a floor on the bill. Until that shows up in
+    the runner's own request count, this stays at 0.
   DESC
   type        = number
-  default     = 1
+  default     = 0
 
   validation {
     condition     = var.trycrystal_runner_min_instances >= 0

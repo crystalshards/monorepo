@@ -12,11 +12,19 @@
 # is a 403 before any handler runs. It is not behind the load balancer and has
 # no hostname of its own.
 #
-# min_instances is 1 and that is the product, not a convenience. The runner is
-# a warm pool by design (DESIGN.md section 2 and 4): a cold started instance
-# has to boot the toolchain before it can answer, which is precisely the
-# sub-second latency the tutorial is built around. One idle instance is the
-# price of that, and it is accepted there rather than hidden here.
+# min_instances is 0, and that is a reversal of what this comment used to say.
+# The runner was designed as a warm pool (DESIGN.md section 2 and 4) because a
+# cold started instance has to boot the toolchain before it can answer, and the
+# tutorial is built around sub-second answers. The design was right about the
+# mechanism and wrong about the traffic: at trycrystal_runner_cpu and
+# trycrystal_runner_memory with cpu_idle false, one pinned instance is billed
+# around the clock and was measured at $115.63 a month against 10 lifetime
+# requests. Holding a warm pool for a fleet nobody is submitting to is not a
+# latency budget, it is a standing charge, so the cold start is back on the
+# first submission of every quiet period and that is the correct trade at this
+# volume. var.trycrystal_runner_min_instances records what evidence would
+# justify pinning it warm again; the short version is sustained submissions,
+# not a preference about how the first one feels.
 #
 # Concurrency is 1 on purpose, not a placeholder. The runner serializes
 # executions per instance by construction, and the confinement analysis in
@@ -26,9 +34,13 @@
 # submission DoS its own instance's neighbours. Throughput comes from
 # max_instances, not from concurrency.
 #
-# cpu_idle is false because the instance is expected to be holding itself warm
-# on purpose; throttling a deliberately warm instance between requests would
-# reintroduce the cold start the min_instances line is paying to avoid.
+# cpu_idle is false, and with min_instances at 0 that no longer means "keep a
+# deliberately warm instance warm". It now means an instance that exists is an
+# instance a visitor is working in: a lesson is a run, an edit and another run,
+# and throttling the CPU between those would put a warmup in front of every
+# submission after the first instead of only the first. The cost of cpu_idle
+# false is now bounded by how long anyone is actually using the tutorial, which
+# is the bound that was missing while an instance was pinned up permanently.
 #
 # There is no cloudsql volume, no secret, no env var beyond TRYC_SANDBOX (see
 # local.trycrystal_runner_env), no dependency on any secret grant, and the

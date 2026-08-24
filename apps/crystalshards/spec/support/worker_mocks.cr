@@ -52,12 +52,36 @@ module CrystalShards
     property uploaded_docs : Array(String) = [] of String
     property should_fail : Bool = false
 
+    # Artifacts a previous build published, so a spec can model the state the
+    # bucket is actually in for most of the catalogue: the version is already
+    # documented and nothing about it can change.
+    property existing : Set(String) = Set(String).new
+
+    # The store cannot answer whether an artifact is there, which is a
+    # different fact from an empty bucket and takes a different path out of the
+    # worker. Kept separate from `should_fail`, which models a failing upload,
+    # because a spec has to be able to fail exactly one of the two.
+    property stat_unavailable : Bool = false
+
     def upload_docs_json(shard_name : String, version : String, docs_json_path : String) : String
       raise "Storage upload failed" if should_fail
 
       key = CrystalStorage::Keys.docs_json(shard_name, version)
       @uploaded_docs << key
       key
+    end
+
+    # What was uploaded is there afterwards, the same way it would be in a real
+    # store. Without that, a fake would let a second build of one version look
+    # like a first.
+    def docs_json_exists?(shard_name : String, version : String) : Bool
+      key = CrystalStorage::Keys.docs_json(shard_name, version)
+
+      if stat_unavailable
+        raise CrystalStorage::Unavailable.new("stat", key, "the fake store was told it could not answer")
+      end
+
+      @existing.includes?(key) || @uploaded_docs.includes?(key)
     end
   end
 
@@ -101,8 +125,10 @@ module CrystalShards
   #
   # Records the arguments it was handed and writes `docs_json` into the work
   # directory as the build's one artifact. Set `should_fail` to model a
-  # `crystal docs` run that produced nothing, or `raise_with` to model a
-  # clone that blew up.
+  # `crystal docs` run that produced nothing, `raise_with` to model a clone
+  # that blew up, or `raise_source_unusable` to model the shard itself being
+  # unbuildable, which is a different fact and leaves the worker by a different
+  # exit.
   class MockDocsBuilder < DocsBuilder
     record Call, repository_url : String, version : String, commit_sha : String?, work_dir : String
 
@@ -110,9 +136,14 @@ module CrystalShards
     property docs_json : String = %({"repository_name":"mock","program":{"full_name":"mock","name":"mock"}})
     property should_fail : Bool = false
     property raise_with : String? = nil
+    property raise_source_unusable : String? = nil
 
     def generate_docs(repository_url : String, version : String, commit_sha : String?, work_dir : String) : String?
       @calls << Call.new(repository_url, version, commit_sha, work_dir)
+
+      if message = raise_source_unusable
+        raise DocsBuilder::SourceUnusable.new(message)
+      end
 
       if message = raise_with
         raise message
