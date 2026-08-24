@@ -1,13 +1,46 @@
 require "../../spec_helper"
 
 describe Home::Index do
-  it "greets a new visitor with the welcome and lesson one, server rendered" do
+  it "renders the workspace: lesson one on the left, editor and output on the right" do
     response = BrowserClient.exec(Home::Index)
 
     response.status_code.should eq 200
     body = response.body
-    body.should contain("Type the line below and press Enter")
+
+    # The lesson is server rendered into its own pane, so a visitor reads a
+    # real lesson before any script runs.
     body.should contain("Lesson 1 of 3.")
+    body.should contain(%(id="lesson-pane"))
+
+    # Three surfaces, not one transcript. Each is asserted because the whole
+    # point of the layout is that narrative, input and output do not share a
+    # scroll.
+    body.should contain("pane--lesson")
+    body.should contain("pane--editor")
+    body.should contain("pane--output")
+    body.should contain(%(id="console-input"))
+    body.should contain(%(id="transcript"))
+
+    # Running is a deliberate act now, and the shortcut is named on the
+    # surface rather than left for a visitor to guess.
+    body.should contain("Cmd or Ctrl + Enter")
+  end
+
+  it "offers the lesson's line as a copyable example rather than only prose" do
+    response = BrowserClient.exec(Home::Index)
+
+    body = response.body
+    body.should contain(%(id="copy-example"))
+    body.should contain("Copy example")
+  end
+
+  it "does not tell a visitor to press Enter, because Enter is a newline now" do
+    # The editor is multi-line, so Enter belongs to the text. Copy that still
+    # said "press Enter" would be instructions for a product that no longer
+    # exists, which is worse than no instructions.
+    response = BrowserClient.exec(Home::Index)
+
+    response.body.should_not contain("press Enter")
   end
 
   it "escapes the lesson's code sample instead of emitting it as markup" do

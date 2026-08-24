@@ -144,22 +144,51 @@ a {
 }
 
 /* ==========================================================================
-   shell and masthead
+   the workspace
+
+   A developer's screen, used. The page itself does not scroll: the masthead
+   and colophon are fixed height, and the three panes take the rest and
+   scroll independently. Reading the lesson and writing code happen at the
+   same time, so they get their own surfaces instead of taking turns in one
+   column.
+
+   Deliberately NOT a max-width column. --shell is gone from this layout; a
+   58rem measure is right for prose and wrong for a tool, and the whole point
+   of this revision is the real estate.
+
+   100dvh, not 100vh: on mobile the dynamic viewport unit is the one that
+   accounts for the browser's own chrome, and 100vh there produces a page
+   that is always slightly taller than the screen.
    ========================================================================= */
 
 .shell {
-  max-width: var(--shell);
-  margin: 0 auto;
-  padding: var(--pad) var(--pad) calc(var(--pad) * 2);
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: 0;
+  margin: 0;
+  max-width: none;
+  overflow: hidden;
 }
 
 .masthead {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: var(--gap);
-  margin-bottom: var(--gap);
+  padding: 0.7rem var(--pad);
+  border-bottom: 1px solid var(--edge);
+  min-height: 0;
 }
+
+/* ---- brand and progress -------------------------------------------------
+   These were lost once already. Rewriting the layout block replaced the old
+   .shell and masthead section wholesale, and took the brand and progress
+   rules with it: the mark rendered in body ink instead of the accent, the
+   wordmark lost its condensed face, and .step is a <span>, so with its
+   width and height gone it measured 0x0 and the progress indicator was
+   invisible on the page while still being in the DOM. Caught by measuring
+   the rendered geometry, not by reading the file. */
 
 .brand {
   display: flex;
@@ -169,14 +198,15 @@ a {
 
 .mark {
   color: var(--accent);
-  transform: translateY(2px);
+  flex: none;
 }
 
 .wordmark {
   font-family: var(--cond);
   font-weight: 700;
-  font-size: var(--step-2);
+  font-size: var(--step-1);
   letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .tagline {
@@ -205,11 +235,14 @@ a {
   gap: 0.4rem;
 }
 
+/* Small facets, echoing the mark. A flex item, so width and height apply to
+   what is otherwise an inline span. */
 .step {
   width: 10px;
   height: 10px;
+  flex: none;
   border: 1.5px solid var(--ink-muted);
-  transform: rotate(45deg);   /* small facets, echoing the mark */
+  transform: rotate(45deg);
 }
 
 .step--current {
@@ -222,30 +255,188 @@ a {
   border-color: var(--ink-muted);
 }
 
-/* ==========================================================================
-   the console
-   ========================================================================= */
+/* The two columns. minmax(0, ...) on both tracks is load bearing: without
+   the zero minimum a long unbroken line of output makes a grid track refuse
+   to shrink, and the whole layout grows a horizontal scrollbar instead of
+   the pane that owns the content. */
+.workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 27rem) minmax(0, 1fr);
+  gap: 1px;
+  background: var(--edge);
+}
 
-.console {
+/* Past a very wide viewport the lesson column stops growing: prose has a
+   comfortable measure and an 80rem-wide paragraph is not it. The editor and
+   output take the surplus, which is where a wide screen actually helps. */
+@media (min-width: 100rem) {
+  .workspace {
+    grid-template-columns: minmax(0, 32rem) minmax(0, 1fr);
+  }
+}
+
+.workbench {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 1px;
+  background: var(--edge);
+}
+
+/* ---- a pane ------------------------------------------------------------- */
+
+.pane {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--paper);
+}
+
+.pane--editor,
+.pane--output {
   background: var(--console-ground);
   color: var(--console-ink);
-  border: 1px solid var(--console-edge);
-  border-radius: var(--facet) 0 var(--facet) 0;   /* one cut facet */
-  min-height: 24rem;
+}
+
+.pane-head {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 1px 0 var(--console-edge);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.4rem 0.9rem;
+  border-bottom: 1px solid var(--edge);
+  min-height: calc(var(--tap) + 0.5rem);
+}
+
+.pane--editor .pane-head,
+.pane--output .pane-head {
+  border-bottom-color: var(--console-edge);
+  background: var(--console-raised);
+}
+
+.pane-title {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: var(--step--1);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.pane--editor .pane-title,
+.pane--output .pane-title {
+  color: var(--console-ink-dim);
+}
+
+.pane-hint {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  color: var(--console-meta);
+  white-space: nowrap;
+}
+
+.pane-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--pad);
+}
+
+/* ---- the lesson pane ---------------------------------------------------- */
+
+.lesson-text {
+  margin: 0 0 1.1rem;
+  font-size: var(--step-1);
+  line-height: 1.55;
+  max-width: 42ch;
+  white-space: pre-wrap;
+}
+
+.example {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: start;
+  margin-bottom: 1.25rem;
+}
+
+.example-label,
+.hint-label {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: var(--step--1);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.example-code {
+  margin: 0;
+  align-self: stretch;
+  font-family: var(--mono);
+  font-size: var(--step-0);
+  background: var(--console-ground);
+  color: var(--console-echo);
+  border-radius: var(--facet) 0 var(--facet) 0;
+  padding: 0.7rem 0.9rem;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.ghost {
+  font-family: var(--mono);
+  font-size: var(--step--1);
+  color: var(--accent-deep);
+  background: transparent;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  min-height: var(--tap);
+  padding: 0.15rem 0.7rem;
+  cursor: pointer;
+}
+
+.ghost:hover {
+  border-color: var(--accent);
+}
+
+.lesson-hint {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--step-0);
+  max-width: 42ch;
+}
+
+/* ---- the editor pane --------------------------------------------------- */
+/* The textarea IS the pane body, so it fills the pane and scrolls itself.
+   wrap="off" plus overflow auto keeps a long line a long line, which is what
+   a code editor does; soft wrapping code changes what the author sees. */
+
+.pane--editor .input {
+  min-height: 0;
+  width: 100%;
+  font-family: var(--mono);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  color: var(--console-echo);
+  background: var(--console-ground);
+  border: 0;
+  padding: var(--pad);
+  resize: none;
+  overflow: auto;
+  tab-size: 2;
+}
+
+.pane--editor .input:focus {
+  outline: 2px solid var(--console-focus);
+  outline-offset: -2px;
 }
 
 .transcript {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--pad);
   font-family: var(--mono);
   font-size: var(--step-0);
   line-height: 1.55;
-  overscroll-behavior: contain;
 }
 
 /* Every line is textContent only; the kinds differ by weight, size and
@@ -260,15 +451,6 @@ a {
 .line--system {
   color: var(--console-ink);
   max-width: 46rem;
-}
-
-.line--lesson {
-  color: var(--console-ink);
-  font-weight: 500;
-  max-width: 46rem;
-  border-left: 2px solid var(--console-accent);
-  padding-left: 0.75rem;
-  margin-top: 1.1rem;
 }
 
 .line--echo {
@@ -318,63 +500,19 @@ a {
   max-width: 46rem;
 }
 
-/* ---- the entry row ------------------------------------------------------ */
-
-.entry {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  padding: 0.5rem var(--pad) 0.75rem;
-  border-top: 1px solid var(--console-edge);
-  background: var(--console-raised);
-}
-
-.counter {
-  font-family: var(--mono);
-  font-size: var(--step-0);
-  color: var(--console-accent);
-  padding-bottom: 0.35rem;
-  white-space: nowrap;
-  user-select: none;
-}
-
-.input {
-  flex: 1;
-  font-family: var(--mono);
-  font-size: var(--step-0);
-  line-height: 1.55;
-  color: var(--console-echo);
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--console-edge);
-  padding: 0.25rem 0 0.35rem;
-  resize: none;
-  min-height: var(--tap);
-  max-height: 12rem;
-  overflow-y: auto;
-}
-
-.input:focus {
-  outline: none;
-  border-bottom-color: var(--console-focus);
-  box-shadow: 0 1px 0 var(--console-focus);
-}
-
-.input::placeholder {
-  color: var(--console-meta);
-}
+/* ---- the run control ---------------------------------------------------- */
 
 .run {
+  margin-left: 0;
   font-family: var(--mono);
-  font-size: var(--step-0);
+  font-size: var(--step--1);
   color: var(--console-ground);
   background: var(--console-accent);
   border: 0;
   border-radius: 4px;
   min-height: var(--tap);
-  padding: 0.2rem 1rem;
+  padding: 0.2rem 1.1rem;
   cursor: pointer;
-  margin-bottom: 0.15rem;
 }
 
 .run:disabled {
@@ -382,13 +520,23 @@ a {
   cursor: default;
 }
 
-.entry[data-pending] .counter {
+/* The editor pane dims its own title while a submission is out, so the
+   waiting state reads on the surface that is waiting rather than as a
+   spinner bolted somewhere else. */
+.pane--editor[data-pending] .pane-title {
   animation: breathe 1.2s ease-in-out infinite;
 }
 
 @keyframes breathe {
   50% {
     opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pane--editor[data-pending] .pane-title {
+    animation: none;
+    opacity: 0.55;
   }
 }
 
@@ -406,9 +554,50 @@ noscript {
    ========================================================================= */
 
 .colophon {
-  margin-top: var(--gap);
+  padding: 0.5rem var(--pad);
+  border-top: 1px solid var(--edge);
   color: var(--ink-muted);
   font-size: var(--step--1);
+}
+
+/* ==========================================================================
+   narrow screens
+
+   Below the point where two columns each stop being usable, the panes stack
+   and the PAGE scrolls instead of each pane scrolling inside a fixed height.
+   Three independently scrolling boxes stacked inside one screen height is
+   the worst of both: nothing has room, and every gesture is ambiguous.
+   ========================================================================= */
+
+@media (max-width: 60rem) {
+  .shell {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .workspace,
+  .workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+
+  .pane {
+    grid-template-rows: auto auto;
+  }
+
+  .pane-body {
+    overflow-y: visible;
+  }
+
+  /* An editor still needs a real height when nothing is constraining it. */
+  .pane--editor .input {
+    min-height: 11rem;
+  }
+
+  .pane--output .pane-body {
+    min-height: 14rem;
+  }
 }
 
 @media (max-width: 40rem) {

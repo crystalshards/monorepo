@@ -19,10 +19,11 @@
   var form = document.getElementById("console-form");
   var transcript = document.getElementById("transcript");
   var input = document.getElementById("console-input");
-  var counter = document.getElementById("counter");
   var progress = document.getElementById("progress");
+  var lessonPane = document.getElementById("lesson-pane");
+  var copyButton = document.getElementById("copy-example");
 
-  if (!bootEl || !form || !transcript || !input) {
+  if (!bootEl || !form || !transcript || !input || !lessonPane) {
     return;
   }
 
@@ -31,14 +32,8 @@
   var copy = boot.copy;
 
   var PROGRESS_KEY = "trycrystal.progress";
-  var HISTORY_KEY = "trycrystal.history";
-  var HISTORY_LIMIT = 100;
 
   var lessonIndex = 0;
-  var history = [];
-  var historyCursor = null;
-  var draft = "";
-  var submissions = 0;
   var pending = false;
 
   // ---- storage ------------------------------------------------------------
@@ -92,6 +87,60 @@
     return lessons[lessonIndex];
   }
 
+  // The lesson pane, rebuilt for one lesson.
+  //
+  // Same rule as the transcript: every string lands through textContent, and
+  // no markup is built from anything that came over the wire. The pane is
+  // cleared and rebuilt rather than patched, because a half-updated lesson
+  // (new narrative, previous sample) is a worse failure than a flicker.
+  function renderLesson(lesson) {
+    while (lessonPane.firstChild) {
+      lessonPane.removeChild(lessonPane.firstChild);
+    }
+
+    if (!lesson) {
+      // Past the last lesson the pane says so rather than sitting on a
+      // prompt the visitor already beat.
+      lessonPane.appendChild(el("p", "lesson-text", copy.finale));
+      return;
+    }
+
+    lessonPane.appendChild(el("p", "lesson-text", lesson.prompt));
+
+    if (lesson.code_sample) {
+      var example = el("div", "example");
+      example.appendChild(el("span", "example-label", copy.example_label));
+
+      var pre = el("pre", "example-code");
+      pre.appendChild(el("code", null, lesson.code_sample));
+      example.appendChild(pre);
+
+      var button = el("button", "ghost", copy.copy_button);
+      button.type = "button";
+      button.addEventListener("click", function () {
+        copyExample(lesson.code_sample);
+      });
+      example.appendChild(button);
+
+      lessonPane.appendChild(example);
+    }
+
+    if (lesson.hint) {
+      var hint = el("p", "lesson-hint");
+      hint.appendChild(el("span", "hint-label", copy.hint_label));
+      hint.appendChild(document.createTextNode(" " + lesson.hint));
+      lessonPane.appendChild(hint);
+    }
+  }
+
+  // Loads the lesson's line into the editor and puts the caret at the end,
+  // so the next thing the visitor does is press Run or edit it.
+  function copyExample(sample) {
+    input.value = sample;
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+
   function renderProgress() {
     if (!progress) {
       return;
@@ -111,17 +160,6 @@
         steps[i].className = "step step--current";
       }
     }
-  }
-
-  // The counter names the line about to be typed, the way a REPL numbers
-  // its prompt, so it reads one ahead of the submissions already sent.
-  function nextCounter() {
-    submissions += 1;
-    var padded = String(submissions + 1);
-    while (padded.length < 3) {
-      padded = "0" + padded;
-    }
-    return padded + ">";
   }
 
   // ---- resuming -----------------------------------------------------------
@@ -147,16 +185,17 @@
         transcript.removeChild(transcript.firstChild);
       }
       line("system", copy.welcome_back);
-      line("lesson", lessons[index].prompt);
+      renderLesson(lessons[index]);
     }
-    if (index === lessons.length) {
-      // Finished the tutorial on a previous visit: welcome them back as
-      // finished rather than dropping them into a prompt they already beat.
+    if (savedId === "done") {
+      // Finished the tutorial on a previous visit: the lesson pane says so
+      // rather than dropping them into a prompt they already beat.
+      lessonIndex = lessons.length;
       while (transcript.firstChild) {
         transcript.removeChild(transcript.firstChild);
       }
       line("system", copy.welcome_back);
-      line("final", copy.finale);
+      renderLesson(null);
     }
   }
 
@@ -171,18 +210,11 @@
       return;
     }
 
-    history.push(code);
-    if (history.length > HISTORY_LIMIT) {
-      history = history.slice(-HISTORY_LIMIT);
-    }
-    writeJSON(HISTORY_KEY, history);
-    historyCursor = null;
-    draft = "";
-
+    // The editor KEEPS the submission. In a transcript console the line is
+    // consumed because the transcript is the record; in an editor the code is
+    // the thing you are working on, and clearing it after every Run would
+    // throw away the draft a visitor is iterating on.
     line("echo", code);
-    counter.textContent = nextCounter();
-    input.value = "";
-    autosize();
 
     pending = true;
     form.setAttribute("data-pending", "pending");
@@ -250,6 +282,7 @@
         lessonIndex = lessons.length;
         writeJSON(PROGRESS_KEY, "done");
         line("final", copy.finale);
+        renderLesson(null);
       } else if (body.lesson.next) {
         lessonIndex = lessons.findIndex(function (lesson) {
           return lesson.id === body.lesson.next.id;
@@ -258,7 +291,7 @@
           lessonIndex = 0;
         }
         writeJSON(PROGRESS_KEY, body.lesson.next.id);
-        line("lesson", body.lesson.next.prompt);
+        renderLesson(lessons[lessonIndex] || body.lesson.next);
       }
       renderProgress();
     }
@@ -266,69 +299,31 @@
 
   // ---- keyboard ------------------------------------------------------------
 
-  function autosize() {
-    input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 192) + "px";
-  }
-
-  input.addEventListener("input", autosize);
-
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     submit(input.value);
   });
 
   input.addEventListener("keydown", function (event) {
-    // Enter submits; Shift+Enter makes a newline, for a submission that
-    // grew past one line.
-    if (event.key === "Enter" && !event.shiftKey) {
+    // This is an editor, so Enter belongs to the text. Running is a key you
+    // have to mean: Cmd+Enter on a Mac, Ctrl+Enter elsewhere, which is what
+    // every editor with a run button already trains people to press. The old
+    // single-line console submitted on Enter, and keeping that here would
+    // make writing a two-line program impossible.
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       submit(input.value);
       return;
     }
 
-    // Up walks back through history when the caret sits at the very start,
-    // Down walks forward when it sits at the very end, so a multiline draft
-    // can still be edited with the arrow keys mid-text.
-    if (event.key === "ArrowUp" && input.selectionStart === 0 && input.selectionEnd === 0) {
-      if (history.length === 0) {
-        return;
-      }
+    // Tab indents instead of leaving the editor. Shift+Tab still escapes, so
+    // the pane is not a keyboard trap, which would fail WCAG 2.1.2.
+    if (event.key === "Tab" && !event.shiftKey) {
       event.preventDefault();
-      if (historyCursor === null) {
-        draft = input.value;
-        historyCursor = history.length - 1;
-      } else {
-        historyCursor = Math.max(0, historyCursor - 1);
-      }
-      input.value = history[historyCursor];
-      input.setSelectionRange(input.value.length, input.value.length);
-      autosize();
-      return;
-    }
-
-    if (event.key === "ArrowDown" && input.selectionStart === input.value.length) {
-      if (historyCursor === null) {
-        return;
-      }
-      event.preventDefault();
-      historyCursor += 1;
-      if (historyCursor >= history.length) {
-        historyCursor = null;
-        input.value = draft;
-      } else {
-        input.value = history[historyCursor];
-      }
-      input.setSelectionRange(input.value.length, input.value.length);
-      autosize();
-      return;
-    }
-
-    // Escape empties the line without submitting it.
-    if (event.key === "Escape") {
-      input.value = "";
-      historyCursor = null;
-      autosize();
+      var start = input.selectionStart;
+      var end = input.selectionEnd;
+      input.value = input.value.slice(0, start) + "  " + input.value.slice(end);
+      input.setSelectionRange(start + 2, start + 2);
     }
   });
 
@@ -341,14 +336,18 @@
     }
   });
 
+  if (copyButton) {
+    copyButton.addEventListener("click", function () {
+      var lesson = currentLesson();
+      if (lesson && lesson.code_sample) {
+        copyExample(lesson.code_sample);
+      }
+    });
+  }
+
   // ---- go -------------------------------------------------------------------
 
-  history = readJSON(HISTORY_KEY, []);
-  if (!Array.isArray(history)) {
-    history = [];
-  }
   resume();
   renderProgress();
-  autosize();
   input.focus();
 })();

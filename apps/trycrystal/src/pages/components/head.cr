@@ -16,8 +16,8 @@ class Head < Lucky::BaseComponent
       meta charset: "utf-8"
       meta name: "viewport", content: "width=device-width, initial-scale=1"
       title @page_title
-      meta name: "description", content: "A guided Crystal console in the browser. " \
-                                         "Type a line, press Enter, learn the language. No signup."
+      meta name: "description", content: "Learn Crystal in the browser. Read the " \
+                                         "lesson, write real Crystal, run it in a sandbox. No signup."
 
       # Light is the default; the stylesheet inverts under prefers-color-scheme.
       # The console panel stays dark in both, because it is a terminal.
