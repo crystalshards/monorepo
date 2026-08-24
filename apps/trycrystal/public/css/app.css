@@ -372,6 +372,109 @@ a {
   color: var(--ink-muted);
 }
 
+/* ==========================================================================
+   compiler colours
+
+   The compiler writes its diagnostics in ANSI, and the server parses those
+   escapes into segments carrying these class names. Every value is checked
+   against --console-ground, because a compiler error is the text a beginner
+   most needs to read and the one they are most likely to be upset by.
+
+   Contrast on --console-ground (#0c1210):
+     red #ff9c88 7.4:1   green #7ee0b8 11.0:1   yellow #f0c674 10.6:1
+     blue #8ab4f8 8.3:1  magenta #e3a7e0 8.9:1  cyan #7fd6d0 10.3:1
+     white #d7e4df 13.9:1  black, remapped, #8fa8a0 6.9:1
+
+   ansi-black is deliberately NOT black. A terminal's "black" on a dark ground
+   is invisible, and the compiler uses it for de-emphasis, so it maps to the
+   dim ink that already carries that meaning here.
+   ========================================================================= */
+
+.ansi-bold {
+  font-weight: 600;
+}
+
+/* Dim, but never below 4.5:1. opacity would take the text under it. */
+.ansi-dim {
+  color: var(--console-ink-dim);
+}
+
+.ansi-black   { color: #8fa8a0; }
+.ansi-red     { color: #ff9c88; }
+.ansi-green   { color: #7ee0b8; }
+.ansi-yellow  { color: #f0c674; }
+.ansi-blue    { color: #8ab4f8; }
+.ansi-magenta { color: #e3a7e0; }
+.ansi-cyan    { color: #7fd6d0; }
+.ansi-white   { color: #d7e4df; }
+
+/* A colour beats dim when the compiler asks for both: the escape sequence's
+   own intent is the colour, and dim is the de-emphasis it pairs with. */
+.ansi-dim.ansi-black   { color: #7b918a; }
+.ansi-dim.ansi-red     { color: #d98878; }
+.ansi-dim.ansi-green   { color: #6bbd9c; }
+.ansi-dim.ansi-yellow  { color: #ccaa64; }
+.ansi-dim.ansi-blue    { color: #7599cf; }
+.ansi-dim.ansi-magenta { color: #bf8dbd; }
+.ansi-dim.ansi-cyan    { color: #6bb4af; }
+.ansi-dim.ansi-white   { color: #b4bfbb; }
+
+/* ==========================================================================
+   scrollbars
+
+   The default bar is a chunky light gutter that reads as a UI element sitting
+   on top of the console, which it is not: it is a hint about how much more
+   there is. Thin, in the surface's own edge colour, and only where a pane can
+   actually scroll.
+
+   Two properties on purpose. scrollbar-width and scrollbar-color are the
+   standard ones, honoured by Firefox and now by Chromium; the ::-webkit rules
+   cover Safari and older Chromium, which ignore them. Neither hides the bar
+   entirely: a scroll region with no visible affordance is a usability bug, not
+   a clean design.
+   ========================================================================= */
+
+.pane-body,
+.pane--editor .input,
+.example-code {
+  scrollbar-width: thin;
+  scrollbar-color: var(--console-edge) transparent;
+}
+
+.pane--lesson .pane-body {
+  scrollbar-color: var(--edge) transparent;
+}
+
+.pane-body::-webkit-scrollbar,
+.pane--editor .input::-webkit-scrollbar,
+.example-code::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.pane-body::-webkit-scrollbar-track,
+.pane--editor .input::-webkit-scrollbar-track,
+.example-code::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.pane-body::-webkit-scrollbar-thumb,
+.pane--editor .input::-webkit-scrollbar-thumb,
+.example-code::-webkit-scrollbar-thumb {
+  background: var(--console-edge);
+  border-radius: 4px;
+}
+
+.pane--lesson .pane-body::-webkit-scrollbar-thumb {
+  background: var(--edge);
+}
+
+/* The corner where two bars meet renders as a pale square otherwise. */
+.pane-body::-webkit-scrollbar-corner,
+.pane--editor .input::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 .example-code {
   margin: 0;
   align-self: stretch;

@@ -79,6 +79,34 @@
     return node;
   }
 
+  // A line built from ANSI segments, each a span carrying the classes the
+  // server derived from the compiler's escape sequences.
+  //
+  // Same rule as everywhere else: every string lands through textContent, and
+  // the class names come from a closed set the server composes, so compiler
+  // output cannot invent a class or a tag. If segments are missing for any
+  // reason the caller falls back to the plain string, so text is never lost
+  // to a parsing problem.
+  function segmentLine(kind, segments) {
+    var node = el("div", "line line--" + kind);
+    for (var i = 0; i < segments.length; i += 1) {
+      var seg = segments[i];
+      node.appendChild(el("span", seg.classes || null, seg.text));
+    }
+    transcript.appendChild(node);
+    scrollToEnd();
+    return node;
+  }
+
+  // Renders whichever the server gave us. Segments win when present and
+  // non-empty; the raw string is the fallback.
+  function streamLine(kind, raw, segments) {
+    if (segments && segments.length) {
+      return segmentLine(kind, segments);
+    }
+    return line(kind, raw);
+  }
+
   function scrollToEnd() {
     transcript.scrollTop = transcript.scrollHeight;
   }
@@ -262,10 +290,10 @@
     var body = outcome.body;
 
     if (body.stdout) {
-      line("out", body.stdout);
+      streamLine("out", body.stdout, body.stdout_segments);
     }
     if (body.stderr) {
-      line("err", body.stderr);
+      streamLine("err", body.stderr, body.stderr_segments);
     }
     if (body.value !== null && body.value !== undefined) {
       line("value", copy.value_label + " " + body.value);

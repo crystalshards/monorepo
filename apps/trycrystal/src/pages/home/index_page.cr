@@ -49,7 +49,13 @@ class Home::IndexPage < MainLayout
     end
 
     footer class: "colophon" do
-      text Copy::FOOTER
+      Copy::FOOTER_PARTS.each do |part|
+        if href = part[:href]
+          a part[:text], href: href
+        else
+          text part[:text]
+        end
+      end
     end
 
     # Everything the console script needs to resume a session without
