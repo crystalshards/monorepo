@@ -2174,13 +2174,15 @@ jobs:
           # separated, and read only by the PROVISIONING branch below, which
           # tolerates them ONLY while they return no address at all.
           #
-          # trycrystal.org is new: its zone is created by this stack and its
-          # nameservers have to be pointed at by hand. Until that happens the
-          # certificate cannot validate, which is expected rather than broken.
+          # DELIBERATELY EMPTY. trycrystal.org was the reason this exists, and
+          # it is now delegated: the .org registry and the public resolvers
+          # both answer ns-cloud-b1 through b4, the apex and www both resolve
+          # to the load balancer, and the apex certificate has issued. So both
+          # names are back under the full DNS assertion, which is the point.
           #
           # Empty this list as zones are delegated. Every entry costs the DNS
           # assertion for that hostname, so it is not free.
-          AWAITING_DELEGATION="trycrystal.org www.trycrystal.org"
+          AWAITING_DELEGATION=""
 
           # --resolve pins the connection to the load balancer, so this tests the
           # deploy rather than DNS propagation to this particular runner, while still
