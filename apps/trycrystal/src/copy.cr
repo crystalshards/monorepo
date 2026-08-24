@@ -51,8 +51,21 @@ module Copy
   end
 
   TAGLINE = "Type Crystal. It runs. It answers."
-  FOOTER  = "trycrystal.org is a sibling of crystalshards.org, built for the " \
-            "Crystal community. The language itself lives at crystal-lang.org."
+  # The colophon, as parts, because two of the things it names are places you
+  # should be able to go.
+  #
+  # Structured rather than one string with markup in it. The page renders a
+  # part with an href as an anchor and a part without one as text, so a link
+  # never arrives as HTML inside a copy string: this file stays prose, and the
+  # page stays structure. That separation is the same reason nothing else here
+  # carries a tag.
+  FOOTER_PARTS = [
+    {text: "trycrystal.org is a sibling of ", href: nil},
+    {text: "crystalshards.org", href: "https://crystalshards.org"},
+    {text: ", built for the Crystal community. The language itself lives at ", href: nil},
+    {text: "crystal-lang.org", href: "https://crystal-lang.org"},
+    {text: ".", href: nil},
+  ]
 
   # The lesson narrative: position, then what to do.
   #

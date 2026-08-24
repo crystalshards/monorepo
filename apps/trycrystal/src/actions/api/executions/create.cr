@@ -44,14 +44,26 @@ class Api::Executions::Create < ApiAction
 
     result = RunnerClient.new.execute(code)
 
+    # stdout and stderr are sent BOTH ways: the plain string, unchanged, and
+    # a segment list with the compiler's ANSI colours parsed out of it. The
+    # browser renders segments when they are present and falls back to the
+    # string when they are not, so a client that knows nothing about segments
+    # still shows correct text.
+    #
+    # The escapes have to be handled somewhere: the compiler emits them, and
+    # rendered as text they arrive on the page as literal "[2m" noise. Parsing
+    # here keeps the browser rendering strings rather than authoring markup,
+    # which is the rule that keeps this console from growing an XSS hole.
     json({
-      stdout:      result.stdout,
-      stderr:      result.stderr,
-      value:       result.value,
-      exit_code:   result.exit_code,
-      timed_out:   result.timed_out,
-      duration_ms: result.duration_ms,
-      lesson:      lesson.try { |current| verdict(current, result) },
+      stdout:          result.stdout,
+      stderr:          result.stderr,
+      stdout_segments: Ansi.parse(result.stdout),
+      stderr_segments: Ansi.parse(result.stderr),
+      value:           result.value,
+      exit_code:       result.exit_code,
+      timed_out:       result.timed_out,
+      duration_ms:     result.duration_ms,
+      lesson:          lesson.try { |current| verdict(current, result) },
     })
   rescue ex : RunnerClient::Unreachable
     Log.warn { "sandbox unreachable: #{ex.message}" }

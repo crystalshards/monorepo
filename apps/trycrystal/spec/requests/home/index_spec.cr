@@ -43,6 +43,17 @@ describe Home::Index do
     response.body.should_not contain("press Enter")
   end
 
+  it "links the two sites the colophon names" do
+    # They are places you should be able to go, not decoration. Asserted as
+    # real anchors so a future copy edit that flattens them back into prose
+    # fails here rather than quietly losing the links.
+    response = BrowserClient.exec(Home::Index)
+
+    body = response.body
+    body.should contain(%(<a href="https://crystalshards.org">crystalshards.org</a>))
+    body.should contain(%(<a href="https://crystal-lang.org">crystal-lang.org</a>))
+  end
+
   it "escapes the lesson's code sample instead of emitting it as markup" do
     # The server-rendered transcript is the one place static prose reaches
     # the page through Lucky's escaping. The sample's double quotes must
