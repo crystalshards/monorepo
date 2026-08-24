@@ -119,10 +119,17 @@ describe "the tutorial's order" do
     Lessons.find(nil).should be_nil
   end
 
-  it "composes each lesson's prompt with its position and code sample" do
-    prompt = Copy.prompt(Lessons.find("strings-answer").not_nil!, 2, 3)
+  it "composes each lesson's prompt with its position, and leaves the sample out" do
+    lesson = Lessons.find("strings-answer").not_nil!
+    prompt = Copy.prompt(lesson, 2, 3)
 
     prompt.should start_with("Lesson 2 of 3.")
-    prompt.should contain(%("Hello, Crystal!".upcase))
+
+    # The sample is deliberately NOT in the prompt. The lesson pane renders
+    # code_sample as its own block with a button that copies it into the
+    # editor, so appending it here would print the same line twice. This
+    # asserts the separation rather than trusting the page not to.
+    prompt.should_not contain(lesson.code_sample)
+    lesson.code_sample.should eq(%("Hello, Crystal!".upcase))
   end
 end

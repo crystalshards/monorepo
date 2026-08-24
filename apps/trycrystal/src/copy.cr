@@ -18,18 +18,33 @@ module Copy
   # The first thing a new visitor reads, server rendered so it is there
   # before any script runs.
   WELCOME = <<-TEXT
-  This is real Crystal, running for real, one line at a time. No signup, no
-  setup, three short lessons. Every line you type goes to a sandbox, gets run
-  by the actual compiler, and answers back here.
+  This is real Crystal, running for real. No signup, no setup, three short
+  lessons. Whatever you write in the editor goes to a sandbox, gets compiled
+  and run by the actual toolchain, and answers back here.
 
-  Ready? Type the line below and press Enter.
+  Write the line from the lesson on the left, then press Run.
   TEXT
 
   # For a returning visitor whose progress puts them past the first lesson.
-  # Static on purpose: the current lesson's own prompt follows it, composed
-  # server side, so this line never needs to know which lesson is next.
-  WELCOME_BACK = "Welcome back. Here is the lesson you left off on. Type the " \
-                 "line below and press Enter."
+  # Static on purpose: the current lesson's own prompt is shown in the lesson
+  # pane, so this line never needs to know which lesson is next.
+  WELCOME_BACK = "Welcome back. Your lesson is on the left, where you left it."
+
+  # ---- the workspace chrome ----------------------------------------------
+  # Pane titles and controls. Short by design: these are labels on a working
+  # surface, not sentences, and a developer reads them once.
+  LESSON_PANE_LABEL = "Lesson"
+  EDITOR_PANE_LABEL = "Editor"
+  OUTPUT_PANE_LABEL = "Output"
+
+  # The editor is multi-line, so Enter belongs to the text and Run belongs to
+  # a key you have to mean. Naming the shortcut next to the button is the
+  # whole documentation a developer needs.
+  RUN_HINT      = "Cmd or Ctrl + Enter"
+  COPY_BUTTON   = "Copy example"
+  COPIED_NOTICE = "Copied into the editor."
+  HINT_LABEL    = "Stuck?"
+  EXAMPLE_LABEL = "The line"
 
   def self.progress_label(position : Int32, total : Int32) : String
     PROGRESS_TEMPLATE.gsub("{n}", position.to_s).gsub("{total}", total.to_s)
@@ -39,10 +54,16 @@ module Copy
   FOOTER  = "trycrystal.org is a sibling of crystalshards.org, built for the " \
             "Crystal community. The language itself lives at crystal-lang.org."
 
-  # The lesson prompt: position, what to do, then the exact line to type on
-  # its own line so the console can show it as code.
+  # The lesson narrative: position, then what to do.
+  #
+  # Deliberately WITHOUT the code sample appended. It used to carry it,
+  # because the whole lesson arrived as one line in a transcript. The lesson
+  # now has its own pane, where the sample is rendered as code in its own
+  # block with a button that copies it into the editor, so appending it here
+  # would print the same line twice. code_sample is a separate field
+  # everywhere it is consumed.
   def self.prompt(lesson : Lesson, position : Int32, total : Int32) : String
-    "Lesson #{position} of #{total}. #{lesson.prompt}\n\n#{lesson.code_sample}"
+    "Lesson #{position} of #{total}. #{lesson.prompt}"
   end
 
   # Shown when a submission ran cleanly but did not do what the lesson asked.
@@ -128,7 +149,7 @@ module Copy
   # by the console script; the sentence around them is not negotiable there.
   PROGRESS_TEMPLATE = "Lesson {n} of {total}"
   RUN_BUTTON        = "Run"
-  INPUT_LABEL       = "Crystal console input"
+  INPUT_LABEL       = "Crystal editor"
 
   # Shown when the browser cannot even reach this app's own endpoint. The
   # server has its own version for when it reached the endpoint but the
