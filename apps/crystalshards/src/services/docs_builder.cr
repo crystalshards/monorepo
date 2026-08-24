@@ -18,6 +18,26 @@ module CrystalShards
   # Keeping those apart is what stops a published shard from reading the
   # storage and database credentials this worker holds.
   class DocsBuilder
+    # A failure in the shard's own source or dependency graph, as opposed to a
+    # failure in the machinery that builds it.
+    #
+    # The distinction is worth a type because it decides whether the request
+    # comes back. A repository that does not contain the revision a version
+    # names, and a dependency set that does not resolve, are facts about bytes
+    # someone already published: identical on the next attempt and the one
+    # after, so a redelivery spends another clone, another `shards install` and
+    # another sandboxed compile to arrive at the same refusal. A sandbox that
+    # could not start, or an object store that would not answer, is the
+    # opposite. There the build never got a fair run and the redelivery is the
+    # repair.
+    #
+    # Typed rather than left for a caller to recognise from prose.
+    # BuildDocsWorker decides whether to fail its job on this, and a decision
+    # that expensive must not rest on matching an error message that anyone is
+    # free to reword.
+    class SourceUnusable < Exception
+    end
+
     # Test seam. When set, `build` returns this proc's result instead of a real
     # builder. Always nil in production.
     class_property builder : Proc(DocsBuilder)? = nil
@@ -70,9 +90,13 @@ module CrystalShards
     #
     # Raises when the repository cannot be cloned, or when no sandbox is
     # available: refusing to build is correct, building unconfined is not.
-    # A version that cannot be checked out, or dependencies that cannot be
-    # installed, are not fatal: the build falls back to whatever the clone
-    # produced, which is how most shards without lockfiles still document.
+    #
+    # Raises `SourceUnusable` when the requested revision is not in the
+    # repository, or the shard's dependencies do not resolve. The sentence that
+    # used to be here said neither was fatal, which stopped being true when
+    # `install_dependencies` started refusing a partial tree; the type is what
+    # lets the caller tell a shard nobody can build from a build we failed to
+    # run.
     def generate_docs(repository_url : String, version : String, commit_sha : String?, work_dir : String) : String?
       # Resolve the sandbox before doing any work. If we are not allowed to
       # compile this safely then cloning first would spend network and disk to
@@ -106,6 +130,12 @@ module CrystalShards
     private def clone_repository(repo_url : String, target_dir : String)
       status = run("git", ["clone", "--depth", "1", repo_url, target_dir])
 
+      # Left as a plain exception, so the caller keeps retrying it, and that is
+      # the deliberate half of this classification rather than an omission.
+      # `git clone` failing does not say whether the repository is gone or the
+      # network hiccuped, and nothing measured here separates the two, so it
+      # keeps its redelivery instead of being refused on a guess about the
+      # message text. The queue's retry window is what bounds the cost.
       unless status[:success]
         raise "Failed to clone repository: #{status[:output]}"
       end
@@ -129,7 +159,7 @@ module CrystalShards
       target = commit_sha || version
 
       unless run("git", ["checkout", target], chdir: repo_dir)[:success]
-        raise "Could not check out #{target}, refusing to document a different revision as #{version}"
+        raise SourceUnusable.new("Could not check out #{target}, refusing to document a different revision as #{version}")
       end
 
       # `git checkout` reporting success is not the same as being on the
@@ -140,7 +170,7 @@ module CrystalShards
         landed = resolved_commit(repo_dir)
 
         unless landed && landed.starts_with?(commit_sha[0, {commit_sha.size, landed.size}.min])
-          raise "Checked out #{landed.inspect} but #{commit_sha.inspect} was requested for #{version}"
+          raise SourceUnusable.new("Checked out #{landed.inspect} but #{commit_sha.inspect} was requested for #{version}")
         end
       end
     end
@@ -173,6 +203,13 @@ module CrystalShards
     # version's name is worse than none: nothing on the page says it is
     # incomplete, and the failure surfaces later as a compile error nobody can
     # trace back to a fetch.
+    #
+    # Fatal AND permanent, which is why it raises `SourceUnusable` rather than
+    # a plain exception: a dependency set that does not resolve resolves no
+    # better on a redelivery, so the request is finished rather than retried.
+    # The measured signatures behind that are a shard's own history, not our
+    # infrastructure: a stdlib file removed releases ago, a constant the shard
+    # never required, syntax the compiler stopped accepting.
     private def install_dependencies(repo_dir : String, crystal_version : String)
       status = run("shards",
         ["install", "--skip-postinstall", "--skip-executables", "--ignore-crystal-version"],
@@ -180,7 +217,7 @@ module CrystalShards
         env: {"CRYSTAL_VERSION" => crystal_version})
 
       unless status[:success]
-        raise "Could not install dependencies, so there is no complete tree to document: #{status[:output]}"
+        raise SourceUnusable.new("Could not install dependencies, so there is no complete tree to document: #{status[:output]}")
       end
 
       log_info "Installed shard dependencies"

@@ -4,6 +4,21 @@ module CrystalShards
   # spec can substitute a fake with no object store running.
   module DocsStorage
     abstract def upload_docs_json(shard_name : String, version : String, docs_json_path : String) : String
+
+    # Whether this version's documentation has already been published.
+    #
+    # It lives on the same interface as the upload rather than being read off
+    # `CrystalStorage.docs` at the call site, because the question and the
+    # write have to be about the same object. `StorageService` answers both
+    # from `CrystalStorage::Keys.docs_json`, so a check that says "already
+    # there" can never be about a different key from the one an upload would
+    # have tried to overwrite.
+    #
+    # Raises `CrystalStorage::Unavailable` when the store could not answer,
+    # which is deliberately not the same as `false`. A build that cannot find
+    # out whether an artifact exists has to fail and be redelivered, not
+    # rebuild on the assumption that nothing is there.
+    abstract def docs_json_exists?(shard_name : String, version : String) : Bool
   end
 
   # The slice of object storage a sandboxed build depends on. Source goes in
@@ -105,6 +120,23 @@ module CrystalShards
       key = CrystalStorage::Keys.docs_json(shard_name, version)
       docs.put(key, File.read(docs_json_path), "application/json")
       key
+    end
+
+    # Whether `upload_docs_json` would be writing over something.
+    #
+    # This is the check that stopped documentation builds retrying themselves
+    # forever. Overwriting an object in Cloud Storage needs
+    # storage.objects.delete, and no identity here holds it: the launcher has
+    # objectViewer and objectCreator and nothing more, because the only
+    # predefined role carrying delete is objectAdmin, which would also let it
+    # erase published documentation. So a rebuild of a version that already has
+    # an artifact could only ever end in a 403 recorded as a build failure, and
+    # come back to end there again.
+    #
+    # Same key builder as the upload above, deliberately, so the question and
+    # the write cannot drift apart about which object they mean.
+    def docs_json_exists?(shard_name : String, version : String) : Bool
+      docs.exists?(CrystalStorage::Keys.docs_json(shard_name, version))
     end
 
     # Scratch space used to hand source into a sandboxed build and take

@@ -121,7 +121,15 @@ describe BuildDocsWorker do
       Dir.exists?(work_dir).should be_false
     end
 
-    it "republishes on a rebuild without duplicating the shard" do
+    # Three builds of one version, and only the first does any work.
+    #
+    # The registry assertion is what this example was originally written for
+    # and it still holds. The upload count is what changed: it used to assert
+    # three identical uploads, which described what the fake recorded rather
+    # than a contract worth keeping. Nothing in this pipeline can overwrite a
+    # published object, so the second and third uploads were a 403 recorded as
+    # a build failure and a request Cloud Tasks brought straight back.
+    it "publishes once and skips the rebuild for a version it already has" do
       shard = ShardFactory.create &.name("idempotent-docs")
       ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
 
@@ -135,13 +143,127 @@ describe BuildDocsWorker do
         worker.perform
       end
 
-      builder.calls.size.should eq(3)
+      builder.calls.size.should eq(1)
       ShardQuery.new.name("idempotent-docs").select_count.should eq(1)
-      storage.uploaded_docs.should eq([
-        "idempotent-docs/1.0.0/docs.json",
-        "idempotent-docs/1.0.0/docs.json",
-        "idempotent-docs/1.0.0/docs.json",
-      ])
+      storage.uploaded_docs.should eq(["idempotent-docs/1.0.0/docs.json"])
+    end
+  end
+
+  # The loop this split exists to close. crystaldocs re-queues a version whose
+  # page a reader opens, the discovery sweep re-queues what it re-reads, and
+  # warming re-queues from the popularity ranking, so a version that is already
+  # documented is asked for again and again. Each of those used to clone,
+  # install dependencies, compile, and only then fail on an upload nothing in
+  # this pipeline is permitted to perform.
+  describe "a version whose artifact is already published" do
+    it "records success and builds nothing at all" do
+      shard = ShardFactory.create &.name("already-built")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+      DocsRows.register("already-built", "1.0.0")
+      DocsRows.request("already-built", "1.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      storage = CrystalShards::MockStorageService.new
+      storage.existing << "already-built/1.0.0/docs.json"
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        BuildDocsWorker.new(shard_name: "already-built", version: "1.0.0").perform
+      end
+
+      builder.calls.should be_empty
+      storage.uploaded_docs.should be_empty
+
+      # Recorded, not merely skipped. A reader watching the pending page has to
+      # be released, and crystaldocs needs a finished build rather than a
+      # version nothing ever resolved.
+      DocsRows.request_status("already-built", "1.0.0").should eq("succeeded")
+      DocsRows.version_status("already-built", "1.0.0").should eq("success")
+    end
+
+    # The check runs ahead of ShardQuery, so the artifact answers for the
+    # version even when the registry has nothing to say. What a reader is
+    # served is the object in the bucket, and the row should report what the
+    # bucket holds.
+    it "answers from the artifact without needing a registry entry" do
+      DocsRows.register("unregistered", "2.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      storage = CrystalShards::MockStorageService.new
+      storage.existing << "unregistered/2.0.0/docs.json"
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        BuildDocsWorker.new(shard_name: "unregistered", version: "2.0.0").perform
+      end
+
+      builder.calls.should be_empty
+      DocsRows.version_status("unregistered", "2.0.0").should eq("success")
+    end
+
+    # `force` is the deliberate override, and while the artifact is there it
+    # refuses instead of proceeding. Publishing over an existing object needs
+    # storage.objects.delete, which nothing in this pipeline holds, so a forced
+    # run that cloned and compiled first would spend the entire build to arrive
+    # at a 403.
+    it "refuses a forced rebuild before spending a build, and records nothing" do
+      shard = ShardFactory.create &.name("forced-docs")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+      DocsRows.register("forced-docs", "1.0.0", build_status: "success")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      storage = CrystalShards::MockStorageService.new
+      storage.existing << "forced-docs/1.0.0/docs.json"
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        expect_raises(BuildDocsWorker::ForcedRebuildBlocked, /storage\.objects\.delete/) do
+          BuildDocsWorker.new(shard_name: "forced-docs", version: "1.0.0", force: true).perform
+        end
+      end
+
+      builder.calls.should be_empty
+      storage.uploaded_docs.should be_empty
+
+      # A documented version is not marked failed to report that somebody's
+      # rebuild was blocked. That would be a lie a reader pays for, and it is
+      # what starts crystaldocs' retry floor.
+      DocsRows.version_status("forced-docs", "1.0.0").should eq("success")
+    end
+
+    # Forced with nothing to overwrite is an ordinary build. There is no 403
+    # waiting, so there is nothing to refuse.
+    it "builds normally when forced and no artifact is in the way" do
+      shard = ShardFactory.create &.name("forced-fresh")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      storage = CrystalShards::MockStorageService.new
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        BuildDocsWorker.new(shard_name: "forced-fresh", version: "1.0.0", force: true).perform
+      end
+
+      builder.calls.size.should eq(1)
+      storage.uploaded_docs.should eq(["forced-fresh/1.0.0/docs.json"])
+    end
+
+    # A store that could not answer is not an empty bucket. Reading it as "not
+    # there" rebuilds and lands back on the 403; reading it as "there" marks a
+    # version documented on no evidence. So the job fails and comes back, which
+    # is the one thing that can repair it.
+    it "raises when the store cannot say whether the artifact exists" do
+      shard = ShardFactory.create &.name("stat-unavailable")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      storage = CrystalShards::MockStorageService.new
+      storage.stat_unavailable = true
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        expect_raises(CrystalStorage::Unavailable) do
+          BuildDocsWorker.new(shard_name: "stat-unavailable", version: "1.0.0").perform
+        end
+      end
+
+      builder.calls.should be_empty
     end
   end
 
@@ -197,6 +319,87 @@ describe BuildDocsWorker do
 
       storage.uploaded_docs.should be_empty
       Dir.exists?(builder.calls.first.work_dir).should be_false
+    end
+  end
+
+  # Cloud Tasks retries a job that raises, and a retry only earns its clone,
+  # its dependency install and its sandboxed compile if the next attempt could
+  # come out differently. A shard whose own source or dependency graph is the
+  # problem is exactly the case where it cannot: the same published bytes fail
+  # the same way every time. Measured on the live queue before this split,
+  # 35,918 attempts went against 5,379 tasks created in a week.
+  describe "a failure the shard's own source caused" do
+    it "records the failure and finishes the task rather than raising" do
+      shard = ShardFactory.create &.name("unresolvable-deps")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+      DocsRows.register("unresolvable-deps", "1.0.0")
+      DocsRows.request("unresolvable-deps", "1.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      builder.raise_source_unusable =
+        "Could not install dependencies, so there is no complete tree to document: " \
+        "can't find file 'logger'"
+      storage = CrystalShards::MockStorageService.new
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        BuildDocsWorker.new(shard_name: "unresolvable-deps", version: "1.0.0").perform
+      end
+
+      storage.uploaded_docs.should be_empty
+
+      # Recorded, so the reader is told why and the retry floor has a failed_at
+      # to measure from. Not raised, so the request is finished instead of being
+      # redelivered to fail identically.
+      outcome = DocsRows.request_outcome("unresolvable-deps", "1.0.0")
+      outcome.status.should eq("failed")
+      outcome.failed_at.should_not be_nil
+      outcome.last_error.to_s.should contain("can't find file 'logger'")
+      DocsRows.version_status("unresolvable-deps", "1.0.0").should eq("failed")
+    end
+
+    # The other half of the same decision, and the half a blanket "acknowledge
+    # everything" would have destroyed: a failure of ours keeps its redelivery,
+    # because the redelivery is what repairs it.
+    it "still raises for a failure that is not the shard's fault" do
+      shard = ShardFactory.create &.name("infra-failure")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      builder.raise_with = "Could not start the docs build job: 503 unavailable"
+      storage = CrystalShards::MockStorageService.new
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        expect_raises(Exception, /Could not start the docs build job/) do
+          BuildDocsWorker.new(shard_name: "infra-failure", version: "1.0.0").perform
+        end
+      end
+
+      storage.uploaded_docs.should be_empty
+    end
+
+    # A permanent failure whose outcome could not be written down is not a
+    # finished request: the reader is left on a pending page and nothing else
+    # re-derives the result. So this is the one permanent failure that still
+    # has to come back.
+    it "raises when a permanent failure's own outcome cannot be recorded" do
+      shard = ShardFactory.create &.name("unrecordable-permanent")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+      DocsRows.register("unrecordable-permanent", "1.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      builder.raise_source_unusable =
+        "Could not check out 9.9.9, refusing to document a different revision as 1.0.0"
+      storage = CrystalShards::MockStorageService.new
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        DocsRows.refusing_doc_version_writes do
+          expect_raises(CrystalShards::DocsBuildStatus::Unrecorded) do
+            BuildDocsWorker.new(shard_name: "unrecordable-permanent", version: "1.0.0").perform
+          end
+        end
+      end
+
+      DocsRows.version_status("unrecordable-permanent", "1.0.0").should eq("pending")
     end
   end
 
