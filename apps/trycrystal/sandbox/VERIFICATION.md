@@ -115,7 +115,10 @@ it cannot serve a console that answers in under a second:
   latency on sub-second work.
 
 **The interactive variant, which is what the runner implements:** a dedicated
-Cloud Run SERVICE, warm (`min_instances = 1`), whose identity holds zero IAM
+Cloud Run SERVICE (specified warm at `min_instances = 1`, running at 0 since
+that pool was priced at $115.63 a month against 10 lifetime requests to the
+runner; `apps/trycrystal/DESIGN.md` section 4 records the decision and what
+would reverse it), whose identity holds zero IAM
 bindings, no secrets, no volumes; ingress is IAM-gated (only the trycrystal
 app's service account holds run.invoker, the docs-launcher precedent of
 ingress ALL plus IAM rather than internal ingress); each submission executes
@@ -149,7 +152,7 @@ NetworkPolicy. What actually substitutes:
 | PID / fd / file-size / address-space ceilings | **Us** | setrlimit in the trampoline (NPROC, NOFILE, FSIZE, AS, CPU); the platform does not cap pids per container |
 | Per-submission wall clock | **Us** | trampoline timeout with process-group kill (setsid); the platform's request timeout is per request, not per submission |
 | Scratch freshness | **Us** | fresh directory per execution under the scratch root, wiped after |
-| Recycle after bounded executions | **Us** | runner self-exits after N executions; Cloud Run replaces the instance, min_instances keeps the pool warm |
+| Recycle after bounded executions | **Us** | runner self-exits after N executions; Cloud Run replaces the instance. At `min_instances = 0` the replacement starts on the next submission rather than being held ready, so recycling costs that visitor a cold start rather than nothing |
 | No sibling submissions on one instance | Config, pinned | concurrency 1 enforced by terraform validation on the runner service until per-execution uid isolation exists |
 
 The load-bearing line in that table is egress: **the platform cannot deny

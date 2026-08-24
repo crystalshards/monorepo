@@ -64,9 +64,13 @@ the sub-second intent, not a rounding error, and the honest lever is the runner'
 allocation rather than anything in the code. Raise it and re-measure here before claiming
 sub-second in production.
 
-Sandbox cold start remains the other latency risk, which is why the runner is warm
-(section 4) rather than a container or Job per request. The first-submission figure above is
-what a cold path costs even with a warm pool configured.
+Sandbox cold start remains the other latency risk, which is why the runner is a long-lived
+Cloud Run service rather than a container or a Job per request. It is no longer held warm:
+`trycrystal_runner_min_instances` is 0, so the first submission after a quiet period pays an
+instance start on top of the compile. Section 4 records that decision and what holding the
+pool warm actually cost. The first-submission figure above is what a cold path costs *with* a
+warm pool configured, which makes it the floor for the cold case rather than a measurement
+of it.
 
 ### Proven against the deployed service
 
@@ -141,11 +145,45 @@ substitutes, and which side enforces it, is recorded in
 
 ### Accepted tradeoff, stated plainly
 
-Keeping instances warm means consecutive submissions from different users can share one
-instance. That is weaker than an instance per execution, and it is chosen for latency,
-because compilation already costs most of the budget. It is made survivable by the instance
-holding nothing worth stealing and by recycling. It is not equivalent to per-request
-isolation and this document does not claim it is.
+A long-lived instance means consecutive submissions from different users can share one. That
+is weaker than an instance per execution, and it is chosen for latency, because compilation
+already costs most of the budget. It is made survivable by the instance holding nothing worth
+stealing, by concurrency 1 so there are never sibling submissions on it, and by recycling
+after a bounded number of executions. It is not equivalent to per-request isolation and this
+document does not claim it is.
+
+This tradeoff does not come from the warm pool and did not leave with it. `min_instances = 0`
+removes the instance that waits, not the instance that serves: a submission arriving while a
+previous one's instance is still up still lands on it.
+
+### Warm pool: chosen, priced, withdrawn
+
+The runner was specified as a warm pool, `min_instances = 1`, and that was a deliberate
+choice rather than an oversight. A cold started instance boots the toolchain before it can
+answer anything, and this tutorial is built around an answer in under a second. Sections 2
+and 4 were both written on that basis.
+
+It is 0 now, because the choice was priced against traffic that never arrived. One warm
+instance at the runner's CPU and memory, with `cpu_idle` false so CPU is billed
+continuously, was measured at $115.63 a month against 10 lifetime requests to the runner.
+That is not a latency budget, it is a subscription to an empty room, and it was the second
+largest line on the bill.
+
+What that costs, plainly: the first submission after a quiet period pays an instance start
+while the toolchain boots, so the tutorial's opening interaction is slow for that visitor. At
+ten lifetime requests essentially every submission is that visitor, which reads like an
+argument for pinning the pool warm and is the opposite. There is nobody here to keep warm
+for.
+
+What would justify going back to 1: sustained runner traffic where the gap between
+submissions is routinely shorter than Cloud Run's idle window, so a warm instance is serving
+rather than waiting. Concretely, enough requests per day that the instance would be up
+anyway, which turns `min_instance_count` into a latency guarantee instead of a floor on the
+bill. Until the runner's own request count shows that, this stays at 0.
+
+The value itself lives on `trycrystal_runner_min_instances` in
+`terraform/modules/services/variables.tf`, and the same reasoning is recorded in that
+variable's description. If the two ever disagree, the variable is the one that ships.
 
 ## 5. Proof obligations
 
