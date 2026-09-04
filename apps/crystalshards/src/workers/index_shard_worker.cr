@@ -70,7 +70,11 @@ struct IndexShardWorker < BaseJob
       return
     end
 
-    fetch_and_parse_shard_yml(shard, shard_version)
+    manifest_stored = fetch_and_parse_shard_yml(shard, shard_version)
+    unless manifest_stored
+      log_error "Failed to index #{@shard_name}@#{@version}: shard.yml could not be fetched; no manifest stored"
+      return
+    end
 
     # Follow-ups are keyed on the identity we just resolved, never on whatever
     # string arrived. A job that came in under a bare name still chains as
@@ -86,13 +90,13 @@ struct IndexShardWorker < BaseJob
     raise ex
   end
 
-  private def fetch_and_parse_shard_yml(shard : Shard, shard_version : ShardVersion)
+  private def fetch_and_parse_shard_yml(shard : Shard, shard_version : ShardVersion) : Bool
     provider = ProviderFactory.create(shard.repository_url)
 
     shard_yml = provider.fetch_shard_yml(shard_version.version)
     unless shard_yml
       log_error "Could not fetch shard.yml from repository"
-      return
+      return false
     end
 
     update_from_shard_yml(shard, shard_version, shard_yml)
@@ -102,6 +106,8 @@ struct IndexShardWorker < BaseJob
     if provider.supports_api?
       update_provider_metadata(shard, provider)
     end
+
+    true
   end
 
   private def update_readme(shard : Shard, provider : BaseProvider, version : String)
