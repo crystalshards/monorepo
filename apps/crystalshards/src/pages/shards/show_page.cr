@@ -160,7 +160,11 @@ class Shards::ShowPage < MainLayout
 
     if @shard.unavailable?
       notice "warn", "fa-plug-circle-xmark" do
-        text "The last crawl could not reach this repository on its host. "
+        if reason = @shard.index_error
+          text "The last crawl could not reach this repository on its host: #{reason.rchop('.')}. "
+        else
+          text "The last crawl could not reach this repository on its host. "
+        end
         text "The entry stays because repositories come back, and because "
         text "other shards still link to it."
       end
@@ -182,6 +186,19 @@ class Shards::ShowPage < MainLayout
           text "repository has none, so a dependency on it has to "
           text "name a branch or a commit."
         end
+      elsif @shard.unavailable?
+        notice "info", "fa-hourglass-half" do
+          text "This shard has no indexed releases. "
+          text "Nothing is known about its dependencies or manifest because "
+          text "the repository could not be reached."
+        end
+      elsif error = @shard.index_error
+        notice "warn", "fa-triangle-exclamation" do
+          text "The last indexing pass could not read this repository: #{error.rchop('.')}. "
+          text "Visiting this page has requested indexing for it, and "
+          text "nothing is known yet, so everything below is unknown "
+          text "rather than absent."
+        end
       else
         notice "info", "fa-hourglass-half" do
           text "This shard has been found but not read yet. "
@@ -193,7 +210,11 @@ class Shards::ShowPage < MainLayout
         render_index_progress
       end
     elsif version = @selected_version
-      unless version.indexed?
+      if error = version.spec_error
+        notice "warn", "fa-triangle-exclamation" do
+          text error
+        end
+      elsif !version.indexed?
         notice "info", "fa-hourglass-half" do
           text "Nothing has been indexed for #{version.label} yet. "
           text "The tag is recorded, its shard.yml has not been read, so "
@@ -376,7 +397,9 @@ class Shards::ShowPage < MainLayout
 
   private def render_manifest_absent
     para class: "text-muted" do
-      if version = @selected_version
+      if (version = @selected_version) && (error = version.spec_error)
+        text "#{error} "
+      elsif version = @selected_version
         text "No shard.yml has been indexed for #{version.label}. "
       else
         text "No shard.yml has been indexed for this repository. "
@@ -508,7 +531,9 @@ class Shards::ShowPage < MainLayout
 
       if runtime_deps.empty? && dev_deps.empty?
         para class: "text-muted" do
-          if @selected_version.try(&.indexed?)
+          if (version = @selected_version) && (error = version.spec_error)
+            text error
+          elsif @selected_version.try(&.indexed?)
             text "This version declares no dependencies."
           else
             text "Unknown: the shard.yml for this version has not been read yet."
