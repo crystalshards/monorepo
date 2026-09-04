@@ -1,17 +1,16 @@
 require "../spec_helper"
 require "../../src/providers/host_repository_sources"
 
-# Exercises status handling in HostRepositorySource across Codeberg, GitLab, and
+# Status handling in HostRepositorySource, across Codeberg, GitLab and
 # Bitbucket.
 #
-# Unlike GitHub, where GithubRepositoryApi maps 3xx redirects to NotFound,
-# HostRepositorySource used to treat any status code other than 200, 404, 401, or
-# 403 as an unexpected HTTP failure and raise RepositorySource::Error. That
-# caused the crawler to repeatedly retry moved or renamed repositories on every
-# indexing pass forever.
+# GithubRepositoryApi maps a 3xx to NotFound and says why. These three did not:
+# anything other than 200, 404, 401 or 403 fell through to Error, so a renamed
+# repository was retried on every pass forever and rendered as a fault.
+# Measured on codeberg.org/w0u7/email_octopus, which answers 301.
 #
-# The injected Requester seam allows us to verify HTTP response mapping without
-# real network calls.
+# Driven through the injected Requester seam, so the real source classes run
+# end to end with nothing on a port.
 
 private def fake_response(status : Int32, body : String = %({"message":"redirect"})) : HostRepositorySource::Requester
   ->(_url : String, _headers : HTTP::Headers) do

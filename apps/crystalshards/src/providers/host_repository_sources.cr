@@ -114,18 +114,19 @@ abstract class HostRepositorySource < RepositorySource
     when 200 then JSON.parse(response.body)
     when 404 then raise RepositorySource::NotFound.new("#{repo_path} is not a repository this credential can see")
     when 301, 302, 307, 308
-      # A renamed or transferred repository on GitLab, Codeberg, or Bitbucket
-      # answers 3xx. That slug no longer addresses a repository, so it belongs in
-      # NotFound rather than Error. Error keeps retrying the row on every pass
-      # indefinitely and presents as an indexing fault, whereas NotFound marks the
-      # shard unavailable at this slug.
+      # A renamed or transferred repository on GitLab, Codeberg or Bitbucket
+      # answers 3xx. That slug no longer addresses a repository, so it belongs
+      # in NotFound rather than Error. Error is retried on every pass forever
+      # and renders as a fault, while NotFound marks the row unavailable, which
+      # is what a slug that has stopped naming a repository is. Measured:
+      # codeberg.org/w0u7/email_octopus, in the registry since 2026-08-19 with
+      # no versions, answers 301.
       #
-      # We intentionally do not follow redirects here. Adopting the target URL
-      # would silently conflate two registry keys, and redirect responses from
-      # these APIs do not always supply a canonical owner and repo without extra
-      # round trips. A relocated project is reported as unavailable under its old
-      # coordinates; tracking the new slug is a registration choice, not an
-      # automatic side effect of indexing.
+      # The new name is deliberately not chased, for the reason GithubRepositoryApi
+      # gives: adopting it would merge two identities the registry keys rows on,
+      # and these APIs do not name the new owner and repo without another round
+      # trip. A moved repository is reported as moved; re-pointing it is a
+      # registration decision rather than a fetch.
       raise RepositorySource::NotFound.new(
         "#{repo_path} has moved: that owner and name no longer address a repository on #{host_name}"
       )
