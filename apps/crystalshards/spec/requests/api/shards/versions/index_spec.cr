@@ -7,28 +7,33 @@ describe Api::Shards::Versions::Index do
     response.status_code.should eq(404)
   end
 
-  it "returns list of versions for a shard" do
+  it "returns a shard's versions newest first, whatever order they were recorded in" do
     shard = ShardFactory.create &.name("test-shard")
       .description("A test shard")
       .repository_url("https://github.com/user/test-shard")
       .license("MIT")
 
-    version1 = ShardVersionFactory.create &.shard_id(shard.id)
-      .version("0.1.0")
+    # Recorded in the order kemal's were: 64 tags in one pass, then the two
+    # released afterwards, so insertion order and version order disagree and
+    # the newest row is last in the table.
+    ShardVersionFactory.create &.shard_id(shard.id)
+      .version("1.11.0")
       .released_at(Time.utc(2024, 1, 1))
 
-    version2 = ShardVersionFactory.create &.shard_id(shard.id)
-      .version("0.2.0")
+    ShardVersionFactory.create &.shard_id(shard.id)
+      .version("1.13.0")
       .released_at(Time.utc(2024, 2, 1))
+
+    ShardVersionFactory.create &.shard_id(shard.id)
+      .version("1.2.0")
+      .released_at(Time.utc(2024, 3, 1))
 
     response = ApiClient.exec(Api::Shards::Versions::Index.with(**identity_of(shard)))
 
     response.status.should eq(HTTP::Status.new(200))
     json = JSON.parse(response.body)
     json["name"].should eq("test-shard")
-    json["versions"].as_a.size.should eq(2)
-    json["versions"][0]["version"].should eq("0.1.0")
-    json["versions"][1]["version"].should eq("0.2.0")
+    json["versions"].as_a.map { |version| version["version"].as_s }.should eq(["1.13.0", "1.11.0", "1.2.0"])
   end
 
   it "includes download counts for each version" do
