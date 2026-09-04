@@ -172,6 +172,7 @@ module IndexSweep
         # One shard raising must not lose the rest of the pass, nor the summary
         # of the shards already done.
         Log.error(exception: ex) { "Indexing #{shard.canonical_slug} raised" }
+        ShardIndexer.record_crash(shard, ex)
         result = ShardIndexer::Result.new(
           ShardIndexer::Outcome::Failed,
           shard,

@@ -346,6 +346,26 @@ describe IndexSweep do
 
       report.failures.first.should contain("IO::Error")
     end
+
+    it "records the crash reason on the shard row and clears any step" do
+      # A raised pass must not leave the shard reading whatever step it died
+      # on forever with no recorded cause. The crash reason is recorded on the
+      # shard row so a reader sees why indexing failed.
+      shard = queued("acme/crashing")
+      operation = SaveShard.new(shard)
+      operation.index_step.value = "reading"
+      shard = operation.update!
+
+      answer = Proc(Shard, ShardIndexer::Result).new do |_shard|
+        raise "connection reset by peer"
+      end
+
+      with_indexer(answer) { IndexSweep.run(options) }
+
+      reloaded = ShardQuery.new.id(shard.id).first
+      reloaded.index_error.should eq("connection reset by peer")
+      reloaded.index_step.should be_nil
+    end
   end
 
   describe "what an operator reads" do
@@ -433,6 +453,7 @@ describe IndexSweep do
       row.latest_version.should eq("1.6.0")
       row.index_attempted_at.should_not be_nil
       row.indexed_at.should_not be_nil
+      row.index_step.should be_nil
 
       # A second run finds nothing due, which is what makes a pass strictly
       # advance rather than reindexing the same head forever.

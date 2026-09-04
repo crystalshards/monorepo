@@ -146,6 +146,7 @@ module ShardIndexRequests
         # Mirrors IndexSweep.run's own per-shard rescue: one shard raising
         # here must not look like a crash rather than an indexing failure.
         Log.error(exception: ex) { "On-demand indexing of #{shard.canonical_slug} raised" }
+        ShardIndexer.record_crash(shard, ex)
         done.send(false)
       end
     end
