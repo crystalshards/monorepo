@@ -1,4 +1,5 @@
 require "json"
+require "./host_text"
 
 # Everything indexing needs to render a shard page, as one value.
 #
@@ -76,18 +77,26 @@ class RepositorySnapshot
   # Newest first. Empty is a real answer: plenty of shards have never tagged.
   getter refs : Array(Ref)
 
+  # Every free-text field here was written by the repository's author and is
+  # bound for a Postgres text column, so each is scrubbed on the way in for the
+  # same reason a fetched file is. See HostText.
   def initialize(
     @stars : Int32? = nil,
     @forks : Int32? = nil,
-    @description : String? = nil,
-    @homepage : String? = nil,
-    @license : String? = nil,
-    @topics : Array(String) = [] of String,
-    @default_branch : String? = nil,
+    description : String? = nil,
+    homepage : String? = nil,
+    license : String? = nil,
+    topics : Array(String) = [] of String,
+    default_branch : String? = nil,
     @pushed_at : Time? = nil,
     @archived : Bool? = nil,
     @refs : Array(Ref) = [] of Ref,
   )
+    @description = HostText.scrub(description)
+    @homepage = HostText.scrub(homepage)
+    @license = HostText.scrub(license)
+    @topics = HostText.scrub(topics)
+    @default_branch = HostText.scrub(default_branch)
   end
 
   def tags : Array(Ref)

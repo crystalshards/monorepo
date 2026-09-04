@@ -29,6 +29,11 @@ module ShardPayload
   end
 
   def self.detail(shard : Shard)
+    # Newest first by semver, matching the show page and summary payload.
+    # Persisted rows cannot be ordered by released_at because only the indexed
+    # version carries a real commit date; everything else shares pushed_at.
+    versions = VersionOrder.sort_versions(shard.shard_versions)
+
     {
       name:              shard.name,
       host:              shard.host,
@@ -45,9 +50,10 @@ module ShardPayload
       github_stars:      shard.github_stars,
       github_forks:      shard.github_forks,
       unavailable_at:    shard.unavailable_at,
+      latest_version:    VersionOrder.latest_version(versions).try(&.version),
       created_at:        shard.created_at,
       updated_at:        shard.updated_at,
-      versions:          shard.shard_versions.map do |version|
+      versions:          versions.map do |version|
         {
           version:      version.version,
           released_at:  version.released_at,

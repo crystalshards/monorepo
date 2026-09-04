@@ -221,20 +221,28 @@ describe IndexShardWorker do
       end
     end
 
-    it "still schedules the follow-up jobs when shard.yml could not be fetched" do
-      shard = ShardFactory.create &.name("resilient")
+    it "does not schedule follow-up jobs when shard.yml could not be fetched" do
+      shard = ShardFactory.create &.name("unfetched")
+        .repository_url("https://github.com/someone/unfetched")
       ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
 
       provider = MockProvider.new(shard.repository_url)
-      provider.should_fail = true
+      provider.shard_yml_content = nil
 
       WorkerSeams.with_provider(provider) do
-        WorkerSeams.capturing_followups do |followups|
-          IndexShardWorker.new(shard_name: "resilient", version: "1.0.0").perform
+        dispatched = [] of {IndexShardWorker::Followup, String, String}
+        original_dispatcher = IndexShardWorker.dispatcher
+        IndexShardWorker.dispatcher = ->(followup : IndexShardWorker::Followup, shard_name : String, version : String) {
+          dispatched << {followup, shard_name, version}
+          nil
+        }
 
-          followups.map(&.[0]).should eq([
-            IndexShardWorker::Followup::UpdateDependencies,
-          ])
+        begin
+          IndexShardWorker.new(shard_name: "github.com/someone/unfetched", version: "1.0.0").perform
+
+          dispatched.should be_empty
+        ensure
+          IndexShardWorker.dispatcher = original_dispatcher
         end
       end
     end

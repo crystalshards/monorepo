@@ -1,3 +1,4 @@
+require "./host_text"
 require "./repository_snapshot"
 
 # What indexing needs from a host, independent of which host it is.
@@ -32,7 +33,10 @@ abstract class RepositorySource
     struct Found
       getter content : String
 
-      def initialize(@content : String)
+      # Scrubbed on the way in, so no caller has to remember that a file from
+      # a host may carry a byte Postgres cannot store. See HostText.
+      def initialize(content : String)
+        @content = HostText.scrub(content)
       end
     end
 

@@ -40,4 +40,31 @@ describe Api::Shards::Show do
     response.body.should_not contain("ary@example.com")
     response.body.should_not contain("@example.com")
   end
+
+  it "returns versions ordered newest first by semver and names the latest release" do
+    shard = ShardFactory.create &.name("kemal")
+      .description("Fast, effective web framework")
+      .repository_url("https://github.com/kemalcr/kemal")
+      .license("MIT")
+
+    # Insert versions deliberately out of semver order, mirroring production
+    # where the newest tag was recorded last (for example 1.11.0, then 1.13.0,
+    # then 1.2.0).
+    now = Time.utc
+    ShardVersionFactory.create &.shard_id(shard.id).version("1.11.0").released_at(now)
+    ShardVersionFactory.create &.shard_id(shard.id).version("1.13.0").released_at(now)
+    ShardVersionFactory.create &.shard_id(shard.id).version("1.2.0").released_at(now)
+
+    response = ApiClient.exec(Api::Shards::Show.with(**identity_of(shard)))
+
+    response.status.should eq(HTTP::Status.new(200))
+    json = JSON.parse(response.body)
+
+    # versions array lists all releases newest first by semver
+    version_names = json["versions"].as_a.map(&.["version"].as_s)
+    version_names.should eq(["1.13.0", "1.11.0", "1.2.0"])
+
+    # latest_version names the newest stable release, matching summary and the page
+    json["latest_version"].as_s.should eq("1.13.0")
+  end
 end

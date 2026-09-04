@@ -120,6 +120,7 @@ describe ShardIndexer do
       row.latest_version.should eq("1.6.0")
       row.indexed_at.should_not be_nil
       row.index_error.should be_nil
+      row.index_step.should be_nil
     end
 
     # The bug that cost 8 of 60 shards their whole pass on the first real run.
@@ -364,15 +365,29 @@ describe ShardIndexer do
     it "distinguishes a fetch that failed from a manifest that is not there" do
       # Absent is a fact about the repository and is final; failed is a fact
       # about the fetch and a later pass retries it.
+      #
+      # Stamping indexed_at here would tell the reader the version declares no
+      # dependencies, so indexed_at must stay nil while spec_error records why
+      # the fetch failed. The repository facts and version rows are still kept.
       shard = indexable
       github = RecordedGithub.new("kemalcr/kemal")
-        .tags("v1.0.0")
+        .repository(stars: 3903, default_branch: "master")
+        .tags("v1.0.0", "v0.9.0")
         .file_status("v1.0.0", "shard.yml", 500)
 
-      RecordedGithub.install(github) { ShardIndexer.index(shard) }
+      result = RecordedGithub.install(github) { ShardIndexer.index(shard) }
+      result.outcome.should eq(ShardIndexer::Outcome::Indexed)
+      result.versions.should eq(2)
 
-      version_of(shard, "1.0.0").spec_error
+      version = version_of(shard, "1.0.0")
+      version.indexed_at.should be_nil
+      version.spec_error
         .should eq("shard.yml could not be fetched at v1.0.0: HTTP 500.")
+
+      row = reload(shard)
+      row.github_stars.should eq(3903)
+      row.default_branch.should eq("master")
+      versions_of(shard).size.should eq(2)
     end
 
     it "records a parse error as a sentence a reader can act on" do

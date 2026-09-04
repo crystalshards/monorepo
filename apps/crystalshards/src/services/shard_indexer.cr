@@ -64,8 +64,37 @@ class ShardIndexer
   # take. Specs install RepositorySourceFactory.builder and restore it in an
   # `ensure`.
 
+  STAMP_SQL = <<-SQL
+    UPDATE shards
+    SET index_attempted_at = COALESCE($1, index_attempted_at),
+        index_error = $2,
+        index_step = NULL,
+        updated_at = NOW()
+    WHERE id = $3
+    SQL
+
   def self.index(shard : Shard) : Result
     new(shard).call
+  end
+
+  # When an index pass crashes rather than returning a Result (a database
+  # constraint violation, a dropped connection, or an Avram validation error
+  # from SaveShard), the shard row must not be left looking mid-flight.
+  # This records the crash reason directly on the shard row, clears any
+  # active index_step, and leaves index_attempted_at and indexed_at untouched.
+  #
+  # Uses the same targeted UPDATE as #stamp so that a row too malformed for
+  # SaveShard can still record why the pass failed.
+  def self.record_crash(shard : Shard, message : String) : Nil
+    AppDatabase.exec(STAMP_SQL, nil, message, shard.id)
+  rescue ex : Exception
+    Log.warn(exception: ex) do
+      "ShardIndexer: could not record crash for shard #{shard.id}"
+    end
+  end
+
+  def self.record_crash(shard : Shard, ex : Exception) : Nil
+    record_crash(shard, ex.message.presence || ex.class.name)
   end
 
   def initialize(@shard : Shard)
@@ -129,7 +158,7 @@ class ShardIndexer
 
     step(IndexSteps::DEPENDENCIES)
     dependencies = resolve_dependencies(indexed_version, content)
-
+    finish
     Result.new(
       Outcome::Indexed,
       @shard,
@@ -288,16 +317,9 @@ class ShardIndexer
   ) : Nil
     # index_step is cleared here rather than set. Every path that stamps an
     # outcome is the end of the pass, so no progress may outlive it: a shard
-    # left reading "Resolving dependencies" after the pass failed would show a
-    # visitor a step that is not happening.
-    AppDatabase.exec(<<-SQL, index_attempted_at, index_error, @shard.id)
-      UPDATE shards
-      SET index_attempted_at = COALESCE($1, index_attempted_at),
-          index_error = $2,
-          index_step = NULL,
-          updated_at = NOW()
-      WHERE id = $3
-      SQL
+    # left reading "Resolving dependencies" after the pass completed or failed
+    # would show a visitor a step that is not happening.
+    AppDatabase.exec(STAMP_SQL, index_attempted_at, index_error, @shard.id)
 
     if reloaded = ShardQuery.new.id(@shard.id).first?
       @shard = reloaded
@@ -477,15 +499,23 @@ class ShardIndexer
     return unless content
 
     operation.spec_error.value = content.manifest_error
-    operation.indexed_at.value = Time.utc
 
     # The host never answered for shard.yml, so nothing was learned about this
     # ref and nothing derived from its manifest is overwritten. The stored
     # manifest stays, and so do the dependency edges resolved from it, which is
     # what makes that preservation durable: a later UpdateDependenciesWorker
     # run reads this same row, and had it been nulled here it would delete
-    # every edge on the spot. Only the error and the attempt are new.
+    # every edge on the spot. Only the error is new.
+    #
+    # Crucially, indexed_at is only stamped when the manifest is known.
+    # ShardVersion#indexed? drives reader-facing copy: when true, the page
+    # reports "This version declares no dependencies.", and when false,
+    # "Unknown: the shard.yml for this version has not been read yet." Stamping
+    # it on a failed fetch makes the page state, as fact, that a shard declares
+    # no dependencies.
     return unless content.manifest_known
+
+    operation.indexed_at.value = Time.utc
 
     operation.spec_yaml.value = content.spec_yaml
 
@@ -509,12 +539,12 @@ class ShardIndexer
     operation.unavailable_at.value = Time.utc
     operation.index_error.value = reason
     operation.indexed_at.value = nil
+    operation.index_step.value = nil
     @shard = operation.update!
-
     Result.new(Outcome::Unavailable, @shard, detail: reason)
   end
 
-  private def finish(error : String?) : Nil
+  private def finish(error : String? = nil) : Nil
     stamp(index_error: error)
   end
 end

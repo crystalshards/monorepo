@@ -45,6 +45,7 @@ abstract class HostRepositorySource < RepositorySource
   end
 
   # Per-host wiring. Each subclass answers these and inherits everything else.
+  abstract def host_name : String
   abstract def repository_url : String
   abstract def tags_url : String
   abstract def raw_url(ref : String, path : String) : String
@@ -110,8 +111,25 @@ abstract class HostRepositorySource < RepositorySource
     response = perform(url)
 
     case response.status
-    when 200      then JSON.parse(response.body)
-    when 404      then raise RepositorySource::NotFound.new("#{repo_path} is not a repository this credential can see")
+    when 200 then JSON.parse(response.body)
+    when 404 then raise RepositorySource::NotFound.new("#{repo_path} is not a repository this credential can see")
+    when 301, 302, 307, 308
+      # A renamed or transferred repository on GitLab, Codeberg or Bitbucket
+      # answers 3xx. That slug no longer addresses a repository, so it belongs
+      # in NotFound rather than Error. Error is retried on every pass forever
+      # and renders as a fault, while NotFound marks the row unavailable, which
+      # is what a slug that has stopped naming a repository is. Measured:
+      # codeberg.org/w0u7/email_octopus, in the registry since 2026-08-19 with
+      # no versions, answers 301.
+      #
+      # The new name is deliberately not chased, for the reason GithubRepositoryApi
+      # gives: adopting it would merge two identities the registry keys rows on,
+      # and these APIs do not name the new owner and repo without another round
+      # trip. A moved repository is reported as moved; re-pointing it is a
+      # registration decision rather than a fetch.
+      raise RepositorySource::NotFound.new(
+        "#{repo_path} has moved: that owner and name no longer address a repository on #{host_name}"
+      )
     when 401, 403 then raise RepositorySource::Error.new("#{repo_path} was refused: HTTP #{response.status}")
     else               raise RepositorySource::Error.new("#{repo_path} answered HTTP #{response.status}")
     end
@@ -168,6 +186,10 @@ end
 class GitlabRepositorySource < HostRepositorySource
   API_BASE = "https://gitlab.com/api/v4"
 
+  def host_name : String
+    "GitLab"
+  end
+
   # GitLab addresses a project by its whole namespaced path, URL-encoded.
   private def project_id : String
     URI.encode_path_segment(repo_path)
@@ -223,6 +245,10 @@ end
 class CodebergRepositorySource < HostRepositorySource
   API_BASE = "https://codeberg.org/api/v1"
 
+  def host_name : String
+    "Codeberg"
+  end
+
   def repository_url : String
     "#{API_BASE}/repos/#{repo_path}"
   end
@@ -272,6 +298,10 @@ end
 # GET /2.0/repositories/{workspace}/{repo}[/refs/tags]
 class BitbucketRepositorySource < HostRepositorySource
   API_BASE = "https://api.bitbucket.org/2.0"
+
+  def host_name : String
+    "Bitbucket"
+  end
 
   def repository_url : String
     "#{API_BASE}/repositories/#{repo_path}"

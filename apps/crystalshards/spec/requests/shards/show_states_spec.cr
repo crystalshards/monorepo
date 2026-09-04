@@ -267,6 +267,45 @@ describe Shards::Show do
       body.should contain("repositories come back")
     end
 
+    it "states the recorded reason when a repository is unavailable" do
+      shard = ShardFactory.create &.name("unreachable")
+        .at("github.com", "someone", "unreachable")
+      SaveShard.update!(shard, unavailable_at: Time.utc, index_error: "404 from host")
+
+      body = BrowserClient.exec(Shards::Show.with(**identity_of(shard))).body
+
+      body.should contain("could not reach this repository")
+      body.should contain("404 from host")
+      body.should contain("repositories come back")
+      body.should_not contain("index-steps")
+    end
+
+    it "states the recorded reason when indexing failed and there are no versions" do
+      shard = ShardFactory.create &.name("failed")
+        .at("github.com", "someone", "failed")
+        .index_error("The repository could not be read")
+
+      body = BrowserClient.exec(Shards::Show.with(**identity_of(shard))).body
+
+      body.should contain("The repository could not be read")
+      body.should_not contain("index-steps")
+    end
+
+    it "renders the recorded spec_error when a version's shard.yml could not be read" do
+      shard = ShardFactory.create &.name("bad-spec")
+        .at("github.com", "someone", "bad-spec")
+      ShardVersionFactory.create &.shard_id(shard.id)
+        .version("1.0.0")
+        .metadata(nil)
+        .spec_error("No shard.yml at tag v1.0.0.")
+
+      body = BrowserClient.exec(Shards::Show.with(**identity_of(shard))).body
+
+      body.should contain("No shard.yml at tag v1.0.0.")
+      body.should_not contain("Nothing has been indexed for 1.0.0 yet")
+      body.should_not contain("has not been read yet")
+    end
+
     it "says a version is recorded but unread rather than drawing an empty manifest" do
       shard = ShardFactory.create &.name("pending").at("github.com", "someone", "pending")
       ShardVersionFactory.create &.shard_id(shard.id)
