@@ -157,4 +157,58 @@ describe Api::Shards::Create do
     # Or return 422 if validation is implemented
     response.status_code.should be < 500
   end
+
+  it "creates a shard version when version param is provided and normalises leading v" do
+    user = UserFactory.create
+
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name:           "version-normalise-shard",
+        repository_url: "https://github.com/user/version-normalise-shard",
+      },
+      version: "v1.2.0"
+    )
+
+    response.status.should eq(HTTP::Status.new(201))
+    json = JSON.parse(response.body)
+    json["message"].should eq("Shard created successfully, indexing started")
+
+    shard = ShardQuery.new.name("version-normalise-shard").first
+    version_rows = ShardVersionQuery.new.shard_id(shard.id)
+    version_rows.select_count.should eq(1)
+    version_rows.first.version.should eq("1.2.0")
+
+    # Posting again with "1.2.0" (without the leading 'v') for the same repository
+    # must yield one version row rather than two.
+    ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name:           "version-normalise-shard",
+        repository_url: "https://github.com/user/version-normalise-shard",
+      },
+      version: "1.2.0"
+    )
+
+    ShardVersionQuery.new.shard_id(shard.id).select_count.should eq(1)
+  end
+
+  it "does not claim indexing started if version row cannot be created" do
+    user = UserFactory.create
+
+    # A tag of 'v' normalises to an empty string, which fails SaveShardVersion
+    # validation. The shard is created, but indexing does not start.
+    response = ApiClient.auth(user).exec(Api::Shards::Create,
+      shard: {
+        name:           "unversioned-create-shard",
+        repository_url: "https://github.com/user/unversioned-create-shard",
+      },
+      version: "v"
+    )
+
+    response.status.should eq(HTTP::Status.new(201))
+    json = JSON.parse(response.body)
+    json["message"].should eq("Shard created successfully")
+
+    shard = ShardQuery.new.name("unversioned-create-shard").first
+    ShardVersionQuery.new.shard_id(shard.id).select_count.should eq(0)
+  end
 end
