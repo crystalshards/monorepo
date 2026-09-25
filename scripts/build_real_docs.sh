@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # build_real_docs.sh - generate REAL Crystal documentation for shards and
-# upload it to MinIO.
+# upload it to object storage.
 #
 # Usage:
 #   scripts/build_real_docs.sh                      Build the default shard set
@@ -26,7 +26,7 @@ STORAGE_ACCESS_KEY="${STORAGE_ACCESS_KEY:-minioadmin}"
 STORAGE_SECRET_KEY="${STORAGE_SECRET_KEY:-minioadmin}"
 DOCS_BUCKET="${DOCS_BUCKET:-crystal-docs}"
 SANDBOX_IMAGE="${DOCS_SANDBOX_IMAGE:-crystallang/crystal:1.21.0-alpine}"
-MC_IMAGE="${MC_IMAGE:-minio/mc:latest}"
+AWS_CLI_IMAGE="${AWS_CLI_IMAGE:-amazon/aws-cli:2.37.4@sha256:fdd8d1fcbea9c371678dee5a40df8b178c7a781b4586605756ee28114c97ead6}"
 
 # Wall clock limit for one untrusted docs build, matching the application
 # side DocsSandbox contract. A build that outlives it is killed.
@@ -123,10 +123,22 @@ sandboxed_crystal_docs() {
 # the docs bucket. One object per version, never a tree of files.
 upload_docs() {
   local docs_json="$1" name="$2" version="$3"
-  docker run --rm --network host \
-    -v "$docs_json:/upload/docs.json:ro" --entrypoint sh "$MC_IMAGE" -c \
-    "mc alias set local '$STORAGE_ENDPOINT' '$STORAGE_ACCESS_KEY' '$STORAGE_SECRET_KEY' >/dev/null && \
-     mc cp /upload/docs.json 'local/$DOCS_BUCKET/$name/$version/docs.json'"
+  echo "  Uploading to $DOCS_BUCKET/$name/$version/docs.json..."
+  if curl -V 2>&1 | grep -q -- '--aws-sigv4'; then
+    curl -sf -X PUT -T "$docs_json" -u "$STORAGE_ACCESS_KEY:$STORAGE_SECRET_KEY" \
+      --aws-sigv4 "aws:amz:us-east-1:s3" \
+      -H "Content-Type: application/json" \
+      "$STORAGE_ENDPOINT/$DOCS_BUCKET/$name/$version/docs.json"
+  else
+    docker run --rm --network host \
+      -v "$docs_json:/upload/docs.json:ro" \
+      -e AWS_ACCESS_KEY_ID="$STORAGE_ACCESS_KEY" \
+      -e AWS_SECRET_ACCESS_KEY="$STORAGE_SECRET_KEY" \
+      -e AWS_DEFAULT_REGION="us-east-1" \
+      "$AWS_CLI_IMAGE" \
+      --endpoint-url "$STORAGE_ENDPOINT" \
+      s3 cp /upload/docs.json "s3://$DOCS_BUCKET/$name/$version/docs.json" --content-type "application/json" >/dev/null
+  fi
 }
 
 build_one() {
