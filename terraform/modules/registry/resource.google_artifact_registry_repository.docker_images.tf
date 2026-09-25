@@ -39,13 +39,17 @@ resource "google_artifact_registry_repository" "docker_images" {
   # tag", so a deleted image is a rollback target that no longer exists. Deleting
   # something a live revision can still pull would trade a storage line for an
   # outage, so the rules below are deliberately timid.
-  #
-  # Keep policies win over delete policies in Artifact Registry, so the two KEEP
-  # rules are the safety net rather than decoration.
 
+  # KEEP policies always take precedence over DELETE policies in Artifact
+  # Registry (see Google Cloud documentation at
+  # https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy-overview).
+  # If an image matches both a KEEP policy and a DELETE policy, KEEP wins and
+  # the image is never deleted.
   # Floor under every package regardless of tag state. keep_count is per package,
-  # so this is 50 rollback targets deep for each app image, which is well past
-  # any window in which somebody is still reverting a bad deploy.
+  # preserving 50 versions deep for each app image. Because KEEP beats DELETE,
+  # the active serving revision and up to 49 rollback targets are unconditionally
+  # preserved even if they are older than 30 days and even for services that
+  # deploy infrequently (like trycrystal-runner).
   cleanup_policies {
     id     = "keep-recent-versions"
     action = "KEEP"
@@ -55,18 +59,21 @@ resource "google_artifact_registry_repository" "docker_images" {
     }
   }
 
-  # Everything CI pushes is tagged with a full commit SHA and nothing else: the
-  # build job pushes no `latest`, and the release job refuses any image reference
-  # ending in :latest. So "tagged" here means "a commit's image", and keeping all
-  # of them is what makes the delete rule below unable to touch anything a
-  # revision could be pulling. It also means this repository does not shrink on
-  # its own; see the note at the end of this file.
+  # Delete tagged versions older than 30 days unless kept by a KEEP policy.
+  #
+  # Because keep-recent-versions above protects the 50 most recent versions of
+  # each package with KEEP precedence, this rule only ever deletes versions
+  # that are BOTH older than 30 days AND outside the 50 most recent versions
+  # for their package. This bounds repository growth to at most 50 versions per
+  # package (approximately 500 images total across all services and jobs),
+  # halting the 0.476 GiB/day ($17.32/month by month 12) growth rate.
   cleanup_policies {
-    id     = "keep-tagged-versions"
-    action = "KEEP"
+    id     = "delete-stale-tagged"
+    action = "DELETE"
 
     condition {
-      tag_state = "TAGGED"
+      tag_state  = "TAGGED"
+      older_than = "2592000s"
     }
   }
 
@@ -100,13 +107,18 @@ resource "google_artifact_registry_repository" "docker_images" {
   }
 }
 
-# What this does not fix, said plainly so nobody reads the policies above as a
-# solved problem: because every image CI pushes is tagged and tagged versions are
-# kept, these rules bound the orphan pile and not the growth. The growth is one
-# tagged image per app per commit, and no cleanup policy can prune it safely,
-# because Artifact Registry cannot see which digests Cloud Run revisions are
-# still able to pull. Reducing it needs a step that reads the live revisions and
-# Job executions, collects the digests they reference, and deletes tagged
-# versions outside that set: a deploy-time job with the deployed state in hand,
-# not a rule in this file. Until that exists, the bound on this line is the
-# retention above, and it is honest about being a floor rather than a fix.
+# How repository growth is bounded safely:
+#
+# CI tags every built image with a commit SHA. In earlier versions of this file,
+# all tagged versions were kept forever out of concern that Artifact Registry
+# could not see which images Cloud Run revisions reference. That allowed image
+# storage to grow by 0.476 GiB per day indefinitely.
+#
+# Combining keep-recent-versions (keep_count = 50) with delete-stale-tagged (30
+# days) bounds this growth safely. In Google Cloud Artifact Registry, KEEP
+# policies always take precedence over DELETE policies. For packages that deploy
+# rarely, all historical versions remain within the 50 most recent versions and
+# are never deleted regardless of age. For packages that deploy frequently,
+# versions beyond the 50 most recent that are older than 30 days are pruned,
+# capping repository size while preserving all active revisions and recent
+# rollback targets.

@@ -101,12 +101,25 @@ resource "google_cloud_run_v2_service" "trycrystal_runner" {
         }
       }
 
+      # Fast boot: measured cold start with boot self-test compile.
+      #
+      # The runner executes a boot self-test compilation to verify sandbox
+      # confinement before binding port 9292. In production, instance startup
+      # logs measure 8.19 s between instance launch and listening on port 9292.
+      # With the previous configuration (initial_delay_seconds = 5, period = 5),
+      # probe attempt 1 at ~5 s failed because the self-test was still running,
+      # and attempt 2 succeeded at ~10.4 s (matching the 10.0 s p50 cold start).
+      #
+      # Setting initial_delay_seconds = 0 with period_seconds = 1 and timeout = 1
+      # probes every second from launch. Attempts 1-8 fail harmlessly while the
+      # self-test compiles, and attempt 9 succeeds immediately upon binding
+      # (~9 s total), eliminating 1-2 s of artificial probe delay. The
+      # failure_threshold of 60 preserves the full 60 s startup budget.
       startup_probe {
-        initial_delay_seconds = 5
-        period_seconds        = 5
-        timeout_seconds       = 3
-        failure_threshold     = 12
-
+        initial_delay_seconds = 0
+        period_seconds        = 1
+        timeout_seconds       = 1
+        failure_threshold     = 60
         http_get {
           path = var.trycrystal_runner_health_path
           port = var.trycrystal_runner_port

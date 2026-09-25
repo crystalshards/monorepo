@@ -9,6 +9,17 @@
 # that a newer write already superseded. The version a request would actually
 # be served is untouchable by any rule in this bucket.
 #
+# Storage class: live served documentation remains in STANDARD storage
+# permanently. An earlier lifecycle rule moved live objects to NEARLINE at 30
+# days and COLDLINE at 180 days, assuming older documentation was rarely read.
+# In practice, crystaldocs serves older documentation frequently to visitors and
+# search crawlers, and billing measured 183.9 GiB of Nearline data retrieval in
+# 24 days ($1.84) from just 1.12 GiB of nearline objects. Because Standard
+# storage incurs zero retrieval fees and costs only $0.020/GiB-month (versus
+# Nearline's $0.010/GiB-month plus $0.010/GiB retrieval charge), keeping all
+# live served documentation in Standard costs ~$0.80/month across the ~40 GiB
+# bucket and completely eliminates data retrieval fees.
+#
 # force_destroy is true here and false on the packages bucket, and that
 # asymmetry is deliberate. Versioning plus force_destroy = false means an
 # ordinary destroy fails partway through on a non empty bucket, which is a bad
@@ -51,31 +62,6 @@ resource "google_storage_bucket" "docs" {
     }
   }
 
-  # Cool live objects down as they age. No deletion, only storage class, so a
-  # request for five year old docs still succeeds, just off cheaper media.
-  lifecycle_rule {
-    action {
-      type          = "SetStorageClass"
-      storage_class = "NEARLINE"
-    }
-    condition {
-      with_state            = "LIVE"
-      age                   = var.docs_nearline_after_days
-      matches_storage_class = ["STANDARD"]
-    }
-  }
-
-  lifecycle_rule {
-    action {
-      type          = "SetStorageClass"
-      storage_class = "COLDLINE"
-    }
-    condition {
-      with_state            = "LIVE"
-      age                   = var.docs_coldline_after_days
-      matches_storage_class = ["NEARLINE"]
-    }
-  }
 
   # Per build scratch, under the build-scratch/ prefix.
   #
