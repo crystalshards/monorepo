@@ -440,7 +440,7 @@ locals {
     }
 
     crystaldocs = {
-      max_instances = 3
+      max_instances = 5
       database      = true
       cpu           = "1"
       memory        = "512Mi"

@@ -33,23 +33,27 @@ resource "google_artifact_registry_repository" "docker_images" {
   # idea what Cloud Run is running. Every service and Job in the services module
   # carries lifecycle { ignore_changes = [...image...] }: terraform sets the
   # image once and CI rolls the tag afterwards, so terraform's state is not a
-  # record of what is deployed, and a service that has not been redeployed in
-  # months is still pulling the image from the commit that last touched it. On
-  # top of that, the rollback path is "re-point a service at an older commit's
-  # tag", so a deleted image is a rollback target that no longer exists. Deleting
-  # something a live revision can still pull would trade a storage line for an
-  # outage, so the rules below are deliberately timid.
+  # record of what is deployed. What makes pruning safe anyway is deploy.yml:
+  # every deploy builds all eight images at the commit SHA and rolls every
+  # service and Job onto that SHA (the release job's roll loop and the per Job
+  # `gcloud run jobs update` steps). So whatever is live is the newest version
+  # of its package, and the rollback path ("re-point a service at an older
+  # commit's tag") only needs recent versions to still exist.
+  #
+  # The residual risk, stated so nobody has to rediscover it: a deployable
+  # registered in terraform but left out of those roll steps keeps pulling its
+  # first image while newer versions pile up above it, and once that image is
+  # outside the 50 most recent and 30 days old the rule below deletes it and
+  # its next cold start fails. Registering every deployable in the roll steps
+  # was already required; this rule is one more reason it is not optional.
 
   # KEEP policies always take precedence over DELETE policies in Artifact
-  # Registry (see Google Cloud documentation at
-  # https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy-overview).
-  # If an image matches both a KEEP policy and a DELETE policy, KEEP wins and
-  # the image is never deleted.
-  # Floor under every package regardless of tag state. keep_count is per package,
-  # preserving 50 versions deep for each app image. Because KEEP beats DELETE,
-  # the active serving revision and up to 49 rollback targets are unconditionally
-  # preserved even if they are older than 30 days and even for services that
-  # deploy infrequently (like trycrystal-runner).
+  # Registry: https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy-overview.
+  # If a version matches both, KEEP wins and it is not deleted.
+  #
+  # Floor under every package regardless of tag state. keep_count is per
+  # package, so each image keeps its 50 most recent versions: the live one and
+  # 49 rollback targets, whatever their age.
   cleanup_policies {
     id     = "keep-recent-versions"
     action = "KEEP"
@@ -106,19 +110,3 @@ resource "google_artifact_registry_repository" "docker_images" {
     managed_by  = "terraform"
   }
 }
-
-# How repository growth is bounded safely:
-#
-# CI tags every built image with a commit SHA. In earlier versions of this file,
-# all tagged versions were kept forever out of concern that Artifact Registry
-# could not see which images Cloud Run revisions reference. That allowed image
-# storage to grow by 0.476 GiB per day indefinitely.
-#
-# Combining keep-recent-versions (keep_count = 50) with delete-stale-tagged (30
-# days) bounds this growth safely. In Google Cloud Artifact Registry, KEEP
-# policies always take precedence over DELETE policies. For packages that deploy
-# rarely, all historical versions remain within the 50 most recent versions and
-# are never deleted regardless of age. For packages that deploy frequently,
-# versions beyond the 50 most recent that are older than 30 days are pruned,
-# capping repository size while preserving all active revisions and recent
-# rollback targets.

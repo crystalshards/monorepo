@@ -23,7 +23,7 @@
 # On 2026-09-25, Jason decided to move crystal-postgres to shared core
 # db-g1-small (1 shared vCPU, 1.7 GB RAM). With connection_pool_size set to 2:
 #   crystalshards       3 instances x 2 pools (own + crystaldocs) x 2 = 12
-#   crystaldocs         3 instances x 2 pools (own + crystalshards) x 2 = 12
+#   crystaldocs         5 instances x 2 pools (own + crystalshards) x 2 = 20
 #   crystalgigs         2 instances x 1 pool x 2                       =  4
 #   crystalbits         2 instances x 1 pool x 2                       =  4
 #   docs-launcher       5 instances x 2 pools (crystalshards + docs) x 2 = 20
@@ -32,20 +32,21 @@
 #   warm-popular-docs   1 task x 2 pools x 2                           =  4
 #   docs-status-reconcile 1 task x 2 pools x 2                         =  4
 #   Cloud SQL reserved superuser connections (PostgreSQL default)       =  3
-#                                                                total   73
-# against max_connections 80 (7 headroom).
+#                                                                total   81
+# against max_connections 90 (9 headroom).
 #
 # Measured production usage over 30 days (2026-08-26 to 2026-09-25) justifies
-# these numbers:
+# these numbers. crystaldocs keeps its 5 instances because it reached 5 in that
+# window; the other public apps are capped at their measured maximum:
 #   postgresql/num_backends: min 0, p50 2, p99 8, peak 16
 #   memory/usage: min 1.14 GB, p50 1.33 GB, p99 1.42 GB, peak 1.47 GB
 #   memory/total_usage: min 310 MB, p50 500 MB, p99 599 MB, peak 615 MB
 #   cpu/utilization: min 6.7%, p50 9.2%, p99 13.4%, peak 39.5%
 #   active instances: crystalshards p99 1 (max 3), crystaldocs p99 2 (max 5),
 #   crystalgigs p99 1 (max 2), crystalbits p99 1 (max 2)
-# Under normal operation the entire fleet uses only 2 to 8 connections, so 80
-# provides 5x headroom over measured peak while capping the absolute worst case
-# safely below the 1.7 GB memory limit of db-g1-small.
+# Under normal operation the entire fleet uses only 2 to 8 connections, so 90
+# is more than 5x the measured peak of 16, and the worst case stays far below
+# what 1.7 GB can hold (an idle backend costs a few MB).
 resource "google_sql_database_instance" "crystal_postgres" {
   project          = var.project_id
   name             = "crystal-postgres"

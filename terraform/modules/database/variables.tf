@@ -36,7 +36,7 @@ variable "max_connections" {
     comment on resource.google_sql_database_instance.crystal_postgres.
   DESC
   type        = number
-  default     = 80
+  default     = 90
 }
 
 variable "connection_pool_size" {
