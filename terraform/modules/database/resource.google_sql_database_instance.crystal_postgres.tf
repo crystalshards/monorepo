@@ -19,15 +19,33 @@
 # migration Jobs, and nothing else. docs-build in particular holds no such role.
 #
 # Connection budget. Cloud Run gives every instance of every service its own
-# pool, so the ceiling is the product of instances and pool size, not the sum:
-#   crystalshards  5 instances x 2 pools (own + crystaldocs) x 5 =  50
-#   crystaldocs    5 instances x 2 pools (own + crystalshards) x 5 = 50
-#   crystalgigs    5 instances x 1 pool x 5                       =  25
-#   crystalbits    5 instances x 1 pool x 5                       =  25
-#   4 migration Jobs, 1 task each, 1 pool x 5                     =  20
-#                                                            total  170
-# against max_connections 200. Raise max_instances in the services module and
-# this arithmetic is what you have to redo.
+# pool, so the ceiling is the product of instances and pool size, not the sum.
+# On 2026-09-25, Jason decided to move crystal-postgres to shared core
+# db-g1-small (1 shared vCPU, 1.7 GB RAM). With connection_pool_size set to 2:
+#   crystalshards       3 instances x 2 pools (own + crystaldocs) x 2 = 12
+#   crystaldocs         3 instances x 2 pools (own + crystalshards) x 2 = 12
+#   crystalgigs         2 instances x 1 pool x 2                       =  4
+#   crystalbits         2 instances x 1 pool x 2                       =  4
+#   docs-launcher       5 instances x 2 pools (crystalshards + docs) x 2 = 20
+#   4 migration Jobs    1 task each x 1 pool x 2                       =  8
+#   discover-shards     1 task x 1 pool x 2                            =  2
+#   warm-popular-docs   1 task x 2 pools x 2                           =  4
+#   docs-status-reconcile 1 task x 2 pools x 2                         =  4
+#   Cloud SQL reserved superuser connections (PostgreSQL default)       =  3
+#                                                                total   73
+# against max_connections 80 (7 headroom).
+#
+# Measured production usage over 30 days (2026-08-26 to 2026-09-25) justifies
+# these numbers:
+#   postgresql/num_backends: min 0, p50 2, p99 8, peak 16
+#   memory/usage: min 1.14 GB, p50 1.33 GB, p99 1.42 GB, peak 1.47 GB
+#   memory/total_usage: min 310 MB, p50 500 MB, p99 599 MB, peak 615 MB
+#   cpu/utilization: min 6.7%, p50 9.2%, p99 13.4%, peak 39.5%
+#   active instances: crystalshards p99 1 (max 3), crystaldocs p99 2 (max 5),
+#   crystalgigs p99 1 (max 2), crystalbits p99 1 (max 2)
+# Under normal operation the entire fleet uses only 2 to 8 connections, so 80
+# provides 5x headroom over measured peak while capping the absolute worst case
+# safely below the 1.7 GB memory limit of db-g1-small.
 resource "google_sql_database_instance" "crystal_postgres" {
   project          = var.project_id
   name             = "crystal-postgres"
