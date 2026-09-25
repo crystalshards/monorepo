@@ -48,10 +48,16 @@ jobs:
         ports:
           - 5432:5432
 
-    # MinIO is started as a step rather than a service container: the official
-    # image needs `server /data` as its command, and service containers cannot
-    # override a command. bitnami/minio, which can, no longer publishes a
-    # public tag.
+    # Object storage is started as a step rather than a service container so
+    # the container options, environment and health check stay consistent
+    # between GitHub Actions and local workflows.
+    # MinIO was removed from Docker Hub in September 2026 (pull access denied:
+    # repository does not exist or may require 'docker login') and
+    # quay.io/minio/minio requires authentication. RustFS provides a faithful,
+    # open-source S3-compatible replacement that supports path-style addressing,
+    # SigV4 authentication, presigned URLs, and bucket operations used by
+    # object_store.cr. We pin both the version tag and sha256 digest so a moved
+    # or vanished tag fails loudly and cannot change CI unexpectedly.
 
     steps:
       - name: Checkout code
@@ -64,20 +70,20 @@ jobs:
       # below and never name a backend themselves.
       - name: Start object storage
         run: |
-          docker run -d --name minio \
+          docker run -d --name rustfs \
             -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:latest server /data
+            -e RUSTFS_ACCESS_KEY=minioadmin \
+            -e RUSTFS_SECRET_KEY=minioadmin \
+            rustfs/rustfs:1.0.0@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff
           for _ in $(seq 1 30); do
-            if curl -fsS http://localhost:9000/minio/health/live >/dev/null 2>&1; then
+            if curl -fsS http://localhost:9000/health >/dev/null 2>&1; then
               echo "Object storage is up"
               exit 0
             fi
             sleep 2
           done
           echo "Object storage did not become healthy"
-          docker logs minio || true
+          docker logs rustfs || true
           exit 1
 
       - name: Install Crystal

@@ -132,7 +132,7 @@ setup: services install-deps migrate seed ## Full local setup: services, deps, m
 
 services: ## Start object storage and mail capture in Docker, and verify Postgres is reachable
 	@echo "Starting supporting services..."
-	docker compose up -d minio mailhog
+	docker compose up -d rustfs mailhog
 	@echo "Checking Postgres at $(DB_HOST):$(DB_PORT)..."
 	@pg_isready -h $(DB_HOST) -p $(DB_PORT) >/dev/null 2>&1 || \
 		(echo "Postgres is not reachable at $(DB_HOST):$(DB_PORT). Start it, then re-run." && exit 1)
@@ -149,12 +149,20 @@ services: ## Start object storage and mail capture in Docker, and verify Postgre
 	@echo "Databases ready."
 	@echo "Ensuring buckets ($(DOCS_BUCKET), $(PACKAGES_BUCKET))..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		curl -sf $(STORAGE_ENDPOINT)/minio/health/live >/dev/null 2>&1 && break || sleep 2; \
+		curl -sf $(STORAGE_ENDPOINT)/health >/dev/null 2>&1 && break || sleep 2; \
 	done
-	@docker run --rm --network host --entrypoint sh minio/mc:latest -c \
-		"mc alias set local $(STORAGE_ENDPOINT) $(STORAGE_ACCESS_KEY) $(STORAGE_SECRET_KEY) >/dev/null && \
-		 mc mb --ignore-existing local/$(DOCS_BUCKET) local/$(PACKAGES_BUCKET) >/dev/null" \
-		|| echo "  WARNING: could not create buckets; documentation pages will report storage unavailable."
+	@for bucket in $(DOCS_BUCKET) $(PACKAGES_BUCKET); do \
+		curl -sf -X PUT -u "$(STORAGE_ACCESS_KEY):$(STORAGE_SECRET_KEY)" \
+			--aws-sigv4 "aws:amz:us-east-1:s3" \
+			"$(STORAGE_ENDPOINT)/$$bucket" >/dev/null 2>&1 \
+			|| docker run --rm --network host \
+				-e AWS_ACCESS_KEY_ID="$(STORAGE_ACCESS_KEY)" \
+				-e AWS_SECRET_ACCESS_KEY="$(STORAGE_SECRET_KEY)" \
+				-e AWS_DEFAULT_REGION="us-east-1" \
+				amazon/aws-cli:2.37.4@sha256:fdd8d1fcbea9c371678dee5a40df8b178c7a781b4586605756ee28114c97ead6 \
+				--endpoint-url "$(STORAGE_ENDPOINT)" s3 mb "s3://$$bucket" >/dev/null 2>&1 \
+			|| echo "  WARNING: could not create bucket $$bucket; documentation pages will report storage unavailable."; \
+	done
 	@echo "Buckets ready."
 
 install-deps: ## Install Crystal dependencies for all apps
