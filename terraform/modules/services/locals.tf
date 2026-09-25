@@ -378,7 +378,7 @@ locals {
   # history, scaling from zero.
   app_config = {
     crystalshards = {
-      max_instances = 5
+      max_instances = 3
       database      = true
       cpu           = "1"
       memory        = "512Mi"
@@ -440,7 +440,7 @@ locals {
     }
 
     crystaldocs = {
-      max_instances = 5
+      max_instances = 3
       database      = true
       cpu           = "1"
       memory        = "512Mi"
@@ -458,7 +458,7 @@ locals {
     }
 
     crystalgigs = {
-      max_instances = 5
+      max_instances = 2
       database      = true
       cpu           = "1"
       memory        = "512Mi"
@@ -476,7 +476,7 @@ locals {
     }
 
     crystalbits = {
-      max_instances = 5
+      max_instances = 2
       database      = true
       cpu           = "1"
       memory        = "512Mi"
