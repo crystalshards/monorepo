@@ -326,10 +326,11 @@ module CrystalShards
         sleep 2.seconds
       end
 
-      # Timing out is reported as a failed build rather than swallowed,
-      # because something did run and nobody watched it finish.
+      # Timing out is an infrastructure failure, not a deterministic property
+      # of the shard. Raising lets Cloud Tasks retry rather than marking the
+      # version permanently failed.
       log_error "Docs build execution exceeded #{DocsSandbox.timeout_seconds}s#{last_poll_error ? ", last status error: #{last_poll_error}" : ""}"
-      false
+      raise DocsSandbox::Timeout.new("Docs build execution exceeded #{DocsSandbox.timeout_seconds}s")
     end
 
     # Best effort, and expected to fail. The launcher holds no

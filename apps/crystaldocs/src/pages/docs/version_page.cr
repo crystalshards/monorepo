@@ -309,9 +309,9 @@ class Docs::VersionPage < MainLayout
     end
 
     para class: "build-state-meta" do
-      text "Reloading will not start another build. A failed version is left "
-      text "alone for an hour before it can be requested again, so one shard "
-      text "that cannot build does not crowd out the ones that can."
+      text "Reloading will not start another build. A version that does not compile "
+      text "under the current compiler is terminal, so one shard that cannot build "
+      text "does not crowd out the ones that can."
     end
 
     if message = request.last_error.presence

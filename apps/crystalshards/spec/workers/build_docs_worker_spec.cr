@@ -286,12 +286,12 @@ describe BuildDocsWorker do
         .should eq("https://build-fail.example.org/guide")
     end
 
-    it "re-raises a clone failure and publishes nothing" do
+    it "re-raises a transient network clone failure and publishes nothing" do
       shard = ShardFactory.create &.name("clone-fail")
       ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
 
       builder = CrystalShards::MockDocsBuilder.new
-      builder.raise_with = "Failed to clone repository: fatal: repository not found"
+      builder.raise_with = "Failed to clone repository: Connection reset by peer"
       storage = CrystalShards::MockStorageService.new
 
       WorkerSeams.with_docs_pipeline(builder, storage) do
@@ -301,6 +301,36 @@ describe BuildDocsWorker do
       end
 
       storage.uploaded_docs.should be_empty
+    end
+
+    it "records a deterministic clone failure (repo gone or private) without raising" do
+      shard = ShardFactory.create &.name("clone-deterministic-fail")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")
+      DocsRows.register("clone-deterministic-fail", "1.0.0")
+      DocsRows.request("clone-deterministic-fail", "1.0.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      builder.raise_source_unusable = "The repository could not be cloned because it is private, moved, or deleted: fatal: repository not found"
+      storage = CrystalShards::MockStorageService.new
+
+      WorkerSeams.with_docs_pipeline(builder, storage) do
+        BuildDocsWorker.new(shard_name: "clone-deterministic-fail", version: "1.0.0").perform
+      end
+
+      storage.uploaded_docs.should be_empty
+      outcome = DocsRows.request_outcome("clone-deterministic-fail", "1.0.0")
+      outcome.status.should eq("failed")
+      DocsRows.version_status("clone-deterministic-fail", "1.0.0").should eq("failed")
+    end
+
+    it "records a standard library version mismatch without raising" do
+      WorkerSeams.with_docs_pipeline(CrystalShards::MockDocsBuilder.new, CrystalShards::MockStorageService.new) do
+        BuildDocsWorker.new(shard_name: "crystal", version: "0.24.2").perform
+      end
+
+      outcome = DocsRows.request_outcome("crystal", "0.24.2")
+      outcome.status.should eq("failed")
+      outcome.last_error.to_s.should contain("asked to build the standard library at \"0.24.2\"")
     end
 
     it "re-raises an upload failure, publishes nothing and still cleans up" do
@@ -471,7 +501,7 @@ describe BuildDocsWorker do
       DocsRows.register("unrecordable-failure", "1.0.0")
 
       builder = CrystalShards::MockDocsBuilder.new
-      builder.raise_with = "Failed to clone repository: fatal: repository not found"
+      builder.raise_with = "Failed to clone repository: Connection reset by peer"
       storage = CrystalShards::MockStorageService.new
 
       WorkerSeams.with_docs_pipeline(builder, storage) do

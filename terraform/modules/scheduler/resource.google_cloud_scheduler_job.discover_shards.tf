@@ -9,9 +9,8 @@
 # resource is the missing edge.
 #
 # Cloud Scheduler rather than a polling process, because Cloud Run has nothing
-# that idles: a service scales to zero and a Job runs to completion, so "a thing
-# that wakes up on an interval" has to be an external timer. It is the only
-# scheduler in this stack, and nothing polls.
+# that idles: a service scales to zero and a Job runs to completion, so an
+# interval wake-up has to be an external timer. Nothing polls.
 #
 # The target is the Cloud Run Admin API's jobs.run method, not the Job's own
 # ingress, because a Job has no URL to call. That is why the token below is an

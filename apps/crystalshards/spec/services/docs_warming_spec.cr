@@ -87,19 +87,20 @@ describe CrystalShards::DocsWarming do
       report.in_flight.should eq(1)
     end
 
-    it "retries a version whose last build failed" do
-      # Deliberately NOT skipped. crystaldocs owns the retry floor and applies
-      # it when a reader asks; a warmer that excluded every past failure would
-      # never rebuild a shard that failed once on a transient network error.
+    it "refuses to re-commission a version whose last build failed" do
+      # Terminal failure under the current toolchain. Re-running failing shards
+      # every hour previously caused 600 doomed builds per day; a build that
+      # failed is settled and must not be retried by the warmer.
       queue = RecordingJobQueue.install
       shard_with("github.com/acme/flaky", "1.0.0", stars: 500)
       DocsRows.register("github.com/acme/flaky", "1.0.0")
       DocsRows.request("github.com/acme/flaky", "1.0.0")
-      CrystalShards::DocsBuildStatus.new("github.com/acme/flaky", "1.0.0").failed("network reset")
+      CrystalShards::DocsBuildStatus.new("github.com/acme/flaky", "1.0.0").failed("syntax error")
 
-      warm
+      report = warm
 
-      queue.count_for(:build_docs).should eq(1)
+      queue.count_for(:build_docs).should eq(0)
+      report.already_documented.should eq(1)
     end
 
     it "counts a shard with no published version instead of failing on it" do

@@ -48,7 +48,10 @@ module CrystalShards
     end
 
     BUILDING_SQL = <<-SQL
-      UPDATE doc_build_requests
+      INSERT INTO doc_build_requests
+        (package_name, version, status, requested_at, started_at, attempts, created_at, updated_at)
+      VALUES ($1, $2, 'building', $3, $3, 1, $3, $3)
+      ON CONFLICT (package_name, version) DO UPDATE
       SET status = 'building',
           step = NULL,
           started_at = $3,
@@ -56,7 +59,6 @@ module CrystalShards
           failed_at = NULL,
           last_error = NULL,
           updated_at = $3
-      WHERE package_name = $1 AND version = $2
       SQL
 
     # Scoped to a row that is still building, so a step arriving late, after
@@ -69,28 +71,32 @@ module CrystalShards
       SQL
 
     SUCCEEDED_SQL = <<-SQL
-      UPDATE doc_build_requests
+      INSERT INTO doc_build_requests
+        (package_name, version, status, requested_at, finished_at, attempts, created_at, updated_at)
+      VALUES ($1, $2, 'succeeded', $3, $3, 1, $3, $3)
+      ON CONFLICT (package_name, version) DO UPDATE
       SET status = 'succeeded',
           step = NULL,
           finished_at = $3,
           failed_at = NULL,
           last_error = NULL,
           updated_at = $3
-      WHERE package_name = $1 AND version = $2
       SQL
 
     # failed_at is the column crystaldocs measures its retry floor from, so it
     # is set on every failure path, including the ones that fail before any
     # cloning happens.
     FAILED_SQL = <<-SQL
-      UPDATE doc_build_requests
+      INSERT INTO doc_build_requests
+        (package_name, version, status, requested_at, finished_at, failed_at, last_error, attempts, created_at, updated_at)
+      VALUES ($1, $2, 'failed', $3, $3, $3, $4, 1, $3, $3)
+      ON CONFLICT (package_name, version) DO UPDATE
       SET status = 'failed',
           step = NULL,
           finished_at = $3,
           failed_at = $3,
           last_error = $4,
           updated_at = $3
-      WHERE package_name = $1 AND version = $2
       SQL
 
     # doc_versions carries its own build_status, and until now nothing on

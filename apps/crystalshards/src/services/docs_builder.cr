@@ -130,17 +130,27 @@ module CrystalShards
     private def clone_repository(repo_url : String, target_dir : String)
       status = run("git", ["clone", "--depth", "1", repo_url, target_dir])
 
-      # Left as a plain exception, so the caller keeps retrying it, and that is
-      # the deliberate half of this classification rather than an omission.
-      # `git clone` failing does not say whether the repository is gone or the
-      # network hiccuped, and nothing measured here separates the two, so it
-      # keeps its redelivery instead of being refused on a guess about the
-      # message text. The queue's retry window is what bounds the cost.
+      # Distinguish deterministic repository absences (moved, deleted, private)
+      # from transient network glitches. A repository that cannot be found or
+      # authenticated is a permanent fact about the published URL, so retrying
+      # it burns build slots on a guaranteed failure.
       unless status[:success]
-        raise "Failed to clone repository: #{status[:output]}"
+        output = status[:output]
+        if deterministic_clone_failure?(output)
+          raise SourceUnusable.new("The repository could not be cloned because it is private, moved, or deleted: #{output.strip}")
+        else
+          raise "Failed to clone repository: #{output.strip}"
+        end
       end
 
       log_info "Cloned repository for docs build"
+    end
+
+    private def deterministic_clone_failure?(output : String) : Bool
+      output.includes?("could not read Username") ||
+        output.includes?("not found") ||
+        output.includes?("Authentication failed") ||
+        output.includes?("Repository moved or deleted")
     end
 
     # A checkout that cannot reach the requested ref is fatal, not a warning.

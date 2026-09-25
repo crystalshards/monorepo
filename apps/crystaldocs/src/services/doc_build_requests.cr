@@ -72,12 +72,31 @@ module CrystalDocs
     # artifact path together. Scoped on purpose, not overlooked.
     CANONICAL_COMPILER_ONLY = true
 
+    # Seeds a failed doc_build_requests row from an already-failed doc_versions
+    # row so find(package_name, version) finds it without enqueuing a build.
+    INSERT_FAILED_FROM_VERSION_SQL = <<-SQL
+      INSERT INTO doc_build_requests
+        (package_name, version, status, requested_at, finished_at, failed_at, last_error, attempts, created_at, updated_at)
+      SELECT d.package_name, dv.version, 'failed', $3, $3, $3, 'Build failed under current toolchain', 1, $3, $3
+      FROM doc_versions dv
+      JOIN docs d ON d.id = dv.doc_id
+      WHERE d.package_name = $1 AND dv.version = $2 AND dv.build_status = 'failed'
+      ON CONFLICT (package_name, version) DO NOTHING
+      SQL
+
     # Claims a brand new combination. Returns the row id only to the caller
     # whose INSERT actually created it; concurrent callers get nil.
+    # Refuses to claim a new build if the version already succeeded or failed
+    # in doc_versions.
     CLAIM_NEW_SQL = <<-SQL
       INSERT INTO doc_build_requests
         (package_name, version, status, requested_at, attempts, created_at, updated_at)
-      VALUES ($1, $2, 'pending', $3, 1, $3, $3)
+      SELECT $1, $2, 'pending', $3, 1, $3, $3
+      WHERE NOT EXISTS (
+        SELECT 1 FROM doc_versions dv
+        JOIN docs d ON d.id = dv.doc_id
+        WHERE d.package_name = $1 AND dv.version = $2 AND dv.build_status IN ('success', 'failed')
+      )
       ON CONFLICT (package_name, version) DO NOTHING
       RETURNING id
       SQL
@@ -101,6 +120,12 @@ module CrystalDocs
     #
     # So eviction must land together with a succeeded-and-missing reclaim, and
     # a test that a request after eviction rebuilds rather than dead-ends.
+    # A claim nobody ever resolved. Measured from the moment it was claimed,
+    # and only past a floor beyond the longest a build can legitimately take,
+    # so a build still running is never re-queued underneath itself.
+    #
+    # Deterministic failures (compile error, missing repo, missing ref) are
+    # terminal under the current toolchain and are deliberately NOT retried.
     CLAIM_RETRY_SQL = <<-SQL
       UPDATE doc_build_requests
       SET status = 'pending',
@@ -114,15 +139,9 @@ module CrystalDocs
       WHERE package_name = $1
         AND version = $2
         AND (
-          (status = 'failed' AND failed_at IS NOT NULL AND failed_at <= $4)
-          OR
-          -- A claim nobody ever resolved. Measured from the moment it was
-          -- claimed, and only past a floor beyond the longest a build can
-          -- legitimately take, so a build still running is never re-queued
-          -- underneath itself.
-          (status IN ('pending', 'building')
+          status IN ('pending', 'building')
             AND COALESCE(started_at, requested_at) IS NOT NULL
-            AND COALESCE(started_at, requested_at) <= $5)
+            AND COALESCE(started_at, requested_at) <= $4
         )
       RETURNING id
       SQL
@@ -144,6 +163,10 @@ module CrystalDocs
     # whether to wait or that the build failed.
     def request(package_name : String, version : String) : DocBuildRequest
       now = Time.utc
+
+      # Seed failed doc_build_requests from doc_versions if needed so find succeeds
+      # without triggering a new enqueue.
+      AppDatabase.exec(INSERT_FAILED_FROM_VERSION_SQL, package_name, version, now)
 
       if id = claim_new(package_name, version, now)
         enqueue(id, package_name, version, now)
@@ -219,7 +242,6 @@ module CrystalDocs
         package_name,
         version,
         now,
-        now - RETRY_FLOOR,
         now - STALE_CLAIM_FLOOR,
         as: Int64
       ).first?
