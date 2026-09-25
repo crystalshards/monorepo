@@ -71,7 +71,7 @@ Bring up the local dependencies, then create each application's database. The Co
 
 ```bash
 # Start Postgres and object storage, waiting until both report healthy
-docker compose up -d --wait postgres minio
+docker compose up -d --wait postgres rustfs
 
 # Create and migrate the development and test database of every application
 for app in crystalshards crystaldocs crystalgigs crystalbits; do

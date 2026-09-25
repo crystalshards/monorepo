@@ -27,25 +27,29 @@ services:
 
   # Object storage for local development. This container is the development
   # implementation of the apps' object store interface; production is Google
-  # Cloud Storage and never runs this. MINIO_ROOT_* below configure the
-  # container itself, which is why they keep the vendor's names; the apps read
-  # backend-neutral STORAGE_* instead.
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+  # Cloud Storage and never runs this. RUSTFS_* below configure the container
+  # itself; the apps read backend-neutral STORAGE_* instead.
+  rustfs:
+    image: rustfs/rustfs:1.0.0@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      RUSTFS_ACCESS_KEY: minioadmin
+      RUSTFS_SECRET_KEY: minioadmin
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: ":9001"
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
+      - rustfs_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
       interval: 30s
       timeout: 20s
       retries: 3
+    networks:
+      default:
+        aliases:
+          - minio
 
   # MailHog for Development Email Testing
   mailhog:
@@ -72,7 +76,7 @@ services:
       PORT: 3000
       # Object storage. Backend-neutral names: the app talks to the interface,
       # not to a backend. No Google Cloud credentials are involved locally.
-      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ENDPOINT: http://rustfs:9000
       STORAGE_ACCESS_KEY: minioadmin
       STORAGE_SECRET_KEY: minioadmin
       DOCS_BUCKET: crystal-docs
@@ -94,7 +98,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
     volumes:
       - ./apps/crystalshards:/app
@@ -111,7 +115,7 @@ services:
       LUCKY_ENV: development
       DATABASE_URL: postgres://postgres:password@postgres/crystaldocs_development
       SECRET_KEY_BASE: development_secret_key_base_change_in_production
-      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ENDPOINT: http://rustfs:9000
       STORAGE_ACCESS_KEY: minioadmin
       STORAGE_SECRET_KEY: minioadmin
       # Shared with CrystalShards, which writes what this app reads.
@@ -129,7 +133,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
     volumes:
       - ./apps/crystaldocs:/app
@@ -275,4 +279,4 @@ services:
 
 volumes:
   postgres_data:
-  minio_data:
+  rustfs_data:
