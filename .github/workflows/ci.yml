@@ -51,13 +51,14 @@ jobs:
     # Object storage is started as a step rather than a service container so
     # the container options, environment and health check stay consistent
     # between GitHub Actions and local workflows.
-    # MinIO was removed from Docker Hub in September 2026 (pull access denied:
-    # repository does not exist or may require 'docker login') and
-    # quay.io/minio/minio requires authentication. RustFS provides a faithful,
-    # open-source S3-compatible replacement that supports path-style addressing,
-    # SigV4 authentication, presigned URLs, and bucket operations used by
-    # object_store.cr. We pin both the version tag and sha256 digest so a moved
-    # or vanished tag fails loudly and cannot change CI unexpectedly.
+    # This was MinIO until its images stopped being pullable: CI passed with
+    # minio/minio on 2026-09-04, and by 2026-09-25 Docker Hub answered "pull
+    # access denied, repository does not exist" and quay.io/minio/minio
+    # required authentication. RustFS is an open-source S3-compatible server
+    # covering what object_store.cr uses: path-style addressing, SigV4 header
+    # and presigned auth, ListObjectsV2 and bucket creation. It is pinned by
+    # tag and sha256 digest so a moved or vanished tag fails loudly instead of
+    # changing CI underneath us.
 
     steps:
       - name: Checkout code
