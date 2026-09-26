@@ -83,8 +83,24 @@ module CrystalShards
         AND build_status = 'pending'
       SQL
 
-    # Failures recorded under a different compiler version (including NULL, from
-    # legacy failures recorded before the column existed) become retryable when
+    # A failure whose compiler is unknown is attributed to the toolchain current
+    # when reconcile first sees it, so it is retried exactly once, at the next
+    # toolchain change.
+    STAMP_FAILED_VERSIONS_SQL = <<-SQL
+      UPDATE doc_versions
+      SET compiler_version = $1, updated_at = $2
+      WHERE build_status = 'failed'
+        AND compiler_version IS NULL
+      SQL
+
+    STAMP_FAILED_REQUESTS_SQL = <<-SQL
+      UPDATE doc_build_requests
+      SET compiler_version = $1, updated_at = $2
+      WHERE status = 'failed'
+        AND compiler_version IS NULL
+      SQL
+
+    # Failures recorded under a different compiler version become retryable when
     # the toolchain changes. Resetting build_status to 'pending' on doc_versions
     # and deleting the failed request row from doc_build_requests lets the next
     # page view or warm run re-commission the build under the new compiler.
@@ -92,16 +108,22 @@ module CrystalShards
       UPDATE doc_versions
       SET build_status = 'pending', compiler_version = NULL, updated_at = $2
       WHERE build_status = 'failed'
-        AND (compiler_version IS NULL OR compiler_version != $1)
+        AND compiler_version IS NOT NULL
+        AND compiler_version != $1
       SQL
 
     CLEAR_FAILED_REQUESTS_SQL = <<-SQL
       DELETE FROM doc_build_requests
       WHERE status = 'failed'
-        AND (compiler_version IS NULL OR compiler_version != $1)
+        AND compiler_version IS NOT NULL
+        AND compiler_version != $1
       SQL
 
     def self.clear_stale_compiler_failures(compiler_version : String, now : Time = Time.utc) : NamedTuple(versions: Int64, requests: Int64)
+      # Stamp unknown failures with the current compiler before clearing.
+      DocsDatabase.exec(STAMP_FAILED_VERSIONS_SQL, compiler_version, now)
+      DocsDatabase.exec(STAMP_FAILED_REQUESTS_SQL, compiler_version, now)
+
       versions = DocsDatabase.exec(CLEAR_FAILED_VERSIONS_SQL, compiler_version, now).rows_affected
       requests = DocsDatabase.exec(CLEAR_FAILED_REQUESTS_SQL, compiler_version).rows_affected
       {versions: versions, requests: requests}
