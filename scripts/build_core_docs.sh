@@ -5,7 +5,7 @@
 # of linking out to crystal-lang.org.
 #
 # This used to run the whole recipe itself: clone, invoke the compiler,
-# validate, then shell out to `docker run minio/mc` to publish. That worked on
+# validate, then shell out to an object storage client to publish. That worked on
 # a laptop and nowhere else, which was the problem: nothing in production ever
 # ran it, so the `crystal` key held nothing there and every core cross link on
 # the live site rendered as plain text.
