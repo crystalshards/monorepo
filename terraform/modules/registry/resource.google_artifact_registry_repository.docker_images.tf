@@ -33,19 +33,27 @@ resource "google_artifact_registry_repository" "docker_images" {
   # idea what Cloud Run is running. Every service and Job in the services module
   # carries lifecycle { ignore_changes = [...image...] }: terraform sets the
   # image once and CI rolls the tag afterwards, so terraform's state is not a
-  # record of what is deployed, and a service that has not been redeployed in
-  # months is still pulling the image from the commit that last touched it. On
-  # top of that, the rollback path is "re-point a service at an older commit's
-  # tag", so a deleted image is a rollback target that no longer exists. Deleting
-  # something a live revision can still pull would trade a storage line for an
-  # outage, so the rules below are deliberately timid.
+  # record of what is deployed. What makes pruning safe anyway is deploy.yml:
+  # every deploy builds all eight images at the commit SHA and rolls every
+  # service and Job onto that SHA (the release job's roll loop and the per Job
+  # `gcloud run jobs update` steps). So whatever is live is the newest version
+  # of its package, and the rollback path ("re-point a service at an older
+  # commit's tag") only needs recent versions to still exist.
   #
-  # Keep policies win over delete policies in Artifact Registry, so the two KEEP
-  # rules are the safety net rather than decoration.
+  # The residual risk, stated so nobody has to rediscover it: a deployable
+  # registered in terraform but left out of those roll steps keeps pulling its
+  # first image while newer versions pile up above it, and once that image is
+  # outside the 50 most recent and 30 days old the rule below deletes it and
+  # its next cold start fails. Registering every deployable in the roll steps
+  # was already required; this rule is one more reason it is not optional.
 
-  # Floor under every package regardless of tag state. keep_count is per package,
-  # so this is 50 rollback targets deep for each app image, which is well past
-  # any window in which somebody is still reverting a bad deploy.
+  # KEEP policies always take precedence over DELETE policies in Artifact
+  # Registry: https://cloud.google.com/artifact-registry/docs/repositories/cleanup-policy-overview.
+  # If a version matches both, KEEP wins and it is not deleted.
+  #
+  # Floor under every package regardless of tag state. keep_count is per
+  # package, so each image keeps its 50 most recent versions: the live one and
+  # 49 rollback targets, whatever their age.
   cleanup_policies {
     id     = "keep-recent-versions"
     action = "KEEP"
@@ -55,18 +63,21 @@ resource "google_artifact_registry_repository" "docker_images" {
     }
   }
 
-  # Everything CI pushes is tagged with a full commit SHA and nothing else: the
-  # build job pushes no `latest`, and the release job refuses any image reference
-  # ending in :latest. So "tagged" here means "a commit's image", and keeping all
-  # of them is what makes the delete rule below unable to touch anything a
-  # revision could be pulling. It also means this repository does not shrink on
-  # its own; see the note at the end of this file.
+  # Delete tagged versions older than 30 days unless kept by a KEEP policy.
+  #
+  # Because keep-recent-versions above protects the 50 most recent versions of
+  # each package with KEEP precedence, this rule only ever deletes versions
+  # that are BOTH older than 30 days AND outside the 50 most recent versions
+  # for their package. This bounds repository growth to at most 50 versions per
+  # package (approximately 500 images total across all services and jobs),
+  # halting the 0.476 GiB/day ($17.32/month by month 12) growth rate.
   cleanup_policies {
-    id     = "keep-tagged-versions"
-    action = "KEEP"
+    id     = "delete-stale-tagged"
+    action = "DELETE"
 
     condition {
-      tag_state = "TAGGED"
+      tag_state  = "TAGGED"
+      older_than = "2592000s"
     }
   }
 
@@ -99,14 +110,3 @@ resource "google_artifact_registry_repository" "docker_images" {
     managed_by  = "terraform"
   }
 }
-
-# What this does not fix, said plainly so nobody reads the policies above as a
-# solved problem: because every image CI pushes is tagged and tagged versions are
-# kept, these rules bound the orphan pile and not the growth. The growth is one
-# tagged image per app per commit, and no cleanup policy can prune it safely,
-# because Artifact Registry cannot see which digests Cloud Run revisions are
-# still able to pull. Reducing it needs a step that reads the live revisions and
-# Job executions, collects the digests they reference, and deletes tagged
-# versions outside that set: a deploy-time job with the deployed state in hand,
-# not a rule in this file. Until that exists, the bound on this line is the
-# retention above, and it is honest about being a floor rather than a fix.

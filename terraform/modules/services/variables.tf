@@ -449,7 +449,7 @@ variable "docs_launcher_app_domain" {
 }
 
 variable "request_concurrency" {
-  description = "Concurrent requests per instance. Held below Cloud Run's default of 80 because each instance backs them with a connection pool of five"
+  description = "Concurrent requests per instance. Held below Cloud Run's default of 80 because each instance backs them with a small connection pool (connection_pool_size in the database module)"
   type        = number
   default     = 40
 }

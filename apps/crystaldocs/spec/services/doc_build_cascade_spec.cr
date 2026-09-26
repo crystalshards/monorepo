@@ -230,9 +230,9 @@ describe "CrystalDocs::DocBuildRequests dependency cascade" do
       queue.count_for(CrystalDocs::CORE_PACKAGE, "1.12.0").should eq(1)
     end
 
-    # A version that failed to build is not a version this site can link to,
-    # so it cannot stand in for one that satisfies.
-    it "ignores a core version whose build failed" do
+    # A version that failed to build is terminal under the current toolchain,
+    # so the cascade refuses to re-commission it.
+    it "refuses to re-commission a core version whose build failed" do
       queue = RecordingBuildQueue.new
       doc = DocFactory.create &.package_name(CrystalDocs::CORE_PACKAGE).current_version("1.12.0")
       DocVersionFactory.create &.doc_id(doc.id)
@@ -243,7 +243,7 @@ describe "CrystalDocs::DocBuildRequests dependency cascade" do
 
       requests.call(queue).request_with_dependencies("shard", "1.0.0")
 
-      queue.count_for(CrystalDocs::CORE_PACKAGE, "1.12.0").should eq(1)
+      queue.count_for(CrystalDocs::CORE_PACKAGE, "1.12.0").should eq(0)
     end
 
     it "commissions nothing for a release that declared no Crystal" do

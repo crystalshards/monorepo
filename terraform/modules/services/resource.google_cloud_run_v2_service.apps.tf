@@ -99,12 +99,27 @@ resource "google_cloud_run_v2_service" "apps" {
         }
       }
 
+      # Fast boot: measured cold start.
+      #
+      # Container startup latency was previously measured at p50 5.2-5.8 s across
+      # the Lucky apps (crystaldocs 5.2 s, trycrystal 5.2 s, crystalshards 5.6 s,
+      # crystalbits 5.6 s, crystalgigs 5.8 s). Production container logs show
+      # the app process is already listening on port 8080 within 270-515 ms of
+      # instance launch. Local measurements confirm Lucky apps boot and answer
+      # 200 on /api/health in 12-40 ms (trycrystal ~14 ms, crystalshards with
+      # local Postgres database check ~24 ms).
+      #
+      # The 5.2-5.8 s cold start was almost entirely caused by the probe's own
+      # initial_delay_seconds = 5 sleep. Setting initial_delay_seconds = 0 with
+      # period_seconds = 1 and timeout_seconds = 1 allows Cloud Run to verify
+      # readiness as soon as the process listens (~1 s cold start). The
+      # failure_threshold = 60 preserves the full 60 s startup budget (identical
+      # to the prior 5 + 5*12 budget).
       startup_probe {
-        initial_delay_seconds = 5
-        period_seconds        = 5
-        timeout_seconds       = 3
-        failure_threshold     = 12
-
+        initial_delay_seconds = 0
+        period_seconds        = 1
+        timeout_seconds       = 1
+        failure_threshold     = 60
         http_get {
           path = var.health_path
           port = var.container_port

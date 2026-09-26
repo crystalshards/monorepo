@@ -16,9 +16,13 @@
 # is declared here.
 #
 # The timeout is the build ceiling rather than the usual sixty seconds, because
-# the request genuinely lasts as long as the execution does. cpu_idle is false
-# for the same reason: the launcher is waiting on a Job between requests and a
-# throttled instance would stop polling it.
+# the request genuinely lasts as long as the execution does. cpu_idle is true
+# (request-based billing): the launcher polls the Job strictly inside the
+# synchronous HTTP request held open by Cloud Tasks, never between requests.
+# Under cpu_idle = false, all 5 instances ran continuously 24/7, costing $182.38
+# in 24 days ($172.97 CPU + $9.41 memory, or ~$228 per 30 days) and accounting
+# for over half of the entire project bill. With cpu_idle = true, instances scale
+# to zero when idle and are billed only while build requests are in flight.
 resource "google_cloud_run_v2_service" "docs_launcher" {
   project = var.project_id
   # Shared with everything that names this service.
@@ -65,7 +69,7 @@ resource "google_cloud_run_v2_service" "docs_launcher" {
           cpu    = "1"
           memory = "512Mi"
         }
-        cpu_idle          = false
+        cpu_idle          = true
         startup_cpu_boost = true
       }
 
@@ -96,10 +100,10 @@ resource "google_cloud_run_v2_service" "docs_launcher" {
       }
 
       startup_probe {
-        initial_delay_seconds = 5
-        period_seconds        = 5
-        timeout_seconds       = 3
-        failure_threshold     = 12
+        initial_delay_seconds = 0
+        period_seconds        = 1
+        timeout_seconds       = 1
+        failure_threshold     = 60
 
         http_get {
           path = var.health_path

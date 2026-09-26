@@ -106,17 +106,22 @@ module CrystalShards
     # pending or building is already on the queue, very possibly because a
     # reader asked for it a moment ago, and enqueueing it again would spend a
     # second clone and compile to produce the identical artifact.
-    #
-    # Failed builds are deliberately NOT excluded here. crystaldocs owns the
-    # retry floor and applies it when a reader asks; a warm run that skipped
-    # every past failure forever would never retry a shard that failed once
-    # because of a transient network error.
+    # A version with a successful build needs nothing. A version with a failed
+    # build under the current toolchain is terminal and must not be retried every
+    # hour. Re-running deterministic compile errors every hour previously caused 600
+    # doomed builds per day from the warmer alone. Terminal failures are settled
+    # and are not re-commissioned by the warmer.
     SETTLED_SQL = <<-SQL
       SELECT docs.package_name, doc_versions.version
       FROM doc_versions
       JOIN docs ON docs.id = doc_versions.doc_id
-      WHERE doc_versions.build_status = 'success'
+      WHERE doc_versions.build_status IN ('success', 'failed')
         AND docs.package_name = ANY($1)
+      UNION
+      SELECT package_name, version
+      FROM doc_build_requests
+      WHERE status IN ('succeeded', 'failed')
+        AND package_name = ANY($1)
       SQL
 
     IN_FLIGHT_SQL = <<-SQL

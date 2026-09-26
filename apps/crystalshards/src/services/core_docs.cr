@@ -244,11 +244,19 @@ module CrystalShards
     # never skip the idempotent artifact check, only a deliberate operator
     # action may. publish_core_docs.cr is that action, reading it from
     # FORCE_REBUILD on the Job's own execution.
+    # Test seam. When set, build_and_publish delegates to this proc instead of
+    # cloning and compiling from the real repository. Always nil in production.
+    class_property publisher : Proc(String, Bool, Published)? = nil
+
     def self.build_and_publish(
       version : String = self.version,
       storage : DocsStorage = StorageService.build,
       force : Bool = false,
     ) : Published
+      if custom = @@publisher
+        return custom.call(version, force)
+      end
+
       compiler = self.version
       raise VersionMismatch.new(version, compiler) unless version == compiler
 

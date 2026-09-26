@@ -159,42 +159,31 @@ describe CrystalDocs::DocBuildRequests do
       request.failed_at.should_not be_nil
     end
 
-    it "still refuses a minute before the floor" do
-      queue = RecordingBuildQueue.new
-      DocBuildRequestFactory.create &.package_name("kemal").version("1.6.0")
-        .failed(CrystalDocs::DocBuildRequests::RETRY_FLOOR.ago + 1.minute)
-
-      requests.call(queue).request("kemal", "1.6.0")
-
-      queue.enqueued.should be_empty
-    end
-
-    it "queues one build once the floor has passed" do
+    it "refuses to re-commission a version whose build has failed" do
       queue = RecordingBuildQueue.new
       DocBuildRequestFactory.create &.package_name("kemal").version("1.6.0")
         .failed(CrystalDocs::DocBuildRequests::RETRY_FLOOR.ago - 1.minute)
 
       request = requests.call(queue).request("kemal", "1.6.0")
 
-      queue.count_for("kemal", "1.6.0").should eq(1)
-      request.status.should eq(DocBuildRequest::PENDING)
-      request.attempts.should eq(2)
+      queue.enqueued.should be_empty
+      request.status.should eq(DocBuildRequest::FAILED)
+      request.failed_at.should_not be_nil
     end
 
-    it "clears the previous failure when it retries" do
+    it "refuses to re-commission even after hours have passed" do
       queue = RecordingBuildQueue.new
       DocBuildRequestFactory.create &.package_name("kemal").version("1.6.0")
         .failed(2.hours.ago, "undefined constant Foo")
 
       request = requests.call(queue).request("kemal", "1.6.0")
 
-      request.failed_at.should be_nil
-      request.last_error.should be_nil
+      queue.enqueued.should be_empty
+      request.status.should eq(DocBuildRequest::FAILED)
+      request.last_error.to_s.should contain("undefined constant Foo")
     end
 
-    # A retry is a fresh race: several readers arrive after the floor has
-    # passed and the same UPDATE has to pick one winner.
-    it "queues one build when the retry is concurrent" do
+    it "refuses concurrent requests for a failed build without enqueuing" do
       queue = RecordingBuildQueue.new
       DocBuildRequestFactory.create &.package_name("kemal").version("1.6.0")
         .failed(2.hours.ago)
@@ -211,7 +200,7 @@ describe CrystalDocs::DocBuildRequests do
       end
       6.times { done.receive }
 
-      queue.count_for("kemal", "1.6.0").should eq(1)
+      queue.count_for("kemal", "1.6.0").should eq(0)
     end
   end
 

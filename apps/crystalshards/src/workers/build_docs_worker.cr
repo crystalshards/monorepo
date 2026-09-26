@@ -210,21 +210,14 @@ struct BuildDocsWorker < BaseJob
     # itself what failed.
     log_error "#{@shard_name}@#{@version} cannot be built from its own source", ex
     docs_status.failed(ex.message)
+  rescue ex : CrystalShards::DocsSandbox::Unavailable
+    log_error "Docs sandbox unavailable for #{@shard_name}@#{@version}", ex
+    raise ex
+  rescue ex : CrystalStorage::Unavailable
+    log_error "Storage unavailable for #{@shard_name}@#{@version}", ex
+    raise ex
   rescue ex : Exception
     log_error "Failed to build docs for #{@shard_name}@#{@version}", ex
-
-    # Recorded before re-raising, so the reader sees a failure even though
-    # Cloud Tasks will redeliver the request. A retry that succeeds overwrites
-    # this; one that fails again just refreshes failed_at.
-    begin
-      docs_status.failed(ex.message)
-    rescue CrystalShards::DocsBuildStatus::Unrecorded
-      # Already logged there, against this package and version. The build's own
-      # exception is the one worth raising: it is why this path was taken, and
-      # the job fails on either, which is what puts the request back on the
-      # queue.
-    end
-
     raise ex
   end
 
@@ -249,6 +242,30 @@ struct BuildDocsWorker < BaseJob
       log_info "Successfully published the standard library #{@shard_name}@#{@version}: " \
                "#{published.key} (#{published.bytes} bytes, #{published.types} types)"
     end
+  rescue ex : CrystalShards::CoreDocs::VersionMismatch
+    # Terminal deterministic failure: the sandbox compiler cannot build this
+    # standard library version. Record the failure in doc_build_requests so
+    # the request table knows it failed. We acknowledge the task rather than
+    # raising so Cloud Tasks does not retry.
+    log_error "Refused to build standard library #{@shard_name}@#{@version}: #{ex.message}"
+    begin
+      docs_status.failed(ex.message)
+    rescue CrystalShards::DocsBuildStatus::Unrecorded
+    end
+  rescue ex : CrystalShards::CoreDocs::IncompleteArtifact
+    log_error "Standard library #{@shard_name}@#{@version} produced an incomplete artifact: #{ex.message}"
+    begin
+      docs_status.failed(ex.message)
+    rescue CrystalShards::DocsBuildStatus::Unrecorded
+    end
+  rescue ex : CrystalShards::CoreDocs::BuildFailed
+    log_error "Standard library #{@shard_name}@#{@version} compile failed: #{ex.message}"
+    begin
+      docs_status.failed(ex.message)
+    rescue CrystalShards::DocsBuildStatus::Unrecorded
+    end
+  rescue ex : CrystalShards::DocsBuildStatus::Unrecorded
+    raise ex
   rescue ex : Exception
     log_error "Failed to publish the standard library #{@shard_name}@#{@version}", ex
     raise ex

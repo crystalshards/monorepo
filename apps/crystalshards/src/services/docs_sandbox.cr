@@ -25,6 +25,8 @@ module CrystalShards
   abstract class DocsSandbox
     class Unavailable < Exception; end
 
+    class Timeout < Unavailable; end
+
     # Generates documentation from `source_dir` into `output_dir`.
     # Returns false when the build failed; raises `Unavailable` when the
     # sandbox itself could not be started.

@@ -180,7 +180,7 @@ describe "building documentation on first request" do
       response.headers["Refresh"]?.should be_nil
     end
 
-    it "queues one build once the retry floor has passed" do
+    it "refuses to re-commission a version whose build has failed" do
       planted.call
       DocBuildRequestFactory.create &.package_name("lazy-pkg").version("1.0.0")
         .failed(CrystalDocs::DocBuildRequests::RETRY_FLOOR.ago - 1.minute)
@@ -189,7 +189,7 @@ describe "building documentation on first request" do
 
       get.call(version_url)
 
-      queue.count_for("lazy-pkg", "1.0.0").should eq(1)
+      queue.count_for("lazy-pkg", "1.0.0").should eq(0)
     end
   end
 

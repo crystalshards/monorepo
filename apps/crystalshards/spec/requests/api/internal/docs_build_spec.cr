@@ -136,5 +136,76 @@ describe Api::Internal::Docs::Build do
 
       builder.calls.size.should eq(1)
     end
+
+    it "returns 200 OK for a deterministic build failure so Cloud Tasks does not retry" do
+      shard = ShardFactory.create &.name("kemal-fail")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.6.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      builder.should_fail = true
+      storage = CrystalShards::MockStorageService.new
+
+      with_claims({
+        aud:   "https://docs-launcher.docs.example.internal",
+        email: "docs-tasks@example.iam.gserviceaccount.com",
+      }) do
+        with_cloud_tasks_env do
+          WorkerSeams.with_docs_pipeline(builder, storage) do
+            body = {package_name: "kemal-fail", version: "1.6.0", build_id: "build-fail-1"}.to_json
+            response = ApiClient.new(skip_default_headers: true)
+              .raw_headers({"Content-Type" => "application/json", "Authorization" => "Bearer token"})
+              .exec_raw(Api::Internal::Docs::Build, body)
+
+            response.status_code.should eq(200)
+            JSON.parse(response.body)["status"].as_s.should eq("ok")
+          end
+        end
+      end
+    end
+
+    it "returns 200 OK for standard library version mismatch so Cloud Tasks does not retry" do
+      with_claims({
+        aud:   "https://docs-launcher.docs.example.internal",
+        email: "docs-tasks@example.iam.gserviceaccount.com",
+      }) do
+        with_cloud_tasks_env do
+          WorkerSeams.with_docs_pipeline(CrystalShards::MockDocsBuilder.new, CrystalShards::MockStorageService.new) do
+            body = {package_name: "crystal", version: "0.24.2", build_id: "build-core-1"}.to_json
+            response = ApiClient.new(skip_default_headers: true)
+              .raw_headers({"Content-Type" => "application/json", "Authorization" => "Bearer token"})
+              .exec_raw(Api::Internal::Docs::Build, body)
+
+            response.status_code.should eq(200)
+            JSON.parse(response.body)["status"].as_s.should eq("ok")
+          end
+        end
+      end
+    end
+
+    it "returns 500 for a transient infrastructure failure so Cloud Tasks retries" do
+      shard = ShardFactory.create &.name("kemal-infra")
+      ShardVersionFactory.create &.shard_id(shard.id).version("1.6.0")
+
+      builder = CrystalShards::MockDocsBuilder.new
+      builder.raise_with = "Could not start the docs build job: 503 unavailable"
+      storage = CrystalShards::MockStorageService.new
+
+      with_claims({
+        aud:   "https://docs-launcher.docs.example.internal",
+        email: "docs-tasks@example.iam.gserviceaccount.com",
+      }) do
+        with_cloud_tasks_env do
+          WorkerSeams.with_docs_pipeline(builder, storage) do
+            body = {package_name: "kemal-infra", version: "1.6.0", build_id: "build-infra-1"}.to_json
+            response = ApiClient.new(skip_default_headers: true)
+              .raw_headers({"Content-Type" => "application/json", "Authorization" => "Bearer token"})
+              .exec_raw(Api::Internal::Docs::Build, body)
+
+            response.status_code.should eq(500)
+            JSON.parse(response.body)["error"].as_s.should eq("Build failed")
+          end
+        end
+      end
+    end
   end
 end

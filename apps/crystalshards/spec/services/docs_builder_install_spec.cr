@@ -184,4 +184,20 @@ describe CrystalShards::DocsBuilder do
       end
     end
   end
+
+  describe "clone failure classification" do
+    it "treats repository absence and authentication failure as deterministic" do
+      CrystalShards::DocsBuilder.deterministic_clone_failure?("fatal: repository 'https://github.com/x/y' not found").should be_true
+      CrystalShards::DocsBuilder.deterministic_clone_failure?("remote: Repository not found.").should be_true
+      CrystalShards::DocsBuilder.deterministic_clone_failure?("fatal: could not read Username for 'https://github.com': terminal prompts disabled").should be_true
+      CrystalShards::DocsBuilder.deterministic_clone_failure?("fatal: Authentication failed for 'https://github.com/x/y'").should be_true
+    end
+
+    it "refuses to classify network, DNS, or 5xx errors as deterministic" do
+      CrystalShards::DocsBuilder.deterministic_clone_failure?("fatal: unable to access 'https://github.com/x/y': Could not resolve host: github.com (Host not found)").should be_false
+      CrystalShards::DocsBuilder.deterministic_clone_failure?("fatal: unable to access 'https://github.com/x/y': Connection timed out").should be_false
+      CrystalShards::DocsBuilder.deterministic_clone_failure?("fatal: unable to access 'https://github.com/x/y': The requested URL returned error: 503").should be_false
+      CrystalShards::DocsBuilder.deterministic_clone_failure?("fatal: unable to access 'https://github.com/x/y': Connection reset by peer").should be_false
+    end
+  end
 end

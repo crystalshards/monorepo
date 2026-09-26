@@ -20,17 +20,6 @@ variable "docs_noncurrent_retention_days" {
   default     = 30
 }
 
-variable "docs_nearline_after_days" {
-  description = "Age at which live documentation objects move to Nearline. Docs for an old shard version are written once and then almost never read again"
-  type        = number
-  default     = 30
-}
-
-variable "docs_coldline_after_days" {
-  description = "Age at which live documentation objects move to Coldline"
-  type        = number
-  default     = 180
-}
 
 variable "packages_noncurrent_retention_days" {
   description = "How long a superseded package object survives. Only ever applies to generations that something replaced, never to the version currently being served"

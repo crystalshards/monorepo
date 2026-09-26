@@ -130,17 +130,50 @@ module CrystalShards
     private def clone_repository(repo_url : String, target_dir : String)
       status = run("git", ["clone", "--depth", "1", repo_url, target_dir])
 
-      # Left as a plain exception, so the caller keeps retrying it, and that is
-      # the deliberate half of this classification rather than an omission.
-      # `git clone` failing does not say whether the repository is gone or the
-      # network hiccuped, and nothing measured here separates the two, so it
-      # keeps its redelivery instead of being refused on a guess about the
-      # message text. The queue's retry window is what bounds the cost.
+      # Distinguish deterministic repository absences (moved, deleted, private)
+      # from transient network glitches. A repository that cannot be found or
+      # authenticated is a permanent fact about the published URL, so retrying
+      # it burns build slots on a guaranteed failure.
       unless status[:success]
-        raise "Failed to clone repository: #{status[:output]}"
+        output = status[:output]
+        if self.class.deterministic_clone_failure?(output)
+          raise SourceUnusable.new("The repository could not be cloned because it is private, moved, or deleted: #{output.strip}")
+        else
+          raise "Failed to clone repository: #{output.strip}"
+        end
       end
 
       log_info "Cloned repository for docs build"
+    end
+
+    def self.deterministic_clone_failure?(output : String) : Bool
+      # Transient network, DNS, and server errors must never be treated as deterministic.
+      return false if transient_network_error?(output)
+
+      output.includes?("could not read Username") ||
+        (output.includes?("repository") && output.includes?("not found")) ||
+        output.includes?("Repository not found") ||
+        output.includes?("remote: Not Found") ||
+        output.includes?("Authentication failed") ||
+        output.includes?("Access denied") ||
+        output.includes?("Repository moved or deleted") ||
+        output.includes?("not have permission to view it")
+    end
+
+    def self.transient_network_error?(output : String) : Bool
+      output.includes?("Could not resolve host") ||
+        output.includes?("Failed to connect") ||
+        output.includes?("Connection timed out") ||
+        output.includes?("Operation timed out") ||
+        output.includes?("Connection reset") ||
+        output.includes?("timed out") ||
+        output.includes?("Temporary failure in name resolution") ||
+        output.includes?("error: 500") ||
+        output.includes?("error: 502") ||
+        output.includes?("error: 503") ||
+        output.includes?("error: 504") ||
+        output.includes?("early EOF") ||
+        output.includes?("index-pack failed")
     end
 
     # A checkout that cannot reach the requested ref is fatal, not a warning.

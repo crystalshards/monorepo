@@ -62,7 +62,7 @@ describe CrystalShards::DocsStatusReconciliation do
   end
 
   it "leaves states something wrote deliberately alone" do
-    DocsRows.register("github.com/user/failed-build", "1.0.0", build_status: "failed")
+    DocsRows.register("github.com/user/failed-build", "1.0.0", build_status: "failed", compiler_version: CrystalShards::DocsSandbox.crystal_version)
     DocsRows.register("github.com/user/in-flight", "1.0.0", build_status: "building")
     DocsRows.register("github.com/user/already", "1.0.0", build_status: "success")
     store = FakeObjectStore.new([
@@ -152,6 +152,70 @@ describe CrystalShards::DocsStatusReconciliation do
       output = String.build { |io| CrystalShards::DocsStatusReconciliation.render(report, io) }
 
       output.should contain("Nothing was pending")
+    end
+  end
+
+  describe "toolchain reconciliation" do
+    it "clears failed rows recorded under a different compiler for retry" do
+      DocsRows.register("github.com/user/stale-compiler", "1.0.0", build_status: "failed", compiler_version: "1.20.0")
+      DocsRows.request("github.com/user/stale-compiler", "1.0.0", status: "failed", compiler_version: "1.20.0")
+
+      store = FakeObjectStore.new
+      CrystalShards::DocsStatusReconciliation.run(store)
+
+      DocsRows.version_status("github.com/user/stale-compiler", "1.0.0").should eq("pending")
+      DocsRows.version_compiler("github.com/user/stale-compiler", "1.0.0").should be_nil
+      DocsRows.request_exists?("github.com/user/stale-compiler", "1.0.0").should be_false
+    end
+
+    it "adopts NULL-compiler failures into current compiler and retries them only upon toolchain change" do
+      current = CrystalShards::DocsSandbox.crystal_version
+      DocsRows.register("github.com/user/null-compiler", "1.0.0", build_status: "failed", compiler_version: nil)
+      DocsRows.request("github.com/user/null-compiler", "1.0.0", status: "failed", compiler_version: nil)
+
+      store = FakeObjectStore.new
+
+      # First run with unchanged compiler: adopts NULL rows into current compiler, clears nothing
+      first_report = CrystalShards::DocsStatusReconciliation.run(store, compiler_version: current)
+      first_report.cleared_versions.should eq(0)
+      first_report.cleared_requests.should eq(0)
+      DocsRows.version_status("github.com/user/null-compiler", "1.0.0").should eq("failed")
+      DocsRows.version_compiler("github.com/user/null-compiler", "1.0.0").should eq(current)
+      DocsRows.request_status("github.com/user/null-compiler", "1.0.0").should eq("failed")
+      DocsRows.request_compiler("github.com/user/null-compiler", "1.0.0").should eq(current)
+
+      # Second run with unchanged compiler: idempotent no-op, clears nothing
+      second_report = CrystalShards::DocsStatusReconciliation.run(store, compiler_version: current)
+      second_report.cleared_versions.should eq(0)
+      second_report.cleared_requests.should eq(0)
+      DocsRows.version_status("github.com/user/null-compiler", "1.0.0").should eq("failed")
+      DocsRows.request_status("github.com/user/null-compiler", "1.0.0").should eq("failed")
+
+      # Toolchain changes: the adopted rows now differ from new compiler and are cleared exactly once
+      new_compiler = "9.9.9"
+      third_report = CrystalShards::DocsStatusReconciliation.run(store, compiler_version: new_compiler)
+      third_report.cleared_versions.should eq(1)
+      third_report.cleared_requests.should eq(1)
+      DocsRows.version_status("github.com/user/null-compiler", "1.0.0").should eq("pending")
+      DocsRows.version_compiler("github.com/user/null-compiler", "1.0.0").should be_nil
+      DocsRows.request_exists?("github.com/user/null-compiler", "1.0.0").should be_false
+
+      # Second run with new compiler: clears nothing
+      fourth_report = CrystalShards::DocsStatusReconciliation.run(store, compiler_version: new_compiler)
+      fourth_report.cleared_versions.should eq(0)
+      fourth_report.cleared_requests.should eq(0)
+    end
+
+    it "leaves failed rows recorded under the current compiler alone" do
+      current = CrystalShards::DocsSandbox.crystal_version
+      DocsRows.register("github.com/user/current-fail", "1.0.0", build_status: "failed", compiler_version: current)
+      DocsRows.request("github.com/user/current-fail", "1.0.0", status: "failed", compiler_version: current)
+
+      store = FakeObjectStore.new
+      CrystalShards::DocsStatusReconciliation.run(store)
+
+      DocsRows.version_status("github.com/user/current-fail", "1.0.0").should eq("failed")
+      DocsRows.request_status("github.com/user/current-fail", "1.0.0").should eq("failed")
     end
   end
 end
