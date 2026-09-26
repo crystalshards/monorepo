@@ -254,8 +254,16 @@ struct BuildDocsWorker < BaseJob
     end
   rescue ex : CrystalShards::CoreDocs::IncompleteArtifact
     log_error "Standard library #{@shard_name}@#{@version} produced an incomplete artifact: #{ex.message}"
+    begin
+      docs_status.failed(ex.message)
+    rescue CrystalShards::DocsBuildStatus::Unrecorded
+    end
   rescue ex : CrystalShards::CoreDocs::BuildFailed
     log_error "Standard library #{@shard_name}@#{@version} compile failed: #{ex.message}"
+    begin
+      docs_status.failed(ex.message)
+    rescue CrystalShards::DocsBuildStatus::Unrecorded
+    end
   rescue ex : CrystalShards::DocsBuildStatus::Unrecorded
     raise ex
   rescue ex : Exception

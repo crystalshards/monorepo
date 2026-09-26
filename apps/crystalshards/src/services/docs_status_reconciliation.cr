@@ -1,4 +1,5 @@
 require "../docs_database"
+require "./docs_sandbox"
 
 module CrystalShards
   # Marks documentation that exists as documentation that exists.
@@ -82,6 +83,52 @@ module CrystalShards
         AND build_status = 'pending'
       SQL
 
+    # A failure whose compiler is unknown is attributed to the toolchain current
+    # when reconcile first sees it, so it is retried exactly once, at the next
+    # toolchain change.
+    STAMP_FAILED_VERSIONS_SQL = <<-SQL
+      UPDATE doc_versions
+      SET compiler_version = $1, updated_at = $2
+      WHERE build_status = 'failed'
+        AND compiler_version IS NULL
+      SQL
+
+    STAMP_FAILED_REQUESTS_SQL = <<-SQL
+      UPDATE doc_build_requests
+      SET compiler_version = $1, updated_at = $2
+      WHERE status = 'failed'
+        AND compiler_version IS NULL
+      SQL
+
+    # Failures recorded under a different compiler version become retryable when
+    # the toolchain changes. Resetting build_status to 'pending' on doc_versions
+    # and deleting the failed request row from doc_build_requests lets the next
+    # page view or warm run re-commission the build under the new compiler.
+    CLEAR_FAILED_VERSIONS_SQL = <<-SQL
+      UPDATE doc_versions
+      SET build_status = 'pending', compiler_version = NULL, updated_at = $2
+      WHERE build_status = 'failed'
+        AND compiler_version IS NOT NULL
+        AND compiler_version != $1
+      SQL
+
+    CLEAR_FAILED_REQUESTS_SQL = <<-SQL
+      DELETE FROM doc_build_requests
+      WHERE status = 'failed'
+        AND compiler_version IS NOT NULL
+        AND compiler_version != $1
+      SQL
+
+    def self.clear_stale_compiler_failures(compiler_version : String, now : Time = Time.utc) : NamedTuple(versions: Int64, requests: Int64)
+      # Stamp unknown failures with the current compiler before clearing.
+      DocsDatabase.exec(STAMP_FAILED_VERSIONS_SQL, compiler_version, now)
+      DocsDatabase.exec(STAMP_FAILED_REQUESTS_SQL, compiler_version, now)
+
+      versions = DocsDatabase.exec(CLEAR_FAILED_VERSIONS_SQL, compiler_version, now).rows_affected
+      requests = DocsDatabase.exec(CLEAR_FAILED_REQUESTS_SQL, compiler_version).rows_affected
+      {versions: versions, requests: requests}
+    end
+
     # What one run did, in the terms an operator needs before and after running
     # it against production.
     class Report
@@ -89,6 +136,13 @@ module CrystalShards
       getter marked = [] of Candidate
       getter unbuilt = 0
       getter overtaken = 0
+      getter cleared_versions : Int64 = 0_i64
+      getter cleared_requests : Int64 = 0_i64
+
+      def record_cleared(versions : Int64, requests : Int64) : Nil
+        @cleared_versions = versions
+        @cleared_requests = requests
+      end
 
       def initialize(@artifacts : Int32)
       end
@@ -121,13 +175,25 @@ module CrystalShards
       end
     end
 
-    def self.run(store : CrystalStorage::ObjectStore = CrystalStorage.docs) : Report
+    def self.run(
+      store : CrystalStorage::ObjectStore = CrystalStorage.docs,
+      compiler_version : String = DocsSandbox.crystal_version,
+    ) : Report
+      now = Time.utc
+
+      # Clear failures from previous toolchains so they are eligible for retry under the current compiler.
+      cleared = clear_stale_compiler_failures(compiler_version, now)
+
       # Listed before anything is read out of the database and before anything
       # is written, so an unreachable store is a run that changed nothing rather
       # than a run that marked part of the catalogue and gave up.
       published = published_artifacts(store)
       report = Report.new(published.size)
-      now = Time.utc
+      report.record_cleared(cleared[:versions], cleared[:requests])
+
+      if cleared[:versions] > 0 || cleared[:requests] > 0
+        Log.info { "Cleared #{cleared[:versions]} failed doc_versions and #{cleared[:requests]} failed doc_build_requests for retry under compiler #{compiler_version}" }
+      end
 
       Log.info { "Reconciling documentation status against #{published.size} published artifacts in #{store.bucket}" }
 
@@ -194,6 +260,10 @@ module CrystalShards
         io.puts "  Nothing was pending. Every registered version already carries the outcome of its build."
       else
         io.puts "  #{report}"
+      end
+
+      if report.cleared_versions > 0 || report.cleared_requests > 0
+        io.puts "  Toolchain reconciliation: cleared #{report.cleared_versions} failed version(s) and #{report.cleared_requests} failed request(s) for retry."
       end
 
       unless report.marked.empty?

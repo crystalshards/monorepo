@@ -58,6 +58,7 @@ module DocsTestDatabase
       -- rows published before the column existed carry no value and are
       -- deliberately never backfilled with a SHA nobody verified.
       source_commit_sha text,
+      compiler_version text,
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL,
       UNIQUE (doc_id, version)
@@ -80,6 +81,7 @@ module DocsTestDatabase
       step text,
       attempts integer NOT NULL DEFAULT 0,
       job_id text,
+      compiler_version text,
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL,
       UNIQUE (package_name, version)
@@ -95,6 +97,12 @@ module DocsTestDatabase
     SQL
     <<-SQL,
     ALTER TABLE doc_build_requests ADD COLUMN IF NOT EXISTS step text
+    SQL
+    <<-SQL,
+    ALTER TABLE doc_versions ADD COLUMN IF NOT EXISTS compiler_version text
+    SQL
+    <<-SQL,
+    ALTER TABLE doc_build_requests ADD COLUMN IF NOT EXISTS compiler_version text
     SQL
   ]
 

@@ -76,8 +76,8 @@ module CrystalDocs
     # row so find(package_name, version) finds it without enqueuing a build.
     INSERT_FAILED_FROM_VERSION_SQL = <<-SQL
       INSERT INTO doc_build_requests
-        (package_name, version, status, requested_at, finished_at, failed_at, last_error, attempts, created_at, updated_at)
-      SELECT d.package_name, dv.version, 'failed', $3, $3, $3, 'Build failed under current toolchain', 1, $3, $3
+        (package_name, version, status, requested_at, finished_at, failed_at, last_error, attempts, compiler_version, created_at, updated_at)
+      SELECT d.package_name, dv.version, 'failed', $3, $3, $3, 'Build failed under current toolchain', 1, dv.compiler_version, $3, $3
       FROM doc_versions dv
       JOIN docs d ON d.id = dv.doc_id
       WHERE d.package_name = $1 AND dv.version = $2 AND dv.build_status = 'failed'
@@ -126,6 +126,8 @@ module CrystalDocs
     #
     # Deterministic failures (compile error, missing repo, missing ref) are
     # terminal under the current toolchain and are deliberately NOT retried.
+    MAX_ATTEMPTS = 3
+
     CLAIM_RETRY_SQL = <<-SQL
       UPDATE doc_build_requests
       SET status = 'pending',
@@ -140,10 +142,35 @@ module CrystalDocs
         AND version = $2
         AND (
           status IN ('pending', 'building')
+            AND attempts < $5
             AND COALESCE(started_at, requested_at) IS NOT NULL
             AND COALESCE(started_at, requested_at) <= $4
         )
       RETURNING id
+      SQL
+
+    EXHAUST_STALE_REQUEST_SQL = <<-SQL
+      UPDATE doc_build_requests
+      SET status = 'failed',
+          finished_at = $3,
+          failed_at = $3,
+          last_error = 'Build exceeded maximum retry attempts without reporting an outcome',
+          compiler_version = NULL,
+          updated_at = $3
+      WHERE package_name = $1
+        AND version = $2
+        AND status IN ('pending', 'building')
+        AND attempts >= $4
+        AND COALESCE(started_at, requested_at) IS NOT NULL
+        AND COALESCE(started_at, requested_at) <= $5
+      SQL
+
+    EXHAUST_STALE_VERSION_SQL = <<-SQL
+      UPDATE doc_versions
+      SET build_status = 'failed', compiler_version = NULL, updated_at = $3
+      WHERE version = $2
+        AND doc_id IN (SELECT id FROM docs WHERE package_name = $1)
+        AND build_status IN ('pending', 'building')
       SQL
 
     RECORD_JOB_SQL = <<-SQL
@@ -163,17 +190,19 @@ module CrystalDocs
     # whether to wait or that the build failed.
     def request(package_name : String, version : String) : DocBuildRequest
       now = Time.utc
-
       # Seed failed doc_build_requests from doc_versions if needed so find succeeds
       # without triggering a new enqueue.
       AppDatabase.exec(INSERT_FAILED_FROM_VERSION_SQL, package_name, version, now)
+
+      # Stale claims that have exceeded maximum retry attempts are marked failed
+      # rather than re-queued indefinitely.
+      exhaust_stale_claim_if_attempts_exceeded(package_name, version, now)
 
       if id = claim_new(package_name, version, now)
         enqueue(id, package_name, version, now)
       elsif id = claim_retry(package_name, version, now)
         enqueue(id, package_name, version, now)
       end
-
       # Read back rather than returning something assembled here: the builder
       # writes to this row too, and it may have moved on already.
       find(package_name, version) || raise "doc_build_requests row for #{package_name} #{version} disappeared immediately after being claimed."
@@ -243,8 +272,25 @@ module CrystalDocs
         version,
         now,
         now - STALE_CLAIM_FLOOR,
+        MAX_ATTEMPTS,
         as: Int64
       ).first?
+    end
+
+    private def exhaust_stale_claim_if_attempts_exceeded(package_name : String, version : String, now : Time) : Nil
+      stale_threshold = now - STALE_CLAIM_FLOOR
+      rows = AppDatabase.exec(
+        EXHAUST_STALE_REQUEST_SQL,
+        package_name,
+        version,
+        now,
+        MAX_ATTEMPTS,
+        stale_threshold
+      ).rows_affected
+
+      if rows > 0
+        AppDatabase.exec(EXHAUST_STALE_VERSION_SQL, package_name, version, now)
+      end
     end
 
     # The row is already pending at this point, so a queue that cannot be
