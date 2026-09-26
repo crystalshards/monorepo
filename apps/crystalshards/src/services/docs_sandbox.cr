@@ -24,6 +24,7 @@ module CrystalShards
   #   * cpu, memory, pid and wall-clock ceilings
   abstract class DocsSandbox
     class Unavailable < Exception; end
+
     class Timeout < Unavailable; end
 
     # Generates documentation from `source_dir` into `output_dir`.

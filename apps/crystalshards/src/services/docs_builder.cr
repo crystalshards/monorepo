@@ -136,7 +136,7 @@ module CrystalShards
       # it burns build slots on a guaranteed failure.
       unless status[:success]
         output = status[:output]
-        if deterministic_clone_failure?(output)
+        if self.class.deterministic_clone_failure?(output)
           raise SourceUnusable.new("The repository could not be cloned because it is private, moved, or deleted: #{output.strip}")
         else
           raise "Failed to clone repository: #{output.strip}"
@@ -146,11 +146,34 @@ module CrystalShards
       log_info "Cloned repository for docs build"
     end
 
-    private def deterministic_clone_failure?(output : String) : Bool
+    def self.deterministic_clone_failure?(output : String) : Bool
+      # Transient network, DNS, and server errors must never be treated as deterministic.
+      return false if transient_network_error?(output)
+
       output.includes?("could not read Username") ||
-        output.includes?("not found") ||
+        (output.includes?("repository") && output.includes?("not found")) ||
+        output.includes?("Repository not found") ||
+        output.includes?("remote: Not Found") ||
         output.includes?("Authentication failed") ||
-        output.includes?("Repository moved or deleted")
+        output.includes?("Access denied") ||
+        output.includes?("Repository moved or deleted") ||
+        output.includes?("not have permission to view it")
+    end
+
+    def self.transient_network_error?(output : String) : Bool
+      output.includes?("Could not resolve host") ||
+        output.includes?("Failed to connect") ||
+        output.includes?("Connection timed out") ||
+        output.includes?("Operation timed out") ||
+        output.includes?("Connection reset") ||
+        output.includes?("timed out") ||
+        output.includes?("Temporary failure in name resolution") ||
+        output.includes?("error: 500") ||
+        output.includes?("error: 502") ||
+        output.includes?("error: 503") ||
+        output.includes?("error: 504") ||
+        output.includes?("early EOF") ||
+        output.includes?("index-pack failed")
     end
 
     # A checkout that cannot reach the requested ref is fatal, not a warning.

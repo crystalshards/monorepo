@@ -14,6 +14,7 @@ module DocsRows
     version : String,
     build_status : String = "pending",
     commit_sha : String? = nil,
+    compiler_version : String? = nil,
   ) : Nil
     now = Time.utc
 
@@ -27,10 +28,10 @@ module DocsRows
     # sets it from the registry release's own timestamp. This helper has no
     # release to read one from, so it uses `now`; nothing plants a row through
     # this path and then asserts on published_at.
-    DocsDatabase.exec(<<-SQL, package_name, version, build_status, "#{package_name}/#{version}", commit_sha, now)
+    DocsDatabase.exec(<<-SQL, package_name, version, build_status, "#{package_name}/#{version}", commit_sha, now, compiler_version)
       INSERT INTO doc_versions
-        (doc_id, version, published_at, build_status, storage_path, source_commit_sha, created_at, updated_at)
-      SELECT id, $2, $6, $3, $4, $5, $6, $6 FROM docs WHERE package_name = $1
+        (doc_id, version, published_at, build_status, storage_path, source_commit_sha, created_at, updated_at, compiler_version)
+      SELECT id, $2, $6, $3, $4, $5, $6, $6, $7 FROM docs WHERE package_name = $1
       ON CONFLICT (doc_id, version) DO NOTHING
       SQL
   end
@@ -38,13 +39,13 @@ module DocsRows
   # The row a reader's request creates, which most of the catalogue does not
   # have. Written separately from `register` so a spec can exercise a build the
   # registry indexer commissioned, where doc_versions is the only row there is.
-  def self.request(package_name : String, version : String, status : String = "pending") : Nil
+  def self.request(package_name : String, version : String, status : String = "pending", compiler_version : String? = nil) : Nil
     now = Time.utc
 
-    DocsDatabase.exec(<<-SQL, package_name, version, status, now)
+    DocsDatabase.exec(<<-SQL, package_name, version, status, now, compiler_version)
       INSERT INTO doc_build_requests
-        (package_name, version, status, requested_at, attempts, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, 1, $4, $4)
+        (package_name, version, status, requested_at, attempts, compiler_version, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, 1, $5, $4, $4)
       ON CONFLICT (package_name, version) DO NOTHING
       SQL
   end
@@ -76,7 +77,8 @@ module DocsRows
     started_at : Time?,
     finished_at : Time?,
     failed_at : Time?,
-    last_error : String?
+    last_error : String?,
+    compiler_version : String?
 
   # The progress hint a reader watching a build is shown. Nullable by design:
   # nothing has been reported yet at the start of a build, and every outcome
@@ -91,13 +93,13 @@ module DocsRows
   end
 
   def self.request_outcome(package_name : String, version : String) : RequestOutcome
-    status, started_at, finished_at, failed_at, last_error = DocsDatabase.query_one(
+    status, started_at, finished_at, failed_at, last_error, compiler_version = DocsDatabase.query_one(
       <<-SQL,
-      SELECT status, started_at, finished_at, failed_at, last_error
+      SELECT status, started_at, finished_at, failed_at, last_error, compiler_version
       FROM doc_build_requests
       WHERE package_name = $1 AND version = $2
       SQL
-      package_name, version, as: {String, Time?, Time?, Time?, String?}
+      package_name, version, as: {String, Time?, Time?, Time?, String?, String?}
     )
 
     RequestOutcome.new(
@@ -105,8 +107,35 @@ module DocsRows
       started_at: started_at,
       finished_at: finished_at,
       failed_at: failed_at,
-      last_error: last_error
+      last_error: last_error,
+      compiler_version: compiler_version
     )
+  end
+
+  def self.version_compiler(package_name : String, version : String) : String?
+    DocsDatabase.query_one?(
+      <<-SQL,
+      SELECT v.compiler_version
+      FROM doc_versions v
+      JOIN docs d ON d.id = v.doc_id
+      WHERE d.package_name = $1 AND v.version = $2
+      SQL
+      package_name, version, as: String?
+    )
+  end
+
+  def self.request_compiler(package_name : String, version : String) : String?
+    DocsDatabase.query_one?(
+      "SELECT compiler_version FROM doc_build_requests WHERE package_name = $1 AND version = $2",
+      package_name, version, as: String?
+    )
+  end
+
+  def self.request_exists?(package_name : String, version : String) : Bool
+    !DocsDatabase.query_one?(
+      "SELECT 1 FROM doc_build_requests WHERE package_name = $1 AND version = $2",
+      package_name, version, as: Int32?
+    ).nil?
   end
 
   # Makes the doc_versions write, and only that write, fail at the database.

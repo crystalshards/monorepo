@@ -188,6 +188,15 @@ module WorkerSeams
     end
   end
 
+  def self.with_core_publisher(publisher : Proc(String, Bool, CrystalShards::CoreDocs::Published), &)
+    CrystalShards::CoreDocs.publisher = publisher
+    begin
+      yield
+    ensure
+      CrystalShards::CoreDocs.publisher = nil
+    end
+  end
+
   # Captures the follow-up jobs IndexShardWorker schedules instead of running
   # them, so an indexing example asserts on what was chained rather than on
   # the whole pipeline downstream of it.

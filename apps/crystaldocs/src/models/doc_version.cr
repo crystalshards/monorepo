@@ -14,6 +14,7 @@ class DocVersion < BaseModel
     # backfilling one without proof of what was actually built would be a
     # guess wearing the shape of a fact.
     column source_commit_sha : String?
+    column compiler_version : String?
 
     belongs_to doc : Doc
   end

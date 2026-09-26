@@ -11,15 +11,16 @@ require "../spec_helper"
 # catalogue was left in: rows claimed while the launcher could not authenticate,
 # then the launcher fixed, and not one row moved, because nothing reconsiders a
 # claim.
-private def planted(status : String, claimed_at : Time, package_name : String = "stale-pkg")
+private def planted(status : String, claimed_at : Time, package_name : String = "stale-pkg", attempts : Int32 = 1)
   AppDatabase.exec(
     "INSERT INTO doc_build_requests " \
     "(package_name, version, status, requested_at, started_at, attempts, created_at, updated_at) " \
-    "VALUES ($1, '1.0.0', $2, $3, $4, 1, $3, $3)",
+    "VALUES ($1, '1.0.0', $2, $3, $4, $5, $3, $3)",
     package_name,
     status,
     claimed_at,
-    status == "building" ? claimed_at : nil
+    status == "building" ? claimed_at : nil,
+    attempts
   )
 end
 
@@ -70,6 +71,29 @@ describe CrystalDocs::DocBuildRequests do
 
       queue.count_for("stale-pkg", "1.0.0").should eq(0)
       status_of("stale-pkg").should eq("succeeded")
+    end
+
+    it "marks an unresolved stale claim as failed once maximum attempts have been exhausted" do
+      planted("building", Time.utc - CrystalDocs::DocBuildRequests::STALE_CLAIM_FLOOR - 1.minute, attempts: 3)
+      queue = RecordingBuildQueue.install
+
+      request = CrystalDocs::DocBuildRequests.new(queue).request("stale-pkg", "1.0.0")
+
+      queue.count_for("stale-pkg", "1.0.0").should eq(0)
+      request.status.should eq("failed")
+      request.compiler_version.should be_nil
+      status_of("stale-pkg").should eq("failed")
+    end
+
+    it "leaves a fresh in-flight build alone even at maximum attempts" do
+      planted("building", Time.utc - 2.minutes, attempts: 3)
+      queue = RecordingBuildQueue.install
+
+      request = CrystalDocs::DocBuildRequests.new(queue).request("stale-pkg", "1.0.0")
+
+      queue.count_for("stale-pkg", "1.0.0").should eq(0)
+      request.status.should eq("building")
+      status_of("stale-pkg").should eq("building")
     end
   end
 end

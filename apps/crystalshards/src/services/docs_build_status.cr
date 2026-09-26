@@ -1,4 +1,5 @@
 require "../docs_database"
+require "./docs_sandbox"
 
 module CrystalShards
   # Reports documentation build progress back to crystaldocs.
@@ -88,14 +89,15 @@ module CrystalShards
     # cloning happens.
     FAILED_SQL = <<-SQL
       INSERT INTO doc_build_requests
-        (package_name, version, status, requested_at, finished_at, failed_at, last_error, attempts, created_at, updated_at)
-      VALUES ($1, $2, 'failed', $3, $3, $3, $4, 1, $3, $3)
+        (package_name, version, status, requested_at, finished_at, failed_at, last_error, attempts, compiler_version, created_at, updated_at)
+      VALUES ($1, $2, 'failed', $3, $3, $3, $4, 1, $5, $3, $3)
       ON CONFLICT (package_name, version) DO UPDATE
       SET status = 'failed',
           step = NULL,
           finished_at = $3,
           failed_at = $3,
           last_error = $4,
+          compiler_version = $5,
           updated_at = $3
       SQL
 
@@ -132,12 +134,12 @@ module CrystalShards
 
     VERSION_FAILED_SQL = <<-SQL
       UPDATE doc_versions
-      SET build_status = 'failed', updated_at = $3
+      SET build_status = 'failed', compiler_version = $4, updated_at = $3
       WHERE version = $2
         AND doc_id IN (SELECT id FROM docs WHERE package_name = $1)
       SQL
 
-    def initialize(@package_name : String, @version : String)
+    def initialize(@package_name : String, @version : String, @compiler_version : String? = nil)
     end
 
     # The one state that is allowed to go unrecorded.
@@ -182,8 +184,9 @@ module CrystalShards
       record("succeeded", SUCCEEDED_SQL, VERSION_SUCCEEDED_SQL)
     end
 
-    def failed(reason : String?) : Nil
-      record("failed", FAILED_SQL, VERSION_FAILED_SQL, truncate(reason))
+    def failed(reason : String?, compiler_version : String? = nil) : Nil
+      compiler = compiler_version || @compiler_version || resolve_compiler_version
+      record_failed(truncate(reason), compiler)
     end
 
     # One outcome, one transaction, and no swallowing.
@@ -238,6 +241,57 @@ module CrystalShards
       # nothing, which is a normal outcome for the request table and an
       # entirely different fact from one that landed; the counts are the only
       # thing that can tell those apart once the build is over.
+      receipt(outcome, requests, versions)
+    end
+
+    private def record_failed(error : String?, compiler : String) : Nil
+      now = Time.utc
+      requests = 0_i64
+      versions = 0_i64
+
+      begin
+        DocsDatabase.transaction do
+          result = DocsDatabase.exec(
+            FAILED_SQL,
+            @package_name,
+            @version,
+            now,
+            error,
+            compiler
+          )
+          requests = result.rows_affected
+          versions = DocsDatabase.exec(
+            VERSION_FAILED_SQL,
+            @package_name,
+            @version,
+            now,
+            compiler
+          ).rows_affected
+        end
+      rescue ex : Exception
+        Log.error(exception: ex) do
+          "DocsBuildStatus: could not record the failed outcome of #{@package_name}@#{@version}. " \
+          "The transaction was rolled back, so neither doc_build_requests nor doc_versions was changed " \
+          "and the documentation site still shows this version as it was before the build."
+        end
+
+        raise Unrecorded.new("failed", @package_name, @version, ex)
+      end
+
+      receipt("failed", requests, versions)
+    end
+
+    private def resolve_compiler_version : String
+      if custom = DocsSandbox.builder
+        return custom.call.crystal_version
+      end
+
+      DocsSandbox.crystal_version
+    rescue
+      Crystal::VERSION
+    end
+
+    private def receipt(outcome : String, requests : Int64, versions : Int64) : Nil
       Log.info do
         "DocsBuildStatus: recorded #{outcome} for #{@package_name}@#{@version} " \
         "(#{requests} request row#{"s" unless requests == 1}, #{versions} version row#{"s" unless versions == 1})"

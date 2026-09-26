@@ -333,6 +333,40 @@ describe BuildDocsWorker do
       outcome.last_error.to_s.should contain("asked to build the standard library at \"0.24.2\"")
     end
 
+    it "records a standard library incomplete artifact as failed without raising" do
+      DocsRows.request("crystal", "1.21.0")
+      publisher = ->(_version : String, _force : Bool) {
+        raise CrystalShards::CoreDocs::IncompleteArtifact.new(["Array", "String"])
+        CrystalShards::CoreDocs::Published.new("key", 0_i64, 0, false)
+      }
+
+      WorkerSeams.with_core_publisher(publisher) do
+        BuildDocsWorker.new(shard_name: "crystal", version: "1.21.0").perform
+      end
+
+      outcome = DocsRows.request_outcome("crystal", "1.21.0")
+      outcome.status.should eq("failed")
+      outcome.last_error.to_s.should contain("the artifact is missing Array, String")
+      outcome.compiler_version.should eq(CrystalShards::DocsSandbox.crystal_version)
+    end
+
+    it "records a standard library compile build failure as failed without raising" do
+      DocsRows.request("crystal", "1.21.0")
+      publisher = ->(_version : String, _force : Bool) {
+        raise CrystalShards::CoreDocs::BuildFailed.new("crystal docs compile syntax error")
+        CrystalShards::CoreDocs::Published.new("key", 0_i64, 0, false)
+      }
+
+      WorkerSeams.with_core_publisher(publisher) do
+        BuildDocsWorker.new(shard_name: "crystal", version: "1.21.0").perform
+      end
+
+      outcome = DocsRows.request_outcome("crystal", "1.21.0")
+      outcome.status.should eq("failed")
+      outcome.last_error.to_s.should contain("crystal docs compile syntax error")
+      outcome.compiler_version.should eq(CrystalShards::DocsSandbox.crystal_version)
+    end
+
     it "re-raises an upload failure, publishes nothing and still cleans up" do
       shard = ShardFactory.create &.name("upload-fail")
       ShardVersionFactory.create &.shard_id(shard.id).version("1.0.0")

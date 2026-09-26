@@ -42,6 +42,7 @@ class DocBuildRequest < BaseModel
 
     column attempts : Int32
     column job_id : String?
+    column compiler_version : String?
   end
 
   def pending? : Bool
